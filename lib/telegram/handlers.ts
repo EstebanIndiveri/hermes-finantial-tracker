@@ -16,6 +16,16 @@ interface TelegramUpdate {
   };
 }
 
+/**
+ * KNOWN LIMITATION: This in-memory Map will be wiped on serverless cold starts
+ * and is not shared across multiple function instances. In a production serverless
+ * environment (Vercel, AWS Lambda), users may lose pending confirmation state.
+ * 
+ * TODO: For production, store pending confirmations in database with TTL:
+ *   - Add `pending_confirmations` table with: chat_id, category_id, amount_ars, merchant, expires_at
+ *   - Query and cleanup expired entries before checking
+ *   - This ensures persistence across cold starts and instances
+ */
 const pendingExceptions = new Map<string, { category_id: string; amount_ars: number; merchant?: string }>();
 
 export async function handleTelegramMessage(update: TelegramUpdate, userId: string): Promise<string> {

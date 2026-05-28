@@ -13,10 +13,15 @@ export async function POST(req: NextRequest) {
   }
 
   const update = await req.json().catch(() => null);
-  if (!update?.message) return NextResponse.json({ ok: true });
+  if (!update?.message?.chat?.id || !update?.message?.from?.id) {
+    return NextResponse.json({ ok: true });
+  }
 
-  const telegramUserId = String(update.message.from?.id ?? "");
+  const telegramUserId = String(update.message.from.id);
+  const chatId = String(update.message.chat.id);
+  const messageText = update.message.text ?? "";
   const allowedId = process.env.TELEGRAM_ALLOWED_USER_ID;
+
   if (!allowedId || telegramUserId !== allowedId) {
     return NextResponse.json({ ok: true });
   }
@@ -34,24 +39,39 @@ export async function POST(req: NextRequest) {
   try {
     response_text = await handleTelegramMessage(update, user.id);
   } catch (err) {
-    console.error("Telegram handler error:", err);
+    console.error("Telegram handler error:", {
+      message: err instanceof Error ? err.message : "Unknown error",
+      updateId,
+    });
     response_text = "Error procesando el mensaje.";
   }
 
-  await db.insert(bot_messages).values({
-    id: randomUUID(),
-    user_id: user.id,
-    telegram_chat_id: String(update.message.chat.id),
-    telegram_user_id: telegramUserId,
-    telegram_update_id: updateId,
-    raw_text: update.message.text ?? "",
-    parsed_intent: null,
-    response_text,
-  }).onConflictDoNothing();
+  try {
+    await db.insert(bot_messages).values({
+      id: randomUUID(),
+      user_id: user.id,
+      telegram_chat_id: chatId,
+      telegram_user_id: telegramUserId,
+      telegram_update_id: updateId,
+      raw_text: messageText,
+      parsed_intent: null,
+      response_text,
+    }).onConflictDoNothing();
+  } catch (err) {
+    console.error("Database insert error for bot_messages:", {
+      message: err instanceof Error ? err.message : "Unknown error",
+      updateId,
+    });
+  }
 
-  await sendTelegramMessage(String(update.message.chat.id), response_text).catch(err => {
-    console.error("Failed to send Telegram message:", err);
-  });
+  try {
+    await sendTelegramMessage(chatId, response_text);
+  } catch (err) {
+    console.error("Failed to send Telegram message:", {
+      message: err instanceof Error ? err.message : "Unknown error",
+      chatId: chatId.slice(0, 4) + "...",
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }

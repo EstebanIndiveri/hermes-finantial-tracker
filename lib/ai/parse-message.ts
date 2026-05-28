@@ -32,11 +32,26 @@ export async function parseFinancialMessage(text: string): Promise<ParsedMessage
     return { intent: "unknown", confidence: 0, needs_confirmation: false };
   }
 
+  let raw: string;
   try {
-    const raw = await client.complete(SYSTEM_PROMPT, text);
-    const json = JSON.parse(raw.trim()) as unknown;
-    return ParsedMessageSchema.parse(json);
-  } catch {
+    raw = await client.complete(SYSTEM_PROMPT, text);
+  } catch (err) {
+    console.error("Groq API error:", err instanceof Error ? err.message : String(err));
+    return { intent: "unknown", confidence: 0, needs_confirmation: false };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.trim());
+  } catch (err) {
+    console.error("JSON parse error from Groq response:", err instanceof Error ? err.message : String(err));
+    return { intent: "unknown", confidence: 0, needs_confirmation: false };
+  }
+
+  try {
+    return ParsedMessageSchema.parse(parsed);
+  } catch (err) {
+    console.error("Zod validation error:", err instanceof Error ? err.message : String(err));
     return { intent: "unknown", confidence: 0, needs_confirmation: false };
   }
 }
