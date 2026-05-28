@@ -1,4 +1,4 @@
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 function getSecret(): string {
   const s = process.env.SESSION_SECRET;
@@ -20,7 +20,9 @@ export function verifySession(cookie: string): string | null {
     const sig = parts.pop()!;
     const payload = parts.join(":");
     const expected = createHmac("sha256", getSecret()).update(payload).digest("hex");
-    if (sig !== expected) return null;
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) return null;
     return parts[0];
   } catch {
     return null;
