@@ -57,6 +57,7 @@ describe("POST /api/auth/login", () => {
     expect(res.status).toBe(401);
     const data = await res.json();
     expect(data.error).toBe("Unauthorized");
+    expect(mockFindFirst).not.toHaveBeenCalled();
   });
 
   test("returns 500 when no user exists in database", async () => {

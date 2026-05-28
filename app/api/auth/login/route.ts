@@ -14,19 +14,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const body = await req.json().catch(() => null);
     if (!body?.token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
 
-    if (!process.env.WEB_ACCESS_TOKEN) {
-      console.error("WEB_ACCESS_TOKEN environment variable is not set");
-      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
-    }
-
     const providedToken = Buffer.from(body.token);
-    const expectedToken = Buffer.from(process.env.WEB_ACCESS_TOKEN);
-    
-    const user = await db.query.users.findFirst();
+    const expectedToken = Buffer.from(process.env.WEB_ACCESS_TOKEN ?? "");
     
     if (providedToken.length !== expectedToken.length || !timingSafeEqual(providedToken, expectedToken)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const user = await db.query.users.findFirst();
 
     if (!user) return NextResponse.json({ error: "No user found. Run seed first." }, { status: 500 });
 

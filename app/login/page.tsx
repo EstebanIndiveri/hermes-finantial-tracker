@@ -22,11 +22,17 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
-      if (!res.ok) { setError("Token incorrecto."); return; }
+      if (!res.ok) {
+        setError("Token incorrecto.");
+        setLoading(false);
+        return;
+      }
       router.push("/dashboard");
     } catch (err) {
+      console.error("Login error:", err);
       setError("Error de conexión. Intenta nuevamente.");
-    } finally { setLoading(false); }
+      setLoading(false);
+    }
   }
 
   return (
