@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { budgets } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { and } from "drizzle-orm";
 import { z } from "zod";
 import { getActiveMonthArgentina } from "@/lib/utils/dates";
 import { randomUUID } from "crypto";
@@ -34,15 +34,20 @@ export async function PATCH(req: NextRequest) {
     const month = parsed.data.month ?? getActiveMonthArgentina();
 
     for (const item of parsed.data.items) {
-      const existing = await db.query.budgets.findFirst({
-        where: and(eq(budgets.user_id, userId), eq(budgets.month, month), eq(budgets.category_id, item.category_id)),
+      await db.insert(budgets).values({
+        id: randomUUID(),
+        user_id: userId,
+        month,
+        category_id: item.category_id,
+        budget_ars: item.budget_ars,
+        hard_limit: item.hard_limit ? 1 : 0,
+      }).onConflictDoUpdate({
+        target: [budgets.user_id, budgets.month, budgets.category_id],
+        set: {
+          budget_ars: item.budget_ars,
+          hard_limit: item.hard_limit ? 1 : 0,
+        },
       });
-      if (existing) {
-        await db.update(budgets).set({ budget_ars: item.budget_ars, hard_limit: item.hard_limit ? 1 : 0 })
-          .where(and(eq(budgets.user_id, userId), eq(budgets.month, month), eq(budgets.category_id, item.category_id)));
-      } else {
-        await db.insert(budgets).values({ id: randomUUID(), user_id: userId, month, category_id: item.category_id, budget_ars: item.budget_ars, hard_limit: item.hard_limit ? 1 : 0 });
-      }
     }
 
     return NextResponse.json({ ok: true });

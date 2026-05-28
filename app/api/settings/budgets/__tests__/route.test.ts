@@ -15,7 +15,9 @@ jest.mock("@/lib/db/client", () => ({
       })),
     })),
     insert: jest.fn(() => ({
-      values: jest.fn(),
+      values: jest.fn(() => ({
+        onConflictDoUpdate: jest.fn(),
+      })),
     })),
   },
 }));
@@ -99,8 +101,6 @@ describe("PATCH /api/settings/budgets", () => {
   });
 
   test("creates new budget when none exists", async () => {
-    (db.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
-
     const req = new NextRequest("http://localhost:3000/api/settings/budgets", {
       method: "PATCH",
       body: JSON.stringify({ 
@@ -124,18 +124,6 @@ describe("PATCH /api/settings/budgets", () => {
   });
 
   test("updates existing budget", async () => {
-    const existing = {
-      id: "budget-123",
-      user_id: "user-123",
-      month: "2025-05",
-      category_id: "123e4567-e89b-12d3-a456-426614174000",
-      budget_ars: 30000,
-      hard_limit: 1,
-      created_at: Date.now(),
-    };
-
-    (db.query.budgets.findFirst as jest.Mock).mockResolvedValue(existing);
-
     const req = new NextRequest("http://localhost:3000/api/settings/budgets", {
       method: "PATCH",
       body: JSON.stringify({ 
@@ -155,14 +143,10 @@ describe("PATCH /api/settings/budgets", () => {
 
     expect(response.status).toBe(200);
     expect(data).toEqual({ ok: true });
-    expect(db.update).toHaveBeenCalled();
+    expect(db.insert).toHaveBeenCalled();
   });
 
   test("processes multiple budget items", async () => {
-    (db.query.budgets.findFirst as jest.Mock)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: "budget-2", user_id: "user-123" });
-
     const req = new NextRequest("http://localhost:3000/api/settings/budgets", {
       method: "PATCH",
       body: JSON.stringify({ 
@@ -189,12 +173,10 @@ describe("PATCH /api/settings/budgets", () => {
 
     expect(response.status).toBe(200);
     expect(data).toEqual({ ok: true });
-    expect(db.query.budgets.findFirst).toHaveBeenCalledTimes(2);
+    expect(db.insert).toHaveBeenCalledTimes(2);
   });
 
   test("defaults hard_limit to true when not provided", async () => {
-    (db.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
-
     const req = new NextRequest("http://localhost:3000/api/settings/budgets", {
       method: "PATCH",
       body: JSON.stringify({ 

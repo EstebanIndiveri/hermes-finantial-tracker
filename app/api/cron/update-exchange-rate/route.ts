@@ -30,7 +30,10 @@ export async function GET(req: NextRequest) {
       const existing = await db.query.monthly_settings.findFirst({
         where: and(eq(monthly_settings.user_id, user.id), eq(monthly_settings.month, month)),
       });
-      return NextResponse.json({ error: "RIPIO_UNAVAILABLE", message, lastRate: existing?.exchange_rate ?? null, lastUpdated: existing?.exchange_rate_updated_at ?? null });
+      return NextResponse.json(
+        { error: "RIPIO_UNAVAILABLE", message, lastRate: existing?.exchange_rate ?? null, lastUpdated: existing?.exchange_rate_updated_at ?? null },
+        { status: 503 }
+      );
     }
 
     const existing = await db.query.monthly_settings.findFirst({
