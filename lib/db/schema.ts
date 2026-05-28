@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { text, real, integer, sqliteTable, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { text, real, integer, sqliteTable, uniqueIndex, index } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -59,7 +59,10 @@ export const transactions = sqliteTable("transactions", {
   is_exception: integer("is_exception").notNull().default(0),
   deleted_at: integer("deleted_at"),
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
-});
+}, (t) => ({
+  userMonthIdx: index("tx_user_month_idx").on(t.user_id, t.month),
+  categoryIdx: index("tx_category_idx").on(t.category_id),
+}));
 
 export const bot_messages = sqliteTable("bot_messages", {
   id: text("id").primaryKey(),
