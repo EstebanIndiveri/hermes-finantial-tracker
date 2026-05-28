@@ -105,7 +105,8 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      if (!is_exception && gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
+      // Hard limits are NEVER bypassable, even with is_exception=true
+      if (gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
         return NextResponse.json({
           error: "BUDGET_EXCEEDED_HARD",
           code: "BUDGET_EXCEEDED_HARD",

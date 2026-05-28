@@ -619,4 +619,67 @@ describe("POST /api/transactions", () => {
     expect(response.status).toBe(201);
     expect(data.amount_usd).toBe(5);
   });
+
+  test("rejects hard limit in WARNING state even with is_exception=true", async () => {
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({
+      exchange_rate: 1000,
+    });
+
+    (db.query.budgets.findFirst as jest.Mock).mockResolvedValue({
+      budget_ars: 10000,
+      hard_limit: 1,
+    });
+
+    const mockSelect = {
+      from: jest.fn(() => ({
+        where: jest.fn().mockResolvedValue([{ total: "8000" }]),
+      })),
+    };
+    (db.select as jest.Mock).mockReturnValue(mockSelect);
+
+    (rulesUtil.calculateCategoryStatus as jest.Mock).mockReturnValue("WARNING");
+
+    const req = new NextRequest("http://localhost:3000/api/transactions", {
+      method: "POST",
+      body: JSON.stringify({
+        category_id: "123e4567-e89b-12d3-a456-426614174000",
+        amount_ars: 5000,
+        is_exception: true,
+      }),
+    });
+    Object.defineProperty(req.headers, "get", {
+      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+    });
+
+    const response = await POST(req);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.code).toBe("BUDGET_EXCEEDED_HARD");
+  });
+
+  test("returns 500 when exchange_rate is 0 in monthly_settings", async () => {
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({
+      exchange_rate: 0,
+    });
+
+    (db.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
+
+    const req = new NextRequest("http://localhost:3000/api/transactions", {
+      method: "POST",
+      body: JSON.stringify({
+        category_id: "123e4567-e89b-12d3-a456-426614174000",
+        amount_ars: 5000,
+      }),
+    });
+    Object.defineProperty(req.headers, "get", {
+      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+    });
+
+    const response = await POST(req);
+    const data = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(data.error).toContain("exchange");
+  });
 });
