@@ -33,7 +33,10 @@ export async function POST(req: NextRequest) {
   if (existing) return NextResponse.json({ ok: true });
 
   const user = await db.query.users.findFirst();
-  if (!user) return NextResponse.json({ error: "No user" }, { status: 500 });
+  if (!user) {
+    console.error("Telegram webhook: no user found in database");
+    return NextResponse.json({ ok: true });
+  }
 
   let response_text = "Error interno.";
   try {

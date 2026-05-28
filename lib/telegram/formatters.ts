@@ -17,12 +17,12 @@ export function formatTransactionConfirm(params: {
     `<b>${params.emoji} ${params.category} — este mes:</b>`,
     `Presupuesto: ${params.budget_ars > 0 ? formatARS(params.budget_ars) : "Sin límite"}`,
     `Gastado: ${formatARS(params.gastado_ars)}`,
-    params.disponible_ars !== null ? `Disponible: ${formatARS(params.disponible_ars)}` : "",
+    params.disponible_ars !== null ? `Disponible: ${formatARS(params.disponible_ars)}` : null,
     `Estado: ${statusIcon}`,
     ``,
     `💰 Ahorro proyectado: ${formatUSD(params.ahorro_proyectado_usd)}`,
   ];
-  return lines.filter(l => l !== "").join("\n");
+  return lines.filter((l): l is string => l !== null).join("\n");
 }
 
 export function formatResumen(params: {
