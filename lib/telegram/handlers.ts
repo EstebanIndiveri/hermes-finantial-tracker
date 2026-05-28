@@ -7,6 +7,10 @@ import { calculateCategoryStatus } from "@/lib/finance/rules";
 import { formatTransactionConfirm, formatResumen, formatDisponible } from "./formatters";
 import { randomUUID } from "crypto";
 
+function escapeHtml(text: string): string {
+  return text.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
+}
+
 interface TelegramUpdate {
   update_id: number;
   message?: {
@@ -80,7 +84,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     if (!last) return "No hay transacciones activas este mes.";
     const lastWithCat = last as typeof last & { category?: { emoji: string; name: string } };
     const catStr = `${lastWithCat.category?.emoji ?? ""} ${lastWithCat.category?.name ?? ""}`.trim();
-    return `Último: ${catStr} — $${last.amount_ars.toLocaleString("es-AR")}${last.merchant ? ` (${last.merchant})` : ""} — ${last.date}`;
+    return `Último: ${catStr} — $${last.amount_ars.toLocaleString("es-AR")}${last.merchant ? ` (${escapeHtml(last.merchant)})` : ""} — ${last.date}`;
   }
 
   if (text === "/borrar_ultimo") {
@@ -192,6 +196,7 @@ async function registerTransaction(
   month: string,
   is_exception: boolean
 ): Promise<string> {
+  merchant = merchant ? escapeHtml(merchant) : undefined;
   const settings = await db.query.monthly_settings.findFirst({
     where: and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)),
   });

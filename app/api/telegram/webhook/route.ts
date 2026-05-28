@@ -4,11 +4,17 @@ import { bot_messages, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { handleTelegramMessage } from "@/lib/telegram/handlers";
-import { randomUUID } from "crypto";
+import { randomUUID, timingSafeEqual } from "crypto";
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-telegram-bot-api-secret-token");
-  if (secret !== process.env.TELEGRAM_SECRET_TOKEN) {
+  const expectedSecret = process.env.TELEGRAM_SECRET_TOKEN;
+  if (!secret || !expectedSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const providedBuf = Buffer.from(secret);
+  const expectedBuf = Buffer.from(expectedSecret);
+  if (providedBuf.length !== expectedBuf.length || !timingSafeEqual(providedBuf, expectedBuf)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
