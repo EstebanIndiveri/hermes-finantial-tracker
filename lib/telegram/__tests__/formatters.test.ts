@@ -1,5 +1,7 @@
 import { formatTransactionConfirm, formatResumen, formatDisponible } from "../formatters";
 
+const nbsp = "\u00A0"; // non-breaking space used by Intl.NumberFormat
+
 describe("formatTransactionConfirm", () => {
   it("should format transaction with normal values and OK status", () => {
     const result = formatTransactionConfirm({
@@ -13,13 +15,13 @@ describe("formatTransactionConfirm", () => {
       ahorro_proyectado_usd: 500,
     });
 
-    expect(result).toContain("✅ Registrado: $47.000 en 🛒 Supermercado");
+    expect(result).toContain(`✅ Registrado: $${nbsp}47.000 en 🛒 Supermercado.`);
     expect(result).toContain("🛒 Supermercado — este mes:");
-    expect(result).toContain("Presupuesto: $200.000");
-    expect(result).toContain("Gastado: $150.000");
-    expect(result).toContain("Disponible: $50.000");
+    expect(result).toContain(`Presupuesto: $${nbsp}200.000`);
+    expect(result).toContain(`Gastado: $${nbsp}150.000`);
+    expect(result).toContain(`Disponible: $${nbsp}50.000`);
     expect(result).toContain("Estado: 🟢 OK");
-    expect(result).toContain("💰 Ahorro proyectado: US$500.00");
+    expect(result).toContain("💰 Ahorro proyectado: $500.00");
   });
 
   it("should format transaction with WARNING status", () => {
@@ -50,7 +52,7 @@ describe("formatTransactionConfirm", () => {
     });
 
     expect(result).toContain("Estado: 🔴 CLOSED");
-    expect(result).toContain("Disponible: $0");
+    expect(result).toContain(`Disponible: $${nbsp}0`);
   });
 
   it("should format transaction with budget_ars = 0 (unlimited)", () => {
@@ -97,9 +99,9 @@ describe("formatResumen", () => {
     });
 
     expect(result).toContain("📊 Resumen 2025-05");
-    expect(result).toContain("Ingreso: US$2,000.00");
-    expect(result).toContain("Gastado: US$1,200.00");
-    expect(result).toContain("Ahorro proyectado: US$800.00");
+    expect(result).toContain("Ingreso: $2,000.00");
+    expect(result).toContain("Gastado: $1,200.00");
+    expect(result).toContain("Ahorro proyectado: $800.00");
     expect(result).toContain("Tipo de cambio: $1.050");
     expect(result).toContain("Estado: 🟢 GREEN");
   });
@@ -143,9 +145,9 @@ describe("formatDisponible", () => {
     });
 
     expect(result).toContain("<b>🛒 Supermercado</b>");
-    expect(result).toContain("Presupuesto: $200.000");
-    expect(result).toContain("Gastado: $100.000");
-    expect(result).toContain("Disponible: $100.000");
+    expect(result).toContain(`Presupuesto: $${nbsp}200.000`);
+    expect(result).toContain(`Gastado: $${nbsp}100.000`);
+    expect(result).toContain(`Disponible: $${nbsp}100.000`);
     expect(result).toContain("Estado: 🟢 OK");
   });
 
