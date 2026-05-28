@@ -1,7 +1,7 @@
 # Hermes Finance — Design Spec
 **Date:** 2026-05-27  
-**Status:** Approved  
-**Stack:** Next.js 14 App Router · TypeScript · Tailwind CSS · shadcn/ui · Turso · Drizzle ORM · Telegram Bot Webhook · Groq API (optional) · Vercel
+**Status:** Approved (v2 — post-review amendments)  
+**Stack:** Next.js (latest stable) App Router · TypeScript · Tailwind CSS · shadcn/ui · Turso · Drizzle ORM · Telegram Bot Webhook · Groq API (optional) · Vercel
 
 ---
 
@@ -13,6 +13,8 @@ Hermes Finance is a personal financial assistant MVP for tracking monthly expens
 
 **Single user:** Personal tool. One seeded user. Auth via middleware token (no multi-tenancy in MVP).
 
+**No month is hardcoded.** Seed data uses May 2026 as a demo/example only. All logic operates on the dynamically computed active month.
+
 ---
 
 ## 2. Architecture
@@ -23,46 +25,58 @@ Hermes Finance is a personal financial assistant MVP for tracking monthly expens
 app/
   (auth)/
     login/
-      page.tsx                  ← password form (WEB_ACCESS_TOKEN)
+      page.tsx                    ← password form (WEB_ACCESS_TOKEN)
+    logout/
+      route.ts                    ← POST: clears hermes_session cookie, redirects /login
   (app)/
     dashboard/
-      page.tsx                  ← main monthly dashboard
+      page.tsx                    ← main monthly dashboard
     transactions/
-      page.tsx                  ← full transaction list + filters
+      page.tsx                    ← full transaction list + filters
     settings/
-      page.tsx                  ← monthly config: income, thresholds, budgets, exchange rate
+      page.tsx                    ← monthly config: income, thresholds, budgets, exchange rate
   api/
     telegram/
       webhook/
-        route.ts                ← POST handler, validates secret token
+        route.ts                  ← POST handler, validates secret token
     transactions/
-      route.ts                  ← GET (list) / POST (create)
+      route.ts                    ← GET (list) / POST (create)
+    settings/
+      thresholds/
+        route.ts                  ← PATCH: saving_goal_usd, saving_goal_yellow
+      budgets/
+        route.ts                  ← PATCH: budget_ars per category per month
+      monthly/
+        route.ts                  ← PATCH: income_usd, exchange_rate (manual)
     exchange-rate/
-      route.ts                  ← POST: fetch from Ripio, save to monthly_settings
+      route.ts                    ← POST: fetch from Ripio, save to monthly_settings
     cron/
       update-exchange-rate/
-        route.ts                ← GET: called by Vercel Cron at start of each month
-  middleware.ts                 ← session cookie check for (app)/* routes
+        route.ts                  ← GET: called by Vercel Cron monthly
+  middleware.ts                   ← signed session cookie check for (app)/* routes
 
 lib/
   db/
-    client.ts                   ← Turso/Drizzle client singleton
-    schema.ts                   ← all table definitions
-    seed.ts                     ← initial user + categories + May 2026 example data
-    migrations/                 ← drizzle-kit generated
+    client.ts                     ← Turso/Drizzle client singleton
+    schema.ts                     ← all table definitions
+    seed.ts                       ← initial user + categories + demo month data
+    migrations/                   ← drizzle-kit generated
   finance/
-    rules.ts                    ← calculateMonthStatus, calculateCategoryStatus
-    summaries.ts                ← getMonthSummary, getCategoryBreakdown
-    formatters.ts               ← formatARS, formatUSD, formatPercent
+    rules.ts                      ← calculateMonthStatus, calculateCategoryStatus
+    summaries.ts                  ← getMonthSummary, getCategoryBreakdown
+    formatters.ts                 ← formatARS, formatUSD, formatPercent
   telegram/
-    send-message.ts             ← sendTelegramMessage(chatId, text)
-    handlers.ts                 ← command router: /start, /gasto, /resumen, /disponible, /ultimo, /borrar_ultimo
-    formatters.ts               ← formatSummaryMessage, formatGastoResponse
+    send-message.ts               ← sendTelegramMessage(chatId, text)
+    handlers.ts                   ← command router
+    formatters.ts                 ← formatSummaryMessage, formatGastoResponse
   ai/
-    groq.ts                     ← Groq client, guarded by GROQ_API_KEY presence check
-    parse-message.ts            ← parseFinancialMessage(text): FinancialIntent | null
+    groq.ts                       ← Groq client, guarded by GROQ_API_KEY check
+    parse-message.ts              ← parseFinancialMessage(text): FinancialIntent | null
   exchange/
-    ripio.ts                    ← fetchRipioRate(): Promise<number> — extracts sell_rate from USDT_ARS
+    ripio.ts                      ← fetchRipioRate(): Promise<number>
+  utils/
+    dates.ts                      ← getArgentinaDate(), getActiveMonthArgentina()
+    session.ts                    ← signSession(), verifySession()
 
 components/
   dashboard/
@@ -71,20 +85,39 @@ components/
     DonutChart.tsx
     BarChart.tsx
     MonthNav.tsx
-    ClosedCategoryModal.tsx     ← modal shown when user tries to add to a CLOSED category
+    ClosedCategoryModal.tsx       ← modal for CLOSED or hard_limit blocked category
+    ExceptionConfirmModal.tsx     ← modal to confirm registering an exception expense
   forms/
     ExpenseForm.tsx
-    BudgetForm.tsx              ← inline budget editor in /settings
-    ThresholdForm.tsx           ← semáforo threshold editor in /settings
-  ui/                           ← shadcn/ui components (Button, Input, Select, Dialog, etc.)
+    BudgetForm.tsx
+    ThresholdForm.tsx
+  ui/                             ← shadcn/ui components
 ```
 
 ### 2.2 Auth Flow
 
-- `middleware.ts` protects all routes under `(app)/*`
-- Reads cookie `hermes_session`; redirects to `/login` if absent or invalid
-- `/login` POST: compares password against `WEB_ACCESS_TOKEN` env var → sets `hermes_session` cookie (httpOnly, sameSite=strict) → redirects to `/dashboard`
-- Telegram webhook route is **excluded** from middleware (uses `TELEGRAM_SECRET_TOKEN` header validation instead)
+- `middleware.ts` protects all routes under `(app)/*` and `/api/*` except `/api/telegram/webhook` and `/api/cron/*`
+- On login: password compared against `WEB_ACCESS_TOKEN` env var → **never stored in cookie**
+- Cookie value = **HMAC-SHA256 signed token**: `sign(userId + timestamp, SESSION_SECRET)` — opaque, not reversible
+- `lib/utils/session.ts` exposes `signSession(userId)` and `verifySession(cookie)` using Node.js `crypto.createHmac`
+- Cookie: `hermes_session`, httpOnly, sameSite=strict, secure=true in production, maxAge=7 days
+- `POST /auth/logout` clears the cookie and redirects to `/login`
+- Telegram webhook validated via `X-Telegram-Bot-Api-Secret-Token` header (independent of web auth)
+
+### 2.3 Argentina Date Helpers (`lib/utils/dates.ts`)
+
+```typescript
+// Returns current date in Argentina timezone (UTC-3)
+function getArgentinaDate(): Date
+
+// Returns active month string "YYYY-MM" based on Argentina local time
+function getActiveMonthArgentina(): string
+
+// Returns { start: "YYYY-MM-01", end: "YYYY-MM-DD" } for a given month string
+function getMonthDateRange(month: string): { start: string; end: string }
+```
+
+All date comparisons for "active month" use these helpers. No `new Date()` calls directly in business logic.
 
 ---
 
@@ -94,35 +127,37 @@ components/
 // users
 id: text (uuid, pk)
 name: text
-telegram_user_id: text (unique, nullable)  ← for Telegram auth
-created_at: integer (timestamp)
+telegram_user_id: text (unique, nullable)
+created_at: integer (timestamp ms)
 
 // monthly_settings
 id: text (uuid, pk)
 user_id: text (fk → users.id)
-month: text  ← format: "YYYY-MM", unique per user
+month: text                               ← "YYYY-MM", unique per user
 income_usd: real
-exchange_rate: real                         ← sell_rate from Ripio USDT_ARS, auto-updated monthly
-exchange_rate_source: text                  ← "ripio" | "manual"
-exchange_rate_updated_at: integer
-saving_goal_usd: real                       ← green threshold (configurable via UI)
-saving_goal_yellow: real                    ← yellow threshold (configurable via UI)
+exchange_rate: real                       ← sell_rate from Ripio USDT_ARS
+exchange_rate_source: text                ← "ripio" | "manual"
+exchange_rate_updated_at: integer (nullable)
+saving_goal_usd: real                     ← green threshold
+saving_goal_yellow: real                  ← yellow threshold
 created_at: integer
+UNIQUE(user_id, month)
 
 // categories
 id: text (uuid, pk)
-slug: text (unique)                         ← "supermercado", "verduleria", etc.
-name: text                                  ← "Supermercado"
-emoji: text                                 ← "🛒"
-is_active: integer (boolean)
+slug: text (unique)
+name: text
+emoji: text
+is_active: integer (0|1)
 sort_order: integer
 
 // budgets
 id: text (uuid, pk)
 user_id: text (fk → users.id)
-month: text                                 ← "YYYY-MM"
+month: text                               ← "YYYY-MM"
 category_id: text (fk → categories.id)
-budget_ars: real                            ← 0 = no budget limit (unlimited)
+budget_ars: real                          ← 0 = unlimited
+hard_limit: integer (0|1, default 1)      ← 1=block totally, 0=allow exception with confirmation
 created_at: integer
 UNIQUE(user_id, month, category_id)
 
@@ -130,37 +165,47 @@ UNIQUE(user_id, month, category_id)
 id: text (uuid, pk)
 user_id: text (fk → users.id)
 category_id: text (fk → categories.id)
-amount_ars: real                            ← stored as entered
-amount_usd: real                            ← computed at insert: amount_ars / exchange_rate
+amount_ars: real
+amount_usd: real                          ← computed at insert: amount_ars / exchange_rate
 merchant: text (nullable, max 100)
 description: text (nullable, max 200)
-date: text                                  ← "YYYY-MM-DD"
-month: text                                 ← "YYYY-MM", denormalized for query performance
+date: text                                ← "YYYY-MM-DD"
+month: text                               ← "YYYY-MM", denormalized
+source: text                              ← "web" | "telegram" | "import"
+status: text (default "active")           ← "active" | "deleted"
+is_exception: integer (0|1, default 0)    ← 1 if registered beyond budget with explicit confirmation
+deleted_at: integer (nullable)
 created_at: integer
 
 // bot_messages
 id: text (uuid, pk)
 user_id: text (fk → users.id)
+telegram_chat_id: text
+telegram_user_id: text
+telegram_update_id: text (unique, nullable) ← prevents duplicate processing
 raw_text: text
-parsed_intent: text (nullable)              ← JSON string of FinancialIntent
+parsed_intent: text (nullable)            ← JSON string of FinancialIntent
 response_text: text
 created_at: integer
 ```
 
 **Key constraints:**
-- `amount_usd` is calculated and persisted at insert time using the month's `exchange_rate`. It does not change if the rate is updated later.
-- `month` is denormalized in `transactions` for efficient monthly queries.
-- `budget_ars = 0` means no spending limit for that category that month.
+- `amount_usd` persisted at insert time — immune to later rate changes
+- `month` denormalized in `transactions` for query performance
+- `budget_ars = 0` means unlimited — but those expenses **do count** toward total spend and savings projection
+- All summary queries filter `transactions.status = 'active'`
+- `telegram_update_id` uniqueness prevents duplicate Telegram message processing
 
 ---
 
-## 4. Financial Rules
+## 4. Financial Rules (`lib/finance/rules.ts`)
 
-All rules live in `lib/finance/rules.ts`. **Nothing is hardcoded** — values come from `monthly_settings` and `budgets`.
+Nothing hardcoded — all values from `monthly_settings` and `budgets`.
 
 ### 4.1 Month Status (Semáforo)
 
 ```
+total_gastado_usd = SUM(amount_usd) WHERE month = activeMonth AND status = 'active'
 ahorro_proyectado_usd = income_usd - total_gastado_usd
 
 GREEN  if ahorro_proyectado_usd >= saving_goal_usd
@@ -171,98 +216,113 @@ RED    if ahorro_proyectado_usd < saving_goal_yellow
 ### 4.2 Category Status
 
 ```
-porcentaje = gastado_ars / budget_ars * 100
+gastado_ars = SUM(amount_ars) WHERE category_id = X AND month = activeMonth AND status = 'active'
+porcentaje  = gastado_ars / budget_ars * 100  (only when budget_ars > 0)
 
-OK      if porcentaje < 80
-WARNING if porcentaje >= 80 AND < 100
-CLOSED  if porcentaje >= 100
-
-Special case: if budget_ars = 0 → always OK (unlimited)
+OK      if budget_ars = 0 OR porcentaje < 80
+WARNING if budget_ars > 0 AND porcentaje >= 80 AND < 100
+CLOSED  if budget_ars > 0 AND porcentaje >= 100
 ```
 
-### 4.3 CLOSED Category Enforcement
+### 4.3 Budget Enforcement with Exception Support
 
-- **Backend:** `POST /api/transactions` checks category status before insert. If CLOSED → returns `HTTP 400 { error: "CATEGORY_CLOSED", category: { name, spent, budget } }`
-- **Frontend:** `ExpenseForm` fetches category statuses on mount and when category changes. If user selects a CLOSED category → the `<ClosedCategoryModal>` is shown immediately, the submit button is disabled. User cannot submit.
-- **Telegram:** Handlers check category status before inserting. If CLOSED → sends formatted error message explaining the situation.
+**Default rule:** If a category is CLOSED or the amount would exceed the remaining budget → block.
+
+**Exception flow (when `hard_limit = false`):**
+- Backend: returns `HTTP 422 { error: "BUDGET_EXCEEDED_SOFT", remaining, category }` instead of 400
+- Frontend: shows `<ExceptionConfirmModal>` explaining the overage, asks for explicit confirmation
+- If confirmed: re-sends request with `{ is_exception: true }` → backend accepts and inserts with `is_exception = 1`
+- Telegram: bot asks "¿Confirmás registrar $X en Supermercado aunque supera el presupuesto? Respondé /confirmar o /cancelar"
+
+**Hard block (when `hard_limit = true` or category is CLOSED regardless of hard_limit):**
+- Backend: returns `HTTP 400 { error: "CATEGORY_CLOSED" | "BUDGET_EXCEEDED_HARD" }`
+- Frontend: shows `<ClosedCategoryModal>`, submit remains disabled
+- Telegram: sends error message, no confirmation flow
+
+**Summary:** `hard_limit` controls whether exceptions are possible. CLOSED always hard-blocks regardless.
 
 ### 4.4 Amount Validation
 
-- `amount_ars` must be > 0
-- `amount_ars` must not exceed the remaining budget for that category that month
-  - `max = budget_ars - gastado_ars_actual`
-  - If `budget_ars = 0` (unlimited), no upper cap
-  - Returns `HTTP 400 { error: "EXCEEDS_BUDGET", remaining: number }` if violated
+- `amount_ars` > 0, must not exceed `budget_ars - gastado_ars` (when `budget_ars > 0` and `hard_limit = true`)
+- Upper Zod cap: `999_999_999` (prevents catastrophic typos, not a business rule)
+- If `is_exception: true` in body, backend skips budget cap check (user already confirmed)
 
 ### 4.5 Active Month Definition
 
-- The **active month** for inserts is always the current calendar month (UTC-3 / Argentina time)
-- The dashboard month navigator allows viewing any past month in **read-only mode** — no inserts allowed for past months
-- `date` in a transaction must fall within the active month (e.g., May 1–31 for month "2026-05")
-- Attempting to insert with a date outside the active month returns `HTTP 400 { error: "DATE_OUT_OF_MONTH" }`
+- Active month = `getActiveMonthArgentina()` — always current calendar month in Argentina (UTC-3)
+- Dashboard month navigator: past months are **read-only** (no inserts)
+- `date` field in transactions must fall within the active month
+- Out-of-range date returns `HTTP 400 { error: "DATE_OUT_OF_MONTH" }`
+
+### 4.6 Soft Delete
+
+- `/borrar_ultimo` (Telegram) and equivalent web action: set `status = 'deleted'`, `deleted_at = now()`
+- "Último" = last transaction of the current active month by `created_at DESC` where `status = 'active'`
+- Physical deletion never occurs in MVP
+- All queries for summaries, category status, and totals filter `status = 'active'`
 
 ---
 
-## 5. Exchange Rate
+## 5. Exchange Rate (`lib/exchange/ripio.ts`)
 
-### 5.1 Primary Source: Ripio API (automated)
+### 5.1 Primary Source: Ripio API
 
-Endpoint: `GET https://app.ripio.com/api/v3/public/rates/?country=AR`
+```
+GET https://app.ripio.com/api/v3/public/rates/?country=AR
+Target: ticker === "USDT_ARS" → sell_rate (e.g., "1462.42")
+```
 
-Target ticker: `USDT_ARS` → field `sell_rate` (e.g., `"1462.42"`)
-
-Logic in `lib/exchange/ripio.ts`:
 ```typescript
 async function fetchRipioRate(): Promise<number>
-// Finds ticker === "USDT_ARS", returns parseFloat(sell_rate)
-// Throws if ticker not found or request fails
+// Returns parseFloat(sell_rate) from USDT_ARS ticker
+// Throws RipioFetchError if: network failure, ticker not found, invalid value
 ```
+
+**Failure handling:** If Ripio fetch fails:
+- Keep the last stored `exchange_rate` from `monthly_settings` unchanged
+- Log error server-side
+- Return `{ error: "RIPIO_UNAVAILABLE", lastRate: number, lastUpdated: string }` to the caller
+- UI shows a dismissible warning banner: "No se pudo actualizar el tipo de cambio. Usando último valor: $1.462,42 (actualizado hace 3 días)"
 
 ### 5.2 Auto-update: Vercel Cron
 
 - Route: `GET /api/cron/update-exchange-rate`
-- Protected by `Authorization: Bearer CRON_SECRET` header
-- Vercel cron schedule: `0 0 1 * *` (first day of each month, midnight UTC)
+- Protected by `Authorization: Bearer CRON_SECRET`
+- Schedule: `0 0 1 * *` (first day of month, midnight UTC)
 - Behavior:
-  1. Fetches rate from Ripio
-  2. Finds `monthly_settings` for current month — if not found, **copies** `income_usd`, `saving_goal_usd`, `saving_goal_yellow` from the previous month (or uses hardcoded defaults if no previous month exists)
-  3. Copies budgets from previous month as starting defaults for the new month
-  4. Updates `exchange_rate`, sets `exchange_rate_source = "ripio"`, updates `exchange_rate_updated_at`
-  5. Returns `{ rate, month, initialized: boolean }` — `initialized: true` if a new month was created
+  1. Calls `fetchRipioRate()` — on failure, logs and exits gracefully (does not crash)
+  2. Finds `monthly_settings` for new month — if not found, copies `income_usd`, `saving_goal_usd`, `saving_goal_yellow` from previous month (or default fallbacks: income=0, goals=0)
+  3. Copies budgets row-by-row from previous month
+  4. Saves new exchange rate with `source = "ripio"`
+  5. Returns `{ rate, month, initialized, rateError?: string }`
 
 ### 5.3 Manual Override (complement)
 
-- Settings page has a "Tipo de cambio" section showing current rate, source, and last updated timestamp
-- Button **"Actualizar desde Ripio"** triggers `POST /api/exchange-rate` (authenticated, no cron secret needed)
-- Manual input field + **"Guardar manual"** button → sets `exchange_rate_source = "manual"`
-- UI clearly shows `source` badge ("Ripio automático" vs "Ingreso manual") so the user knows which value is active
+- `PATCH /api/settings/monthly` accepts `{ exchange_rate: number }` → sets `exchange_rate_source = "manual"`
+- Settings UI shows source badge + "Actualizar desde Ripio" button → calls `POST /api/exchange-rate`
+- Manual entry is always available as a fallback
 
 ---
 
 ## 6. Settings Page (`/settings`)
 
-Single page with three configurable sections. All changes persist to DB immediately on save.
+Three sections, all persisted to DB on save.
 
-### 6.1 Configuración del mes
+### 6.1 Configuración mensual → `PATCH /api/settings/monthly`
 
-- Month selector (read-only, shows current active month)
-- Ingreso mensual (USD)
-- Exchange rate display + manual override + "Actualizar desde Ripio" button
+Fields: `income_usd`, `exchange_rate` (manual), `exchange_rate_source`  
+Includes: "Actualizar desde Ripio" button + source badge + last updated timestamp
 
-### 6.2 Umbrales del semáforo
+### 6.2 Umbrales del semáforo → `PATCH /api/settings/thresholds`
 
-Form with two fields:
-- **Meta de ahorro (verde):** USD amount → `saving_goal_usd`
-- **Umbral amarillo:** USD amount → `saving_goal_yellow`
-- Real-time preview: shows what the thresholds mean in ARS at current exchange rate
-- Save button → `PATCH /api/settings/thresholds`
+Fields: `saving_goal_usd` (green), `saving_goal_yellow`  
+Live preview: converts both thresholds to ARS using current exchange rate
 
-### 6.3 Presupuestos por categoría
+### 6.3 Presupuestos por categoría → `PATCH /api/settings/budgets`
 
-Table showing all active categories with an editable `budget_ars` field per row.
-- Inline editing: click a value to edit, press Enter or click away to save
-- `0` = sin límite (shown as "Sin límite" label)
-- Changes hit `PATCH /api/settings/budgets`
+Table with all active categories:
+- `budget_ars`: inline editable (0 = "Sin límite")
+- `hard_limit`: toggle (Bloqueo total / Permitir excepción)
 
 ---
 
@@ -270,23 +330,34 @@ Table showing all active categories with an editable `budget_ars` field per row.
 
 ### 7.1 Webhook Setup
 
-- `POST /api/telegram/webhook`
-- Validates `X-Telegram-Bot-Api-Secret-Token` header === `TELEGRAM_SECRET_TOKEN`
-- Validates `from.id` === `TELEGRAM_ALLOWED_USER_ID` (only one authorized user)
-- Routes to command handlers in `lib/telegram/handlers.ts`
+- `POST /api/telegram/webhook` — excluded from web auth middleware
+- Validates `X-Telegram-Bot-Api-Secret-Token` === `TELEGRAM_SECRET_TOKEN`
+- Validates `from.id` === `TELEGRAM_ALLOWED_USER_ID`
+- Checks `telegram_update_id` for duplicate prevention (idempotent processing)
+- Logs all messages to `bot_messages` with full context
 
 ### 7.2 Commands
 
 | Command | Description |
 |---|---|
-| `/start` | Welcome message with available commands |
+| `/start` | Welcome + list of available commands |
 | `/gasto <monto> <categoria> <descripcion>` | Register expense. Example: `/gasto 47000 supermercado Cordiez` |
-| `/resumen` | Monthly financial status: income, spent, savings, semáforo |
-| `/disponible <categoria>` | Budget, spent, available, status for a category |
-| `/ultimo` | Shows last registered transaction |
-| `/borrar_ultimo` | Deletes the last transaction of the current month by `created_at` desc. Replies with confirmation showing what was deleted. If no transactions exist this month, replies with an informative error message. |
+| `/resumen` | Monthly status: income, spent, savings, semáforo |
+| `/disponible <categoria>` | Budget, spent, available, status |
+| `/ultimo` | Last active transaction of current month |
+| `/borrar_ultimo` | Soft-deletes last active transaction of current month. Confirms what was deleted, or errors if none found. |
 
-### 7.3 Response Format for `/gasto`
+### 7.3 Exception Flow via Telegram
+
+When a budget is exceeded and `hard_limit = false`:
+```
+⚠️ Supermercado casi sin presupuesto.
+Restante: $5.000 — querés registrar $20.000 (exceso: $15.000)?
+Respondé /confirmar o /cancelar.
+```
+Bot stores a pending confirmation in memory (or short-lived DB flag) keyed by chat_id.
+
+### 7.4 Response Format for `/gasto`
 
 ```
 Registrado: $47.000 en Supermercado.
@@ -300,28 +371,17 @@ Estado: ⚠️ ATENCIÓN
 💰 Ahorro proyectado: USD 3.950
 ```
 
-If category is CLOSED:
-```
-❌ Supermercado está cerrado este mes.
-Presupuesto: $146.300
-Gastado: $146.300
-Disponible: $0
-Usá /disponible supermercado para ver el detalle.
-```
+### 7.5 Natural Language (Phase 3)
 
-### 7.4 Natural Language (Phase 3)
-
-- If message does not start with `/` AND `GROQ_API_KEY` is not set:
-  `"Por ahora usá el formato: /gasto monto categoria descripción"`
-- If `GROQ_API_KEY` is set: routes to `lib/ai/parse-message.ts`
+- No `/` prefix + no `GROQ_API_KEY` → `"Por ahora usá el formato: /gasto monto categoria descripción"`
+- With `GROQ_API_KEY` → `lib/ai/parse-message.ts`
 
 ---
 
-## 8. Groq Integration (Phase 3 — isolated, not activated by default)
-
-`lib/ai/parse-message.ts` exposes:
+## 8. Groq Integration (Phase 3 — isolated)
 
 ```typescript
+// lib/ai/parse-message.ts
 interface FinancialIntent {
   intent: "register_expense" | "query_summary" | "query_category" | "unknown"
   amount_ars: number | null
@@ -336,15 +396,13 @@ interface FinancialIntent {
 async function parseFinancialMessage(text: string): Promise<FinancialIntent>
 ```
 
-- Returns early with `intent: "unknown"` if `GROQ_API_KEY` is not set
-- Model: `llama3-8b-8192` (fast, free tier)
-- Low confidence (< 0.7) or `needs_confirmation = true` → bot replies asking for confirmation before inserting
+- Returns `intent: "unknown"` immediately if `GROQ_API_KEY` is not set
+- Model: `process.env.GROQ_MODEL ?? "llama3-8b-8192"` — configurable via env, with safe fallback
+- `confidence < 0.7` or `needs_confirmation = true` → bot asks for confirmation before inserting
 
 ---
 
 ## 9. Validations (Zod)
-
-All API routes validate with Zod before touching the DB.
 
 ### POST /api/transactions
 
@@ -352,47 +410,95 @@ All API routes validate with Zod before touching the DB.
 z.object({
   category_id: z.string().uuid(),
   amount_ars: z.number().positive().max(999_999_999),
-  merchant: z.string().max(100).optional(),
-  description: z.string().max(200).optional(),
+  merchant: z.string().max(100).trim().optional(),
+  description: z.string().max(200).trim().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  source: z.enum(["web", "telegram", "import"]).default("web"),
+  is_exception: z.boolean().default(false),
 })
 ```
 
-Additional runtime checks (not Zod):
-- `date` must be within current active month
-- Category must be active and exist
-- Category must not be CLOSED
-- `amount_ars` must not exceed remaining budget (if budget > 0)
+Runtime checks after Zod (ordered):
+1. `date` within active month → `DATE_OUT_OF_MONTH`
+2. Category exists and is active → `INVALID_CATEGORY`
+3. Category not CLOSED, or `is_exception: true` with `hard_limit = false` → `CATEGORY_CLOSED`
+4. `amount_ars` ≤ remaining budget (when `budget_ars > 0`, `hard_limit = true`, `is_exception = false`) → `BUDGET_EXCEEDED_HARD`
+5. If `budget_ars > 0`, `hard_limit = false`, amount > remaining, `is_exception = false` → `BUDGET_EXCEEDED_SOFT` (422)
+
+### PATCH /api/settings/thresholds
+
+```typescript
+z.object({
+  saving_goal_usd: z.number().positive(),
+  saving_goal_yellow: z.number().positive(),
+}).refine(d => d.saving_goal_yellow < d.saving_goal_usd, {
+  message: "Yellow threshold must be less than green threshold"
+})
+```
+
+### PATCH /api/settings/budgets
+
+```typescript
+z.object({
+  budgets: z.array(z.object({
+    category_id: z.string().uuid(),
+    budget_ars: z.number().min(0),
+    hard_limit: z.boolean(),
+  }))
+})
+```
+
+### PATCH /api/settings/monthly
+
+```typescript
+z.object({
+  income_usd: z.number().positive().optional(),
+  exchange_rate: z.number().positive().optional(),
+})
+```
 
 ---
 
 ## 10. Environment Variables
 
-```
-TURSO_DATABASE_URL          ← libsql://... from Turso dashboard
-TURSO_AUTH_TOKEN            ← auth token from Turso dashboard
-TELEGRAM_BOT_TOKEN          ← from @BotFather
-TELEGRAM_ALLOWED_USER_ID    ← your Telegram user ID (numeric string)
-TELEGRAM_SECRET_TOKEN       ← random secret for webhook header validation
-GROQ_API_KEY                ← optional; enables natural language processing
-CRON_SECRET                 ← random secret to protect cron endpoint
-WEB_ACCESS_TOKEN            ← password for web dashboard access
+```bash
+# Database
+TURSO_DATABASE_URL=         # libsql://... from Turso dashboard
+TURSO_AUTH_TOKEN=           # auth token from Turso dashboard
+
+# Telegram
+TELEGRAM_BOT_TOKEN=         # from @BotFather
+TELEGRAM_ALLOWED_USER_ID=   # your numeric Telegram user ID
+TELEGRAM_SECRET_TOKEN=      # random secret for webhook header validation
+
+# AI (optional — enables natural language in Telegram)
+GROQ_API_KEY=               # from console.groq.com
+GROQ_MODEL=                 # optional; default: llama3-8b-8192
+
+# Cron
+CRON_SECRET=                # random secret to protect /api/cron/* endpoints
+
+# Web Auth
+WEB_ACCESS_TOKEN=           # password used to log into the web dashboard
+SESSION_SECRET=             # random 32+ char string for HMAC cookie signing
 ```
 
 ---
 
 ## 11. Seed Data
 
-Seed creates:
-- 1 user (personal)
-- 10 categories with slugs, names, emojis
-- `monthly_settings` for May 2026: income_usd=4814, exchange_rate=1463, saving_goal_usd=4000, saving_goal_yellow=3800
-- Budgets for May 2026:
+Seed is for **demo/development only**. No month is hardcoded in application logic.
+
+Creates:
+- 1 user
+- 10 categories: supermercado 🛒, verduleria 🥦, salidas_pareja 💑, restaurante 🍽️, servicios 💡, tarjeta 💳, viaje ✈️, compras_personales 🛍️, imprevistos ⚡, ingresos 💵
+- `monthly_settings` for current demo month (May 2026): income_usd=4814, exchange_rate=1463, saving_goal_usd=4000, saving_goal_yellow=3800
+- Budgets for demo month with `hard_limit=1` by default:
   - supermercado: 146,300 ARS
-  - salidas_pareja: 73,150 ARS
+  - salidas_pareja: 73,150 ARS  
   - compras_personales: 73,150 ARS
   - imprevistos: 73,150 ARS
-  - All others: 0 (unlimited)
+  - All others: 0 ARS (unlimited)
 
 ---
 
@@ -412,45 +518,51 @@ Seed creates:
 
 ## 13. Phased Implementation Plan
 
-### Phase 1 (compile + ordered)
-1. Scaffold Next.js project with TypeScript, Tailwind, shadcn/ui
-2. Configure Drizzle + Turso connection
-3. Create schema and run initial migration
-4. Seed database
-5. Implement `lib/finance/rules.ts` and `lib/finance/summaries.ts`
-6. Implement `lib/exchange/ripio.ts`
-7. Build `/dashboard` page with StatusBanner, CategoryList, DonutChart, BarChart
-8. Build `ExpenseForm` with CLOSED modal + Zod validation
-9. Implement `POST /api/transactions` with full validation chain
-10. Build `/settings` page: thresholds form, budget table, exchange rate section
-11. Implement `POST /api/exchange-rate` + `/api/cron/update-exchange-rate`
-12. Auth middleware + `/login` page
+### Phase 1 — Foundation (must compile clean before Phase 2)
+1. Scaffold Next.js (latest stable) with TypeScript, Tailwind, shadcn/ui
+2. Configure Drizzle ORM + Turso client
+3. Create full schema, run initial migration
+4. Write seed script and verify with `db:seed`
+5. Implement `lib/utils/dates.ts` (Argentina date helpers)
+6. Implement `lib/utils/session.ts` (HMAC signing)
+7. Implement `lib/finance/rules.ts` and `lib/finance/summaries.ts`
+8. Implement `lib/exchange/ripio.ts` with failure handling
+9. Auth: `middleware.ts`, `/login` page, `/logout` route
+10. Dashboard page: StatusBanner, CategoryList with status, DonutChart, BarChart, MonthNav
+11. ExpenseForm: Zod validation, CLOSED modal, ExceptionConfirmModal
+12. `POST /api/transactions` with full validation chain including exception flow
+13. Settings page + `PATCH /api/settings/thresholds`, `/budgets`, `/monthly`
+14. `POST /api/exchange-rate` + `GET /api/cron/update-exchange-rate`
 
-### Phase 2 (after Phase 1 compiles clean)
-13. Implement Telegram webhook route
-14. Implement all 6 command handlers
-15. Write Telegram formatters
-16. Test end-to-end: `/gasto`, `/resumen`, `/disponible`, `/ultimo`, `/borrar_ultimo`
+### Phase 2 — Telegram (after Phase 1 passes build)
+15. `POST /api/telegram/webhook` with auth + duplicate prevention
+16. All 6 command handlers in `lib/telegram/handlers.ts`
+17. Exception confirmation flow via Telegram
+18. Telegram formatters
 
-### Phase 3 (isolated, additive)
-17. Implement `lib/ai/groq.ts` and `lib/ai/parse-message.ts`
-18. Wire Groq into Telegram handler for non-command messages
-19. Add `bot_messages` logging
+### Phase 3 — AI Layer (isolated, additive)
+19. `lib/ai/groq.ts` with `GROQ_MODEL` env config + fallback
+20. `lib/ai/parse-message.ts`
+21. Wire into Telegram handler for non-command messages
+22. Full `bot_messages` logging
 
 ---
 
 ## 14. Acceptance Criteria
 
-- [ ] Project runs locally with `npm run dev`
-- [ ] `npm run db:seed` populates DB with example data
-- [ ] Dashboard shows monthly totals, savings projection, semáforo
-- [ ] Expense form: validates input, shows CLOSED modal if category is at limit, blocks submit
-- [ ] `POST /api/transactions` rejects CLOSED categories and over-budget amounts with correct error codes
-- [ ] Semáforo thresholds and budgets are editable via `/settings` UI
-- [ ] Exchange rate auto-updates via cron; manual override available in UI
-- [ ] `/gasto` Telegram command registers a transaction and replies with formatted summary
-- [ ] `/resumen` returns month financial status
-- [ ] `/disponible <category>` returns category breakdown
-- [ ] Codebase is ready to add Groq without architectural changes
-- [ ] Dark mode works on all pages
-- [ ] UI is accessible (ARIA labels, keyboard navigation, color contrast WCAG AA)
+- [ ] `npm run dev` runs without errors
+- [ ] `npm run db:seed` populates DB, no hardcoded months in application code
+- [ ] Login/logout work; cookie is signed (not plain token)
+- [ ] Dashboard shows active month totals, savings projection, semáforo
+- [ ] Expense form: validates input, shows CLOSED modal on hard blocks, shows ExceptionConfirmModal on soft blocks
+- [ ] `POST /api/transactions` enforces all validation rules, returns correct error codes
+- [ ] Exception transactions inserted with `is_exception = 1` when confirmed
+- [ ] `status = 'deleted'` on soft delete; summaries only count `status = 'active'`
+- [ ] Semáforo thresholds, budgets (with hard_limit), and monthly settings editable via `/settings`
+- [ ] Exchange rate auto-fetches from Ripio; Ripio failure keeps last rate + shows warning
+- [ ] `GROQ_MODEL` env var works; fallback to `llama3-8b-8192` when unset
+- [ ] `/gasto` registers transaction with `source = 'telegram'`
+- [ ] `/borrar_ultimo` soft-deletes, confirms action
+- [ ] Codebase ready to add Groq without architectural changes
+- [ ] Dark mode functional on all pages
+- [ ] Accessible: ARIA labels, keyboard navigation, WCAG AA contrast
