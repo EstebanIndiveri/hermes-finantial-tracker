@@ -23,3 +23,21 @@ test("verifySession returns null for tampered token", () => {
 test("verifySession returns null for garbage input", () => {
   expect(verifySession("not-a-token")).toBeNull();
 });
+
+test("verifySession returns null for expired token", () => {
+  const oldTimestamp = Date.now() - (31 * 24 * 60 * 60 * 1000);
+  const payload = `user-123:${oldTimestamp}`;
+  const crypto = require("crypto");
+  const sig = crypto.createHmac("sha256", process.env.SESSION_SECRET).update(payload).digest("hex");
+  const expiredToken = Buffer.from(`${payload}:${sig}`).toString("base64");
+  expect(verifySession(expiredToken)).toBeNull();
+});
+
+test("verifySession accepts token just before expiration", () => {
+  const recentTimestamp = Date.now() - (29 * 24 * 60 * 60 * 1000);
+  const payload = `user-456:${recentTimestamp}`;
+  const crypto = require("crypto");
+  const sig = crypto.createHmac("sha256", process.env.SESSION_SECRET).update(payload).digest("hex");
+  const recentToken = Buffer.from(`${payload}:${sig}`).toString("base64");
+  expect(verifySession(recentToken)).toBe("user-456");
+});

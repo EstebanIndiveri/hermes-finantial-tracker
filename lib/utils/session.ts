@@ -23,6 +23,12 @@ export function verifySession(cookie: string): string | null {
     const sigBuf = Buffer.from(sig);
     const expBuf = Buffer.from(expected);
     if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) return null;
+    
+    const timestamp = parseInt(parts[1], 10);
+    if (isNaN(timestamp)) return null;
+    const maxAgeMs = 30 * 24 * 60 * 60 * 1000;
+    if (Date.now() - timestamp > maxAgeMs) return null;
+    
     return parts[0];
   } catch {
     return null;
