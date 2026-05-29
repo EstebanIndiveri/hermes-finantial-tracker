@@ -96,7 +96,7 @@ describe("POST /api/auth/login", () => {
     expect(cookie?.httpOnly).toBe(true);
     expect(cookie?.path).toBe("/");
 
-    const userId = verifySession(cookie!.value);
+    const userId = await verifySession(cookie!.value);
     expect(userId).toBe("user-123");
   });
 

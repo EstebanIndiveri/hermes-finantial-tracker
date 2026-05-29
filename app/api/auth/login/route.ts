@@ -25,7 +25,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     if (!user) return NextResponse.json({ error: "No user found. Run seed first." }, { status: 500 });
 
-    const sessionValue = signSession(user.id);
+    const sessionValue = await signSession(user.id);
     const res = NextResponse.json({ ok: true });
     res.cookies.set("hermes_session", sessionValue, {
       httpOnly: true,

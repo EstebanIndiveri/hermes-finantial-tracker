@@ -3,12 +3,12 @@ import { verifySession } from "@/lib/utils/session";
 
 const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout", "/api/telegram/webhook", "/api/cron"];
 
-export function middleware(req: NextRequest): NextResponse {
+export async function middleware(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next();
 
   const cookie = req.cookies.get("hermes_session")?.value;
-  const userId = cookie ? verifySession(cookie) : null;
+  const userId = cookie ? await verifySession(cookie) : null;
   if (!userId) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
