@@ -269,7 +269,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
   const parsed = await parseFinancialMessage(text);
 
-  if (parsed.intent === "unknown" || parsed.confidence < 0.7) {
+  if (parsed.intent === "unknown" || parsed.confidence < 0.5) {
     return "No entendí el mensaje. Podés usar:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible categoria\n/borrar_ultimo";
   }
 
