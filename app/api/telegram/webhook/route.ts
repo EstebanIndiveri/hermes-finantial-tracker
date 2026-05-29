@@ -25,7 +25,13 @@ export async function POST(req: NextRequest) {
 
   const telegramUserId = String(update.message.from.id);
   const chatId = String(update.message.chat.id);
-  const messageText = update.message.text ?? "";
+  const msg = update.message;
+  const messageText =
+    msg.text ??
+    msg.caption ??
+    (msg.photo?.length ? "[photo]" : null) ??
+    (msg.document ? "[document]" : null) ??
+    "";
   const allowedId = process.env.TELEGRAM_ALLOWED_USER_ID;
 
   if (!allowedId || telegramUserId !== allowedId) {
