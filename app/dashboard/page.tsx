@@ -97,7 +97,7 @@ export default async function DashboardPage() {
       <div className="grid md:grid-cols-2 gap-6">
         <div>
           <h2 className="font-semibold mb-3">Registrar gasto</h2>
-          <ExpenseForm categories={categoryBreakdown} onSuccess={() => {}} />
+          <ExpenseForm categories={categoryBreakdown} />
         </div>
         <div>
           <h2 className="font-semibold mb-3">Categorías</h2>

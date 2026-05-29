@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +17,8 @@ interface Category {
   hard_limit: number;
 }
 
-export function ExpenseForm({ categories, onSuccess }: { categories: Category[]; onSuccess: () => void }) {
+export function ExpenseForm({ categories }: { categories: Category[] }) {
+  const router = useRouter();
   const [amount, setAmount] = useState("");
   const [catId, setCatId] = useState("");
   const [merchant, setMerchant] = useState("");
@@ -73,7 +75,7 @@ export function ExpenseForm({ categories, onSuccess }: { categories: Category[];
       setMerchant("");
       setDesc("");
       setPendingException(false);
-      onSuccess();
+      router.refresh();
     } catch (err) {
       console.error("Error registering expense:", err);
       toast.error("Error de conexión. Intenta nuevamente.");
