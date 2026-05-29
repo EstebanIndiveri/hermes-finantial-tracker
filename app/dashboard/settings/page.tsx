@@ -238,7 +238,7 @@ export default function SettingsPage() {
             }}>
               <span>Categoría</span>
               <span>Presupuesto (ARS)</span>
-              <span style={{ textAlign: "center" }}>Límite duro</span>
+              <span style={{ textAlign: "right" }}>Límite duro</span>
             </div>
 
             {cats.map(cat => {
@@ -256,7 +256,7 @@ export default function SettingsPage() {
                   onMouseEnter={e => (e.currentTarget.style.background = "var(--hsurface2)")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                 >
-                  <span style={{ fontSize: 13, color: "var(--htext1)", fontWeight: 400 }}>
+                  <span style={{ fontSize: 13, color: "var(--htext1)", fontWeight: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {cat.emoji} {cat.name}
                   </span>
                   <div className="h-input-prefix" style={{ minWidth: 0 }}>
@@ -274,7 +274,7 @@ export default function SettingsPage() {
                       }))}
                     />
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
                     {/* Custom toggle */}
                     <button
                       type="button"
