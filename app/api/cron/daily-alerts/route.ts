@@ -22,7 +22,8 @@ export async function GET(req: NextRequest) {
     const month = getActiveMonthArgentina();
     const today = getArgentinaDate();
     const todayStr = today.toISOString().split("T")[0]; // YYYY-MM-DD
-    const isMonday = today.getDay() === 1;
+    const isForceTest = req.nextUrl.searchParams.get("test") === "1";
+    const isMonday = isForceTest || today.getDay() === 1;
 
     // Get all users (personal app — typically one)
     const allUsers = await db.select().from(users);
