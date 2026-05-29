@@ -38,11 +38,17 @@ export default async function DashboardPage() {
   const pctAhorro = incomeARS > 0 ? Math.round((ahorroARS / incomeARS) * 100) : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-in-up">
+      {/* Page header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">
-          Dashboard <span className="text-muted-foreground text-base font-normal">{month}</span>
-        </h1>
+        <div>
+          <h1 className="font-heading font-bold text-3xl tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            <span className="inline-flex items-center gap-1.5 bg-white/5 border border-border/50 rounded-full px-3 py-0.5 text-xs font-medium">
+              📅 {month}
+            </span>
+          </p>
+        </div>
       </div>
 
       {summary && (
@@ -54,35 +60,48 @@ export default async function DashboardPage() {
       )}
 
       {summary?.exchange_rate_source !== "ripio" && (
-        <div className="text-xs text-yellow-500 bg-yellow-900/20 border border-yellow-700 rounded px-3 py-2">
-          ⚠️ Tipo de cambio ingresado manualmente. Actualizar desde Ajustes para usar la cotización Ripio.
+        <div className="text-xs text-amber-400 bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3 flex items-center gap-2">
+          <span>⚠️</span>
+          <span>Tipo de cambio ingresado manualmente. Actualizar desde Ajustes para usar la cotización Ripio.</span>
         </div>
       )}
 
+      {/* Summary metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryBar
           label="Ingreso mensual"
           value={`$${incomeARS.toLocaleString("es-AR")}`}
           sub={`USD ${summary?.income_usd?.toFixed(0) ?? "—"}`}
+          icon="💵"
         />
-        <SummaryBar label="Gasto total" value={`$${spentARS.toLocaleString("es-AR")}`} />
+        <SummaryBar
+          label="Gasto total"
+          value={`$${spentARS.toLocaleString("es-AR")}`}
+          icon="💸"
+        />
         <SummaryBar
           label="Ahorro proyectado"
           value={`$${ahorroARS.toLocaleString("es-AR")}`}
           sub={`USD ${summary?.ahorro_proyectado_usd?.toFixed(0) ?? "—"}`}
+          icon="🏦"
         />
-        <SummaryBar label="% Ahorro" value={`${pctAhorro}%`} />
+        <SummaryBar label="% Ahorro" value={`${pctAhorro}%`} icon="📊" />
       </div>
 
+      {/* Charts row */}
       <div className="grid md:grid-cols-2 gap-6">
-        <div>
-          <h2 className="font-semibold mb-3">Gastos por categoría</h2>
+        <div className="bg-card border border-border/60 rounded-2xl p-5 card-glow">
+          <h2 className="font-heading font-semibold text-sm uppercase tracking-widest text-muted-foreground mb-4">
+            Gastos por categoría
+          </h2>
           <CategoryDonut
             data={categoryBreakdown.map(c => ({ name: c.name, gastado_ars: c.gastado_ars, emoji: c.emoji }))}
           />
         </div>
-        <div>
-          <h2 className="font-semibold mb-3">Presupuesto vs Gastado</h2>
+        <div className="bg-card border border-border/60 rounded-2xl p-5 card-glow">
+          <h2 className="font-heading font-semibold text-sm uppercase tracking-widest text-muted-foreground mb-4">
+            Presupuesto vs Gastado
+          </h2>
           <SpendingChart
             data={categoryBreakdown.map(c => ({
               name: c.emoji,
@@ -94,14 +113,19 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      {/* Form + Categories */}
+      <div className="grid md:grid-cols-3 gap-6">
         <div>
-          <h2 className="font-semibold mb-3">Registrar gasto</h2>
+          <h2 className="font-heading font-semibold text-sm uppercase tracking-widest text-muted-foreground mb-4">
+            Registrar gasto
+          </h2>
           <ExpenseForm categories={categoryBreakdown} />
         </div>
-        <div>
-          <h2 className="font-semibold mb-3">Categorías</h2>
-          <div className="space-y-2">
+        <div className="md:col-span-2">
+          <h2 className="font-heading font-semibold text-sm uppercase tracking-widest text-muted-foreground mb-4">
+            Categorías
+          </h2>
+          <div className="grid sm:grid-cols-2 gap-3">
             {categoryBreakdown.map(cat => (
               <CategoryCard
                 key={cat.id}
@@ -117,18 +141,21 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {/* Recent transactions */}
       <div>
-        <h2 className="font-semibold mb-3">Últimos movimientos</h2>
+        <h2 className="font-heading font-semibold text-sm uppercase tracking-widest text-muted-foreground mb-4">
+          Últimos movimientos
+        </h2>
         <div className="space-y-2">
           {recentTx.length === 0 && (
-            <p className="text-muted-foreground text-sm">Sin movimientos este mes.</p>
+            <p className="text-muted-foreground text-sm py-6 text-center">Sin movimientos este mes.</p>
           )}
           {recentTx.map(tx => {
             const txWithCat = tx as typeof tx & { category?: { emoji: string; name: string } };
             return (
               <div
                 key={tx.id}
-                className="flex items-center justify-between bg-card border rounded-xl px-4 py-3 text-sm"
+                className="card-glow flex items-center justify-between bg-card border border-border/60 rounded-xl px-4 py-3 text-sm"
               >
                 <div>
                   <span className="font-medium">
@@ -138,7 +165,7 @@ export default async function DashboardPage() {
                     <span className="text-muted-foreground ml-2">{tx.merchant}</span>
                   )}
                 </div>
-                <span className="font-semibold">${tx.amount_ars.toLocaleString("es-AR")}</span>
+                <span className="font-heading font-semibold text-foreground">${tx.amount_ars.toLocaleString("es-AR")}</span>
               </div>
             );
           })}

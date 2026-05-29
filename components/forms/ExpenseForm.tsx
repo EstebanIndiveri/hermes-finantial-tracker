@@ -86,10 +86,13 @@ export function ExpenseForm({ categories }: { categories: Category[] }) {
 
   return (
     <>
-      <form onSubmit={e => { e.preventDefault(); void submit(); }} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label>Monto (ARS)</Label>
+      <form
+        onSubmit={e => { e.preventDefault(); void submit(); }}
+        className="bg-card border border-border/60 rounded-2xl p-5 space-y-4"
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Monto (ARS)</Label>
             <Input
               type="number"
               min="1"
@@ -97,12 +100,15 @@ export function ExpenseForm({ categories }: { categories: Category[] }) {
               value={amount}
               onChange={e => setAmount(e.target.value)}
               placeholder="47000"
+              className="bg-background/50 border-border/60 focus-visible:ring-indigo-500/50 focus-visible:border-indigo-500/50"
             />
           </div>
-          <div>
-            <Label>Categoría</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Categoría</Label>
             <Select value={catId} onValueChange={(val) => setCatId(val ?? "")}>
-              <SelectTrigger><SelectValue placeholder="Seleccioná..." /></SelectTrigger>
+              <SelectTrigger className="bg-background/50 border-border/60 focus:ring-indigo-500/50">
+                <SelectValue placeholder="Seleccioná..." />
+              </SelectTrigger>
               <SelectContent>
                 {categories.map(c => (
                   <SelectItem
@@ -117,25 +123,34 @@ export function ExpenseForm({ categories }: { categories: Category[] }) {
             </Select>
           </div>
         </div>
-        <div>
-          <Label>Comercio (opcional)</Label>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Comercio (opcional)</Label>
           <Input
             value={merchant}
             onChange={e => setMerchant(e.target.value)}
             placeholder="Ej: Carrefour"
             maxLength={100}
+            className="bg-background/50 border-border/60 focus-visible:ring-indigo-500/50 focus-visible:border-indigo-500/50"
           />
         </div>
-        <div>
-          <Label>Descripción (opcional)</Label>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Descripción (opcional)</Label>
           <Input
             value={desc}
             onChange={e => setDesc(e.target.value)}
             placeholder="Ej: compra semanal"
             maxLength={300}
+            className="bg-background/50 border-border/60 focus-visible:ring-indigo-500/50 focus-visible:border-indigo-500/50"
           />
         </div>
-        <Button type="submit" className="w-full" disabled={loading}>
+
+        <Button
+          type="submit"
+          className="w-full bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-semibold shadow-lg shadow-indigo-500/20 transition-all"
+          disabled={loading}
+        >
           {loading ? "Guardando..." : "Registrar gasto"}
         </Button>
       </form>
