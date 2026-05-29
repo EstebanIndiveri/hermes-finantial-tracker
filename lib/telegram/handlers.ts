@@ -31,16 +31,7 @@ interface TelegramUpdate {
  */
 const pendingExceptions = new Map<string, { category_id: string; amount_ars: number; merchant?: string }>();
 
-/** Receipt proposals awaiting /confirmar_ticket or edit */
-const pendingReceipts = new Map<string, {
-  receipt_import_id: string;
-  category_id: string;
-  category_name: string;
-  category_emoji: string;
-  amount_ars: number;
-  merchant?: string;
-  date: string;
-}>();
+/** Receipt proposals are persisted in receipt_imports table (status="pending") — no in-memory state needed */
 
 export async function handleTelegramMessage(update: TelegramUpdate, userId: string): Promise<string> {
   const msg = update.message;
@@ -125,20 +116,40 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   }
 
   // ── /confirmar_ticket ─────────────────────────────────────────
-  if (text === "/confirmar_ticket" && pendingReceipts.has(chatId)) {
-    const pending = pendingReceipts.get(chatId)!;
-    pendingReceipts.delete(chatId);
+  if (text === "/confirmar_ticket") {
+    const pendingImport = await db.query.receipt_imports.findFirst({
+      where: and(
+        eq(receipt_imports.user_id, userId),
+        eq(receipt_imports.status, "pending")
+      ),
+      orderBy: (t, { desc }) => desc(t.created_at),
+    });
+
+    if (!pendingImport || !pendingImport.parsed_amount_ars) {
+      return "No hay ticket pendiente de confirmar. Enviá una foto primero.";
+    }
+
+    const slug = pendingImport.parsed_category_slug ?? null;
+    if (!slug) {
+      return `⚠️ Falta la categoría. Escribila primero (ej: <code>servicios</code>) y luego /confirmar_ticket.`;
+    }
+
+    const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
+    if (!cat) {
+      return `⚠️ Categoría "${slug}" no encontrada. Escribí la categoría correcta para continuar.`;
+    }
 
     const result = await registerTransaction(
-      userId, pending.category_id, pending.amount_ars, pending.merchant, month, false
+      userId, cat.id, pendingImport.parsed_amount_ars,
+      pendingImport.parsed_merchant ?? undefined, month, false
     );
 
     try {
       await db.update(receipt_imports)
         .set({ status: "confirmed", transaction_id: result.transactionId })
-        .where(eq(receipt_imports.id, pending.receipt_import_id));
+        .where(eq(receipt_imports.id, pendingImport.id));
     } catch (err) {
-      console.error("receipt_imports update error:", err instanceof Error ? err.message : String(err));
+      console.error("receipt_imports confirm error:", err instanceof Error ? err.message : String(err));
     }
 
     return result.message;
@@ -146,70 +157,78 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
   // ── /cancelar_ticket ──────────────────────────────────────────
   if (text === "/cancelar_ticket") {
-    const pending = pendingReceipts.get(chatId);
-    pendingReceipts.delete(chatId);
-
-    if (pending) {
-      try {
-        await db.update(receipt_imports)
-          .set({ status: "rejected" })
-          .where(eq(receipt_imports.id, pending.receipt_import_id));
-      } catch { /* swallow */ }
-    }
+    try {
+      await db.update(receipt_imports)
+        .set({ status: "rejected" })
+        .where(
+          and(
+            eq(receipt_imports.user_id, userId),
+            eq(receipt_imports.status, "pending")
+          )
+        );
+    } catch { /* swallow */ }
 
     return "❌ Importación cancelada.";
   }
 
-  // ── EDIT LOOP: free text while a receipt is pending ───────────
-  // User can correct the proposal with text like "35000" / "restaurante" / "35000 restaurante Cordiez"
-  if (pendingReceipts.has(chatId) && text && !text.startsWith("/")) {
-    const pending = pendingReceipts.get(chatId)!;
+  // ── EDIT LOOP: free text while a receipt is pending in DB ─────
+  const pendingImport = text && !text.startsWith("/")
+    ? await db.query.receipt_imports.findFirst({
+        where: and(
+          eq(receipt_imports.user_id, userId),
+          eq(receipt_imports.status, "pending")
+        ),
+        orderBy: (t, { desc }) => desc(t.created_at),
+      })
+    : null;
 
-    // Use Groq NLP to understand the correction
+  if (pendingImport && text && !text.startsWith("/")) {
     const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
     const parsed = await parseFinancialMessage(text);
 
-    // Merge corrections into current proposal
-    let newAmount = pending.amount_ars;
-    let newCategoryId = pending.category_id;
-    let newCategoryName = pending.category_name;
-    let newCategoryEmoji = pending.category_emoji;
-    let newMerchant = pending.merchant;
+    // Merge corrections into current DB state
+    let newAmount = pendingImport.parsed_amount_ars ?? 0;
+    let newSlug = pendingImport.parsed_category_slug ?? null;
+    let newMerchant = pendingImport.parsed_merchant ?? null;
 
     if (parsed.amount_ars && parsed.amount_ars > 0) newAmount = parsed.amount_ars;
 
     if (parsed.category) {
       const slug = parsed.category.toLowerCase();
       const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
-      if (cat) {
-        newCategoryId = cat.id;
-        newCategoryName = cat.name;
-        newCategoryEmoji = cat.emoji;
-      }
+      if (cat) newSlug = slug;
     }
 
     if (parsed.merchant) newMerchant = parsed.merchant;
-    // Also check if the text is just a merchant name (short text, no number, no category keyword)
+    // Plain short text with no number/category → treat as merchant name
     if (!parsed.amount_ars && !parsed.category && text.length < 40) {
       newMerchant = text.trim();
     }
 
-    // Update pending with merged data
-    pendingReceipts.set(chatId, {
-      ...pending,
-      amount_ars: newAmount,
-      category_id: newCategoryId,
-      category_name: newCategoryName,
-      category_emoji: newCategoryEmoji,
-      merchant: newMerchant,
-    });
+    // Persist the corrected values back to receipt_imports
+    try {
+      await db.update(receipt_imports)
+        .set({
+          parsed_amount_ars: newAmount,
+          parsed_category_slug: newSlug,
+          parsed_merchant: newMerchant,
+        })
+        .where(eq(receipt_imports.id, pendingImport.id));
+    } catch (err) {
+      console.error("receipt_imports edit error:", err instanceof Error ? err.message : String(err));
+    }
+
+    // Resolve category display info
+    const cat = newSlug
+      ? await db.query.categories.findFirst({ where: eq(categories.slug, newSlug) })
+      : null;
 
     return buildReceiptProposalMessage({
       amount_ars: newAmount,
-      categoryName: newCategoryName,
-      categoryEmoji: newCategoryEmoji,
-      merchant: newMerchant,
-      date: pending.date,
+      categoryName: cat?.name ?? "sin categoría",
+      categoryEmoji: cat?.emoji ?? "📦",
+      merchant: newMerchant ?? undefined,
+      date: pendingImport.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
       source: "edit",
     });
   }
@@ -408,14 +427,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
           ].join("\n");
         }
 
-        pendingReceipts.set(chatId, {
-          receipt_import_id: receiptId,
-          category_id: cat.id, category_name: cat.name, category_emoji: cat.emoji,
-          amount_ars: parsed.amount_ars,
-          merchant: parsed.merchant ?? undefined,
-          date: getArgentinaDate().toISOString().slice(0, 10),
-        });
-
+        // State already persisted in receipt_imports (status=pending) — no in-memory set needed
         return buildReceiptProposalMessage({
           amount_ars: parsed.amount_ars,
           categoryName: cat.name, categoryEmoji: cat.emoji,
@@ -492,15 +504,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     }
 
     if (!cat) {
-      // Propose without category → user must type category to continue
-      pendingReceipts.set(chatId, {
-        receipt_import_id: receiptId,
-        category_id: "", category_name: "sin categoría", category_emoji: "📦",
-        amount_ars,
-        merchant: merchant ?? undefined,
-        date: parsedDate,
-      });
-
+      // No category detected — state already in DB (status=pending), user must type it
       return [
         `🧾 <b>Ticket detectado</b> (🔍 OCR)`,
         ``,
@@ -516,14 +520,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       ].filter(Boolean).join("\n");
     }
 
-    pendingReceipts.set(chatId, {
-      receipt_import_id: receiptId,
-      category_id: cat.id, category_name: cat.name, category_emoji: cat.emoji,
-      amount_ars,
-      merchant: merchant ?? undefined,
-      date: parsedDate,
-    });
-
+    // State already persisted in receipt_imports (status=pending)
     return buildReceiptProposalMessage({
       amount_ars,
       categoryName: cat.name, categoryEmoji: cat.emoji,
