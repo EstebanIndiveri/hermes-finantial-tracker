@@ -77,11 +77,36 @@ export const bot_messages = sqliteTable("bot_messages", {
 });
 
 // Relations for query builder with `with` syntax
+export const receipt_imports = sqliteTable("receipt_imports", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id),
+  telegram_file_id: text("telegram_file_id"),
+  ocr_raw_text: text("ocr_raw_text"),
+  caption: text("caption"),
+  parsed_amount_ars: real("parsed_amount_ars"),
+  parsed_category_slug: text("parsed_category_slug"),
+  parsed_merchant: text("parsed_merchant"),
+  parsed_date: text("parsed_date"),
+  groq_raw_response: text("groq_raw_response"),
+  status: text("status").notNull().default("pending"),
+  transaction_id: text("transaction_id"),
+  fail_reason: text("fail_reason"),
+  created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   transactions: many(transactions),
   monthly_settings: many(monthly_settings),
   budgets: many(budgets),
   bot_messages: many(bot_messages),
+  receipt_imports: many(receipt_imports),
+}));
+
+export const receiptImportsRelations = relations(receipt_imports, ({ one }) => ({
+  user: one(users, {
+    fields: [receipt_imports.user_id],
+    references: [users.id],
+  }),
 }));
 
 export const transactionsRelations = relations(transactions, ({ one }) => ({
