@@ -54,9 +54,11 @@ export async function POST(req: NextRequest) {
   try {
     response_text = await handleTelegramMessage(update, user.id);
   } catch (err) {
-    const errMsg = err instanceof Error ? `${err.message}\n${err.stack?.slice(0, 300)}` : String(err);
-    console.error("Telegram handler error:", { message: errMsg, updateId });
-    response_text = `🔴 Debug error:\n<code>${errMsg.slice(0, 500)}</code>`;
+    console.error("Telegram handler error:", {
+      message: err instanceof Error ? err.message : "Unknown error",
+      updateId,
+    });
+    response_text = "Error procesando el mensaje.";
   }
 
   try {
