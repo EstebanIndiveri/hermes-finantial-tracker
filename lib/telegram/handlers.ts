@@ -1,6 +1,6 @@
 import { db } from "@/lib/db/client";
 import { transactions, categories, monthly_settings, budgets, bot_messages, receipt_imports } from "@/lib/db/schema";
-import { eq, and, sum } from "drizzle-orm";
+import { eq, and, sum, desc } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
 import { calculateCategoryStatus, calculateMonthStatus } from "@/lib/finance/rules";
@@ -117,13 +117,17 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
   // ── /confirmar_ticket ─────────────────────────────────────────
   if (text === "/confirmar_ticket") {
-    const pendingImport = await db.query.receipt_imports.findFirst({
-      where: and(
+    const rows = await db
+      .select()
+      .from(receipt_imports)
+      .where(and(
         eq(receipt_imports.user_id, userId),
         eq(receipt_imports.status, "pending")
-      ),
-      orderBy: (t, { desc }) => desc(t.created_at),
-    });
+      ))
+      .orderBy(desc(receipt_imports.created_at))
+      .limit(1);
+
+    const pendingImport = rows[0] ?? null;
 
     if (!pendingImport || !pendingImport.parsed_amount_ars) {
       return "No hay ticket pendiente de confirmar. Enviá una foto primero.";
@@ -134,7 +138,8 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       return `⚠️ Falta la categoría. Escribila primero (ej: <code>servicios</code>) y luego /confirmar_ticket.`;
     }
 
-    const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
+    const catRows = await db.select().from(categories).where(eq(categories.slug, slug)).limit(1);
+    const cat = catRows[0] ?? null;
     if (!cat) {
       return `⚠️ Categoría "${slug}" no encontrada. Escribí la categoría correcta para continuar.`;
     }
@@ -172,15 +177,19 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   }
 
   // ── EDIT LOOP: free text while a receipt is pending in DB ─────
-  const pendingImport = text && !text.startsWith("/")
-    ? await db.query.receipt_imports.findFirst({
-        where: and(
+  const pendingEditRows = text && !text.startsWith("/")
+    ? await db
+        .select()
+        .from(receipt_imports)
+        .where(and(
           eq(receipt_imports.user_id, userId),
           eq(receipt_imports.status, "pending")
-        ),
-        orderBy: (t, { desc }) => desc(t.created_at),
-      })
-    : null;
+        ))
+        .orderBy(desc(receipt_imports.created_at))
+        .limit(1)
+    : [];
+
+  const pendingImport = pendingEditRows[0] ?? null;
 
   if (pendingImport && text && !text.startsWith("/")) {
     const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
@@ -195,8 +204,8 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
     if (parsed.category) {
       const slug = parsed.category.toLowerCase();
-      const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
-      if (cat) newSlug = slug;
+      const catEditRows = await db.select().from(categories).where(eq(categories.slug, slug)).limit(1);
+      if (catEditRows[0]) newSlug = slug;
     }
 
     if (parsed.merchant) newMerchant = parsed.merchant;
@@ -219,9 +228,10 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     }
 
     // Resolve category display info
-    const cat = newSlug
-      ? await db.query.categories.findFirst({ where: eq(categories.slug, newSlug) })
-      : null;
+    const catDispRows = newSlug
+      ? await db.select().from(categories).where(eq(categories.slug, newSlug)).limit(1)
+      : [];
+    const cat = catDispRows[0] ?? null;
 
     return buildReceiptProposalMessage({
       amount_ars: newAmount,
