@@ -3,8 +3,8 @@ import { transactions, categories, monthly_settings, budgets, bot_messages } fro
 import { eq, and, sum } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
-import { calculateCategoryStatus } from "@/lib/finance/rules";
-import { formatTransactionConfirm, formatResumen, formatDisponible } from "./formatters";
+import { calculateCategoryStatus, calculateMonthStatus } from "@/lib/finance/rules";
+import { formatTransactionConfirm, formatResumen, formatDisponible, formatPuedo } from "./formatters";
 import { randomUUID } from "crypto";
 
 function escapeHtml(text: string): string {
@@ -41,7 +41,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   const month = getActiveMonthArgentina();
 
   if (text === "/start") {
-    return "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/resumen\n/disponible categoria\n/ultimo\n/borrar_ultimo";
+    return "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible categoria\n/ultimo\n/borrar_ultimo";
   }
 
   if (text === "/resumen") {
@@ -173,6 +173,92 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     }
 
     return registerTransaction(userId, cat.id, amount_ars, merchant, month, false);
+  }
+
+  // ── /puedo monto categoria ──
+  if (text.startsWith("/puedo")) {
+    const parts = text.split(" ");
+    if (parts.length < 2) {
+      return "Uso: /puedo monto [categoria]\nEjemplo: /puedo 35000 salidas_pareja";
+    }
+
+    const amount_ars = parseFloat(parts[1].replace(",", "."));
+    if (isNaN(amount_ars) || amount_ars <= 0) {
+      return "Monto inválido. Ej: /puedo 35000 salidas_pareja";
+    }
+
+    const slug = parts[2]?.toLowerCase() ?? null;
+
+    const [summary, breakdown] = await Promise.all([
+      getMonthSummary(userId, month),
+      getCategoryBreakdown(userId, month),
+    ]);
+
+    if (!summary) return "Sin configuración mensual. Configurá desde la web.";
+
+    const exchangeRate = summary.exchange_rate || 1;
+    const ahorro_usd_before = summary.ahorro_proyectado_usd;
+    const total_spent_usd_after = summary.total_spent_usd + (amount_ars / exchangeRate);
+    const ahorro_usd_after = summary.income_usd - total_spent_usd_after;
+
+    const newMonthStatus = calculateMonthStatus({
+      income_usd: summary.income_usd,
+      total_spent_usd: total_spent_usd_after,
+      saving_goal_usd: summary.saving_goal_usd,
+      saving_goal_yellow: summary.saving_goal_yellow ?? summary.saving_goal_usd * 0.5,
+    });
+
+    // If category provided, show category impact
+    if (slug) {
+      const catData = breakdown.find(c => c.slug === slug || c.name.toLowerCase() === slug.replace(/_/g, " "));
+      if (!catData) {
+        const list = breakdown.map(c => c.slug).join(", ");
+        return `No encontré la categoría "${slug}".\nDisponibles: ${list}`;
+      }
+
+      const newGastado = catData.gastado_ars + amount_ars;
+      const newCategoryStatus = calculateCategoryStatus({
+        gastado_ars: newGastado,
+        budget_ars: catData.budget_ars,
+      });
+      const disponible_after = catData.budget_ars > 0 ? catData.budget_ars - newGastado : null;
+
+      return formatPuedo({
+        amount_ars,
+        category: catData.name,
+        emoji: catData.emoji,
+        gastado_ars: catData.gastado_ars,
+        budget_ars: catData.budget_ars,
+        newCategoryStatus,
+        disponible_after,
+        ahorro_usd_before,
+        ahorro_usd_after,
+        newMonthStatus,
+        saving_goal_usd: summary.saving_goal_usd,
+      });
+    }
+
+    // No category — show only savings impact
+    const monthIcon = newMonthStatus === "GREEN" ? "🟢" : newMonthStatus === "YELLOW" ? "🟡" : "🔴";
+    const decision = newMonthStatus === "RED"
+      ? "🔴 <b>Cuidado</b> — este gasto pondría tu ahorro en rojo."
+      : newMonthStatus === "YELLOW"
+        ? "🟡 <b>Podés, pero con cuidado</b> — estarías ajustado."
+        : "🟢 <b>Sí podés</b> — sin comprometer tus metas.";
+
+    return [
+      `💭 <b>¿Podés gastar ${amount_ars.toLocaleString("es-AR")} ARS?</b>`,
+      ``,
+      decision,
+      ``,
+      `<b>💰 Impacto en ahorro:</b>`,
+      `Antes: USD ${ahorro_usd_before.toFixed(0)} → Después: USD ${ahorro_usd_after.toFixed(0)} ${monthIcon}`,
+      summary.saving_goal_usd > 0
+        ? `Meta: USD ${summary.saving_goal_usd.toFixed(0)} (${Math.round((ahorro_usd_after / summary.saving_goal_usd) * 100)}% alcanzado)`
+        : "",
+      ``,
+      `Tip: /puedo ${parts[1]} [categoria] para ver también el impacto en tu presupuesto.`,
+    ].filter(l => l !== "").join("\n");
   }
 
   const groqKey = process.env.GROQ_API_KEY;

@@ -63,3 +63,64 @@ export function formatDisponible(params: {
     `Estado: ${statusIcon}`,
   ].join("\n");
 }
+
+export function formatPuedo(params: {
+  amount_ars: number;
+  category: string;
+  emoji: string;
+  // Categoría actual
+  gastado_ars: number;
+  budget_ars: number;
+  newCategoryStatus: string;
+  disponible_after: number | null;
+  // Ahorro
+  ahorro_usd_before: number;
+  ahorro_usd_after: number;
+  newMonthStatus: string;
+  saving_goal_usd: number;
+}): string {
+  const {
+    amount_ars, category, emoji,
+    gastado_ars, budget_ars,
+    newCategoryStatus, disponible_after,
+    ahorro_usd_before, ahorro_usd_after,
+    newMonthStatus, saving_goal_usd,
+  } = params;
+
+  const catIcon = newCategoryStatus === "OK" ? "🟢" : newCategoryStatus === "WARNING" ? "🟡" : "🔴";
+  const monthIcon = newMonthStatus === "GREEN" ? "🟢" : newMonthStatus === "YELLOW" ? "🟡" : "🔴";
+
+  // Decision header
+  let decision: string;
+  if (newCategoryStatus === "CLOSED" && budget_ars > 0) {
+    decision = "🔴 <b>No te alcanza</b> — superarías el presupuesto de esta categoría.";
+  } else if (newMonthStatus === "RED") {
+    decision = "🔴 <b>Cuidado</b> — este gasto pondría tu ahorro en rojo.";
+  } else if (newMonthStatus === "YELLOW" || newCategoryStatus === "WARNING") {
+    decision = "🟡 <b>Podés, pero con cuidado</b> — estarías ajustado.";
+  } else {
+    decision = "🟢 <b>Sí podés</b> — sin comprometer tus metas.";
+  }
+
+  const lines = [
+    `💭 <b>¿Podés gastar ${formatARS(amount_ars)} en ${emoji} ${category}?</b>`,
+    ``,
+    decision,
+    ``,
+    `<b>${emoji} ${category} después del gasto:</b>`,
+    `Gastado: ${formatARS(gastado_ars + amount_ars)}${budget_ars > 0 ? ` de ${formatARS(budget_ars)}` : " (sin límite)"}`,
+    disponible_after !== null && disponible_after > 0
+      ? `Disponible: ${formatARS(disponible_after)} ${catIcon}`
+      : disponible_after !== null && disponible_after <= 0
+        ? `Sin disponible restante ${catIcon}`
+        : `Sin presupuesto definido ${catIcon}`,
+    ``,
+    `<b>💰 Impacto en ahorro:</b>`,
+    `Antes: ${formatUSD(ahorro_usd_before)} → Después: ${formatUSD(ahorro_usd_after)} ${monthIcon}`,
+    saving_goal_usd > 0
+      ? `Meta: ${formatUSD(saving_goal_usd)} (${Math.round((ahorro_usd_after / saving_goal_usd) * 100)}% alcanzado)`
+      : "",
+  ];
+
+  return lines.filter(l => l !== "").join("\n");
+}
