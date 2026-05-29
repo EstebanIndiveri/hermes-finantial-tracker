@@ -14,6 +14,7 @@ const createSchema = z.object({
   description: z.string().max(300).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   is_exception: z.boolean().optional().default(false),
+  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -48,8 +49,9 @@ export async function POST(req: NextRequest) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
 
-  const { category_id, amount_ars, merchant, description, is_exception } = parsed.data;
-  const month = getActiveMonthArgentina();
+  const { category_id, amount_ars, merchant, description, is_exception, month: monthParam } = parsed.data;
+  const currentMonth = getActiveMonthArgentina();
+  const month = monthParam && monthParam <= currentMonth ? monthParam : currentMonth;
 
   try {
     const category = await db.query.categories.findFirst({

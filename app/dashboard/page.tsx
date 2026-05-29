@@ -4,17 +4,26 @@ import { db } from "@/lib/db/client";
 import { transactions } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getActiveMonthArgentina } from "@/lib/utils/dates";
-import { MonthStatus } from "@/components/dashboard/MonthStatus";
-import { SummaryBar } from "@/components/dashboard/SummaryBar";
-import { CategoryCard } from "@/components/dashboard/CategoryCard";
-import { CategoryDonut } from "@/components/dashboard/CategoryDonut";
+import { HermesExpenseForm } from "@/components/forms/HermesExpenseForm";
 import { SpendingChart } from "@/components/dashboard/SpendingChart";
-import { ExpenseForm } from "@/components/forms/ExpenseForm";
+import { CategoryDonut } from "@/components/dashboard/CategoryDonut";
+import { MonthSelector } from "@/components/dashboard/MonthSelector";
 
-export default async function DashboardPage() {
+const MONTH_REGEX = /^\d{4}-\d{2}$/;
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>;
+}) {
   const hdrs = await headers();
   const userId = hdrs.get("x-user-id")!;
-  const month = getActiveMonthArgentina();
+  const params = await searchParams;
+  const currentMonth = getActiveMonthArgentina();
+  const month =
+    params.month && MONTH_REGEX.test(params.month) && params.month <= currentMonth
+      ? params.month
+      : currentMonth;
 
   const [summary, categoryBreakdown] = await Promise.all([
     getMonthSummary(userId, month),
@@ -36,141 +45,229 @@ export default async function DashboardPage() {
   const incomeARS = (summary?.income_usd ?? 0) * (summary?.exchange_rate ?? 1);
   const ahorroARS = incomeARS - spentARS;
   const pctAhorro = incomeARS > 0 ? Math.round((ahorroARS / incomeARS) * 100) : 0;
+  const ahorroUSD = summary?.ahorro_proyectado_usd ?? 0;
+  const goalUSD = summary?.saving_goal_usd ?? 0;
+  const status = summary?.status ?? "GREEN";
+
+  // Gauge offset: 188 = full circle. offset=38 means 80% filled
+  const gaugePct = goalUSD > 0 ? Math.min(1, ahorroUSD / goalUSD) : 0;
+  const gaugeOffset = Math.round(188 - gaugePct * 188);
+  const gaugeColor = status === "GREEN" ? "" : status === "YELLOW" ? "yellow" : "red";
+
+  const closedCats = categoryBreakdown.filter(c => c.status === "CLOSED");
+  const monthLabel = new Date(month + "-01").toLocaleDateString("es-AR", { month: "long", year: "numeric" });
 
   return (
-    <div className="space-y-8 animate-fade-in-up">
-      {/* Page header */}
-      <div className="flex items-center justify-between">
+    <>
+      {/* Month selector header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div>
-          <h1 className="font-heading font-bold text-3xl tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            <span className="inline-flex items-center gap-1.5 bg-white/5 border border-border/50 rounded-full px-3 py-0.5 text-xs font-medium">
-              📅 {month}
-            </span>
-          </p>
+          <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 22, fontWeight: 400, color: "var(--htext1)", margin: 0 }}>
+            Dashboard
+          </h1>
+          {month !== currentMonth && (
+            <p style={{ fontSize: 11, color: "var(--haccent)", marginTop: 3, fontWeight: 500 }}>
+              📅 Viendo mes pasado — podés editar libremente
+            </p>
+          )}
         </div>
+        <MonthSelector month={month} />
       </div>
 
-      {summary && (
-        <MonthStatus
-          status={summary.status}
-          ahorro_usd={summary.ahorro_proyectado_usd}
-          saving_goal_usd={summary.saving_goal_usd}
-        />
+      {/* Closed category alert */}
+      {closedCats.length > 0 && (
+        <div className="h-alert-closed h-animate">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <span>
+            {closedCats.map(c => c.name).join(", ")} superó el presupuesto.{" "}
+            {closedCats.length === 1 ? "Categoría cerrada" : "Categorías cerradas"} por este mes.
+          </span>
+        </div>
       )}
 
+      {/* Exchange rate warning */}
       {summary?.exchange_rate_source !== "ripio" && (
-        <div className="text-xs text-amber-400 bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3 flex items-center gap-2">
-          <span>⚠️</span>
-          <span>Tipo de cambio ingresado manualmente. Actualizar desde Ajustes para usar la cotización Ripio.</span>
+        <div className="h-alert-warn h-animate">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>Tipo de cambio ingresado manualmente. Actualizá desde Ajustes para usar cotización Ripio.</span>
         </div>
       )}
 
-      {/* Summary metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryBar
-          label="Ingreso mensual"
-          value={`$${incomeARS.toLocaleString("es-AR")}`}
-          sub={`USD ${summary?.income_usd?.toFixed(0) ?? "—"}`}
-          icon="💵"
-        />
-        <SummaryBar
-          label="Gasto total"
-          value={`$${spentARS.toLocaleString("es-AR")}`}
-          icon="💸"
-        />
-        <SummaryBar
-          label="Ahorro proyectado"
-          value={`$${ahorroARS.toLocaleString("es-AR")}`}
-          sub={`USD ${summary?.ahorro_proyectado_usd?.toFixed(0) ?? "—"}`}
-          icon="🏦"
-        />
-        <SummaryBar label="% Ahorro" value={`${pctAhorro}%`} icon="📊" />
-      </div>
+      {/* ── Status Banner ── */}
+      <div className="h-status-banner h-animate">
+        <div className="h-status-gauge" aria-hidden="true">
+          <svg className="h-gauge-svg" viewBox="0 0 80 80">
+            <circle className="h-gauge-track" cx="40" cy="40" r="30"/>
+            <circle
+              className={`h-gauge-fill${gaugeColor ? ` ${gaugeColor}` : ""}`}
+              cx="40" cy="40" r="30"
+              style={{ strokeDashoffset: gaugeOffset }}
+            />
+          </svg>
+          <div className="h-gauge-center">
+            <div className={`h-gauge-dot${gaugeColor ? ` ${gaugeColor}` : ""}`} />
+          </div>
+        </div>
 
-      {/* Charts row */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-card border border-border/60 rounded-2xl p-5 card-glow">
-          <h2 className="font-heading font-semibold text-sm uppercase tracking-widest text-muted-foreground mb-4">
-            Gastos por categoría
-          </h2>
-          <CategoryDonut
-            data={categoryBreakdown.map(c => ({ name: c.name, gastado_ars: c.gastado_ars, emoji: c.emoji }))}
-          />
+        <div className="h-status-info">
+          <div className={`h-status-badge${gaugeColor ? ` ${gaugeColor}` : ""}`}>
+            {status === "GREEN" ? "Estado verde" : status === "YELLOW" ? "Estado amarillo" : "Estado rojo"}
+          </div>
+          <div className="h-status-main">
+            USD {ahorroUSD.toLocaleString("es-AR", { maximumFractionDigits: 0 })}
+          </div>
+          <div className="h-status-sub">
+            Ahorro proyectado · meta: USD {goalUSD.toLocaleString("es-AR", { maximumFractionDigits: 0 })}
+          </div>
         </div>
-        <div className="bg-card border border-border/60 rounded-2xl p-5 card-glow">
-          <h2 className="font-heading font-semibold text-sm uppercase tracking-widest text-muted-foreground mb-4">
-            Presupuesto vs Gastado
-          </h2>
-          <SpendingChart
-            data={categoryBreakdown.map(c => ({
-              name: c.emoji,
-              gastado: c.gastado_ars,
-              budget: c.budget_ars,
-              status: c.status,
-            }))}
-          />
-        </div>
-      </div>
 
-      {/* Form + Categories */}
-      <div className="grid md:grid-cols-3 gap-6">
-        <div>
-          <h2 className="font-heading font-semibold text-sm uppercase tracking-widest text-muted-foreground mb-4">
-            Registrar gasto
-          </h2>
-          <ExpenseForm categories={categoryBreakdown} />
-        </div>
-        <div className="md:col-span-2">
-          <h2 className="font-heading font-semibold text-sm uppercase tracking-widest text-muted-foreground mb-4">
-            Categorías
-          </h2>
-          <div className="grid sm:grid-cols-2 gap-3">
-            {categoryBreakdown.map(cat => (
-              <CategoryCard
-                key={cat.id}
-                name={cat.name}
-                emoji={cat.emoji}
-                status={cat.status as "OK" | "WARNING" | "CLOSED"}
-                gastado_ars={cat.gastado_ars}
-                budget_ars={cat.budget_ars}
-                disponible_ars={cat.disponible_ars}
-              />
-            ))}
+        <div className="h-status-grid">
+          <div className="h-status-stat">
+            <div className="h-stat-label">Ingreso</div>
+            <div className="h-stat-val">
+              USD {(summary?.income_usd ?? 0).toFixed(0)}
+            </div>
+          </div>
+          <div className="h-status-stat">
+            <div className="h-stat-label">Gastado</div>
+            <div className={`h-stat-val${spentARS > 0 ? " red" : ""}`}>
+              ${spentARS.toLocaleString("es-AR")}
+            </div>
+          </div>
+          <div className="h-status-stat">
+            <div className="h-stat-label">% Ahorro</div>
+            <div className={`h-stat-val${pctAhorro >= 50 ? " green" : " red"}`}>
+              {pctAhorro}%
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Recent transactions */}
-      <div>
-        <h2 className="font-heading font-semibold text-sm uppercase tracking-widest text-muted-foreground mb-4">
-          Últimos movimientos
-        </h2>
-        <div className="space-y-2">
-          {recentTx.length === 0 && (
-            <p className="text-muted-foreground text-sm py-6 text-center">Sin movimientos este mes.</p>
-          )}
-          {recentTx.map(tx => {
-            const txWithCat = tx as typeof tx & { category?: { emoji: string; name: string } };
-            return (
-              <div
-                key={tx.id}
-                className="card-glow flex items-center justify-between bg-card border border-border/60 rounded-xl px-4 py-3 text-sm"
-              >
-                <div>
-                  <span className="font-medium">
-                    {txWithCat.category?.emoji} {txWithCat.category?.name}
-                  </span>
-                  {tx.merchant && (
-                    <span className="text-muted-foreground ml-2">{tx.merchant}</span>
-                  )}
-                </div>
-                <span className="font-heading font-semibold text-foreground">${tx.amount_ars.toLocaleString("es-AR")}</span>
-              </div>
-            );
-          })}
+      {/* ── Charts row ── */}
+      <div className="h-grid-2">
+        <div className="h-card h-animate" style={{ animationDelay: "0.05s" }}>
+          <div className="h-card-header">
+            <h2 className="h-card-title">Distribución por categoría</h2>
+          </div>
+          <div className="h-card-body">
+            <CategoryDonut
+              data={categoryBreakdown.map(c => ({ name: c.name, gastado_ars: c.gastado_ars, emoji: c.emoji }))}
+            />
+          </div>
+        </div>
+
+        <div className="h-card h-animate" style={{ animationDelay: "0.1s" }}>
+          <div className="h-card-header">
+            <h2 className="h-card-title">Presupuesto vs Gastado — {monthLabel}</h2>
+          </div>
+          <div className="h-card-body">
+            <SpendingChart
+              data={categoryBreakdown.map(c => ({
+                name: c.emoji,
+                gastado: c.gastado_ars,
+                budget: c.budget_ars,
+                status: c.status,
+              }))}
+            />
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* ── Categories + Form ── */}
+      <div className="h-grid-2">
+        {/* Categories */}
+        <div className="h-card h-animate" style={{ animationDelay: "0.15s" }}>
+          <div className="h-card-header">
+            <h2 className="h-card-title">Presupuestos {monthLabel}</h2>
+          </div>
+          <div className="h-card-body">
+            <div className="h-cat-list">
+              {categoryBreakdown.map(cat => {
+                const pct = cat.budget_ars > 0 ? Math.min(100, Math.round((cat.gastado_ars / cat.budget_ars) * 100)) : 0;
+                const barClass = cat.status === "OK" ? "h-bar-ok" : cat.status === "WARNING" ? "h-bar-warn" : "h-bar-closed";
+                const badgeClass = cat.status === "OK" ? "h-badge-ok" : cat.status === "WARNING" ? "h-badge-warn" : "h-badge-closed";
+                const badgeLabel = cat.status === "OK" ? "OK" : cat.status === "WARNING" ? "ATENCIÓN" : "CERRADO";
+                return (
+                  <div key={cat.id} className="h-cat-item">
+                    <div>
+                      <div className="h-cat-name">{cat.emoji} {cat.name}</div>
+                      {cat.budget_ars > 0 && (
+                        <div className="h-cat-progress">
+                          <div className={`h-cat-bar ${barClass}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="h-cat-right">
+                      <div className="h-cat-pct">
+                        {cat.budget_ars > 0
+                          ? `$${(cat.gastado_ars / 1000).toFixed(0)}k / $${(cat.budget_ars / 1000).toFixed(0)}k`
+                          : `$${cat.gastado_ars.toLocaleString("es-AR")}`
+                        }
+                      </div>
+                      <div><span className={`h-cat-badge ${badgeClass}`}>{badgeLabel}</span></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Expense Form */}
+        <div className="h-card h-animate" id="expense-form" style={{ animationDelay: "0.2s" }}>
+          <div className="h-card-header">
+            <h2 className="h-card-title">Registrar gasto</h2>
+          </div>
+          <div className="h-card-body">
+            <HermesExpenseForm
+              categories={categoryBreakdown}
+              exchangeRate={summary?.exchange_rate ?? 1}
+              month={month}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Transactions ── */}
+      <div className="h-card h-animate" style={{ animationDelay: "0.25s" }}>
+        <div className="h-card-header">
+          <h2 className="h-section-title">Últimos movimientos</h2>
+        </div>
+        <div className="h-card-body">
+          <div className="h-tx-list">
+            {recentTx.length === 0 && (
+              <div className="h-empty">Sin movimientos este mes.</div>
+            )}
+            {recentTx.map(tx => {
+              const txWithCat = tx as typeof tx & { category?: { emoji: string; name: string } };
+              const iconBg = txWithCat.category?.name?.toLowerCase().includes("super")
+                ? "var(--haccent-soft)"
+                : txWithCat.category?.name?.toLowerCase().includes("verdu")
+                  ? "var(--hgreen-soft)"
+                  : "var(--hsurface2)";
+              return (
+                <div key={tx.id} className="h-tx-item">
+                  <div className="h-tx-icon" style={{ background: iconBg }}>
+                    {txWithCat.category?.emoji ?? "💸"}
+                  </div>
+                  <div className="h-tx-info">
+                    <div className="h-tx-name">{tx.merchant || txWithCat.category?.name}</div>
+                    <div className="h-tx-meta">
+                      {txWithCat.category?.name} · {new Date(tx.created_at).toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
+                    </div>
+                  </div>
+                  <div className="h-tx-amount">${tx.amount_ars.toLocaleString("es-AR")}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
-import { Syne, DM_Sans } from "next/font/google";
-import "./globals.css";
+import { Fraunces, DM_Sans } from "next/font/google";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "@/components/ui/sonner";
+import "./globals.css";
+import "./hermes.css";
 
-const syne = Syne({
+const fraunces = Fraunces({
   subsets: ["latin"],
-  variable: "--font-syne",
-  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-fraunces",
+  weight: ["300", "400", "600"],
+  style: ["normal", "italic"],
 });
 
 const dmSans = DM_Sans({
@@ -22,10 +25,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className="dark">
-      <body className={`${syne.variable} ${dmSans.variable} font-sans antialiased`}>
-        {children}
-        <Toaster richColors />
+    <html lang="es" suppressHydrationWarning>
+      <body className={`${fraunces.variable} ${dmSans.variable}`}>
+        <ThemeProvider>
+          {children}
+          <Toaster richColors />
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { budgets } from "@/lib/db/schema";
-import { and } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getActiveMonthArgentina } from "@/lib/utils/dates";
 import { randomUUID } from "crypto";
@@ -16,6 +16,30 @@ const schema = z.object({
     hard_limit: z.boolean().optional().default(true),
   })).min(1),
 });
+
+/**
+ * Returns budgets for the active month
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const userId = req.headers.get("x-user-id");
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const month = getActiveMonthArgentina();
+    const rows = await db.select().from(budgets).where(
+      and(eq(budgets.user_id, userId), eq(budgets.month, month))
+    );
+
+    return NextResponse.json(rows.map(r => ({
+      category_id: r.category_id,
+      budget_ars: r.budget_ars,
+      hard_limit: r.hard_limit === 1,
+    })));
+  } catch (err) {
+    console.error("Error fetching budgets:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
 
 /**
  * Batch updates or creates budgets for multiple categories

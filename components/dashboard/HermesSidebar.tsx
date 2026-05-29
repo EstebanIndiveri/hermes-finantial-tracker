@@ -1,0 +1,112 @@
+"use client";
+import Link from "next/link";
+import { useTheme } from "next-themes";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+
+export function HermesSidebar() {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && theme === "dark";
+
+  return (
+    <>
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:9 }}
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* Mobile menu button */}
+      <button
+        className="h-mobile-menu-btn"
+        onClick={() => setMobileOpen(!mobileOpen)}
+        style={{
+          position:"fixed", top:14, left:16, zIndex:20,
+          background:"var(--hsurface)", border:"1px solid var(--hborder)",
+          borderRadius:8, padding:"6px 10px", cursor:"pointer",
+          display:"none", alignItems:"center", gap:6,
+          fontSize:13, color:"var(--htext1)"
+        }}
+        aria-label="Abrir menú"
+      >
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <path d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+
+      <aside className={`h-sidebar${mobileOpen ? " open" : ""}`} role="navigation">
+        {/* Brand */}
+        <div className="h-sidebar-brand">
+          <div className="h-brand-logo">
+            <div className="h-brand-icon">H</div>
+            <div>
+              <div className="h-brand-name">Hermes</div>
+              <div className="h-brand-sub">Finance</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Nav */}
+        <nav className="h-sidebar-nav">
+          <div className="h-nav-label">Principal</div>
+          <Link
+            href="/dashboard"
+            className={`h-nav-item${pathname === "/dashboard" ? " active" : ""}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+            </svg>
+            Dashboard
+          </Link>
+
+          <div className="h-nav-label" style={{ marginTop: 16 }}>Configuración</div>
+          <Link
+            href="/dashboard/settings"
+            className={`h-nav-item${pathname === "/dashboard/settings" ? " active" : ""}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+            </svg>
+            Ajustes del mes
+          </Link>
+
+          <form action="/api/auth/logout" method="POST" style={{ marginTop: 4 }}>
+            <button type="submit" className="h-nav-item" style={{ width:"100%" }}>
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+              </svg>
+              Cerrar sesión
+            </button>
+          </form>
+        </nav>
+
+        {/* Theme toggle */}
+        <div className="h-sidebar-footer">
+          <button
+            className="h-theme-toggle"
+            onClick={() => setTheme(isDark ? "light" : "dark")}
+            aria-label="Cambiar modo claro/oscuro"
+          >
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+            </svg>
+            <span>{isDark ? "Modo claro" : "Modo oscuro"}</span>
+            <div className="h-toggle-track">
+              <div className="h-toggle-thumb" />
+            </div>
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+}

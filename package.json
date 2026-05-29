@@ -46,6 +46,7 @@
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.6",
     "jest": "^30.4.2",
+    "playwright": "^1.60.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^4.3.0",
     "ts-jest": "^29.4.11",
