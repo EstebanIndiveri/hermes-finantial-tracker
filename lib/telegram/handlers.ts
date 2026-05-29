@@ -268,10 +268,121 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
   const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
   const parsed = await parseFinancialMessage(text);
+
   if (parsed.intent === "unknown" || parsed.confidence < 0.7) {
-    return "No entendí el mensaje. Usá: /gasto monto categoria descripción";
+    return "No entendí el mensaje. Podés usar:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible categoria\n/borrar_ultimo";
   }
-  return "Entendí tu mensaje. Confirmación de AI pendiente de implementación completa.";
+
+  // ── query_summary → /resumen ──
+  if (parsed.intent === "query_summary") {
+    const summary = await getMonthSummary(userId, month);
+    if (!summary) return "No hay configuración para este mes. Configurá desde la web.";
+    return formatResumen({ month, ...summary });
+  }
+
+  // ── delete_last → /borrar_ultimo ──
+  if (parsed.intent === "delete_last") {
+    const last = await db.query.transactions.findFirst({
+      where: and(
+        eq(transactions.user_id, userId),
+        eq(transactions.month, month),
+        eq(transactions.status, "active")
+      ),
+      orderBy: (t, { desc }) => desc(t.created_at),
+    });
+    if (!last) return "No hay transacciones activas para borrar.";
+    await db.update(transactions)
+      .set({ status: "deleted", deleted_at: Date.now() })
+      .where(eq(transactions.id, last.id));
+    return `✅ Eliminado: $${last.amount_ars.toLocaleString("es-AR")} del ${last.date}`;
+  }
+
+  // ── query_available → /disponible ──
+  if (parsed.intent === "query_available") {
+    const slug = parsed.category?.toLowerCase() ?? null;
+    if (!slug) {
+      // No specific category — show all
+      const breakdown = await getCategoryBreakdown(userId, month);
+      const lines = breakdown
+        .filter(c => c.budget_ars > 0)
+        .map(c => {
+          const icon = c.status === "OK" ? "🟢" : c.status === "WARNING" ? "🟡" : "🔴";
+          const disp = c.disponible_ars !== null ? `$${c.disponible_ars.toLocaleString("es-AR")} disponible` : "sin límite";
+          return `${icon} ${c.emoji} ${c.name}: ${disp}`;
+        });
+      return lines.length > 0
+        ? `<b>💰 Disponible este mes:</b>\n\n${lines.join("\n")}`
+        : "Sin presupuestos configurados.";
+    }
+
+    const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
+    if (!cat) return `No encontré la categoría "${slug}".`;
+    const breakdown = await getCategoryBreakdown(userId, month);
+    const catData = breakdown.find(c => c.id === cat.id);
+    if (!catData) return `Sin datos para ${cat.name} este mes.`;
+    return formatDisponible({
+      category: catData.name,
+      emoji: catData.emoji,
+      budget_ars: catData.budget_ars,
+      gastado_ars: catData.gastado_ars,
+      disponible_ars: catData.disponible_ars,
+      status: catData.status,
+    });
+  }
+
+  // ── register_expense → lógica de /gasto ──
+  if (parsed.intent === "register_expense") {
+    const amount_ars = parsed.amount_ars ?? null;
+    const slug = parsed.category?.toLowerCase() ?? null;
+
+    if (!amount_ars || amount_ars <= 0) {
+      return "Entendí que querés registrar un gasto pero no detecté el monto. Ej: \"gasté 47000 en supermercado\"";
+    }
+    if (!slug) {
+      return `Entendí $${amount_ars.toLocaleString("es-AR")} pero no detecté la categoría.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, viaje, compras_personales, imprevistos`;
+    }
+
+    const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
+    if (!cat) {
+      return `No encontré la categoría "${slug}".\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, viaje, compras_personales, imprevistos`;
+    }
+
+    const merchant = parsed.merchant ?? parsed.description ?? undefined;
+
+    const budget = await db.query.budgets.findFirst({
+      where: and(eq(budgets.user_id, userId), eq(budgets.month, month), eq(budgets.category_id, cat.id)),
+    });
+
+    if (budget && budget.budget_ars > 0) {
+      const spentRows = await db
+        .select({ total: sum(transactions.amount_ars) })
+        .from(transactions)
+        .where(and(
+          eq(transactions.user_id, userId),
+          eq(transactions.month, month),
+          eq(transactions.category_id, cat.id),
+          eq(transactions.status, "active")
+        ));
+      const gastado = Number(spentRows[0]?.total ?? 0);
+      const status = calculateCategoryStatus({ gastado_ars: gastado, budget_ars: budget.budget_ars });
+
+      if (status === "CLOSED") {
+        if (budget.hard_limit) {
+          return `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.`;
+        }
+        pendingExceptions.set(chatId, { category_id: cat.id, amount_ars, merchant });
+        return `⚠️ ${cat.name} está CERRADA (sin límite duro).\nGastado: $${gastado.toLocaleString("es-AR")} / $${budget.budget_ars.toLocaleString("es-AR")}\nRespondé /confirmar para registrar como excepción o /cancelar para cancelar.`;
+      }
+
+      if (gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
+        return `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.`;
+      }
+    }
+
+    return registerTransaction(userId, cat.id, amount_ars, merchant, month, false);
+  }
+
+  return "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]";
 }
 
 async function registerTransaction(
