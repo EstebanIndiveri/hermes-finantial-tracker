@@ -37,3 +37,5 @@ next-env.d.ts
 
 # Visual Companion
 .superpowers/
+.env.local
+.env
