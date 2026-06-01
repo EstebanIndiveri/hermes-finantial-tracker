@@ -8,6 +8,7 @@ import { HermesExpenseForm } from "@/components/forms/HermesExpenseForm";
 import { SpendingChart } from "@/components/dashboard/SpendingChart";
 import { CategoryDonut } from "@/components/dashboard/CategoryDonut";
 import { MonthSelector } from "@/components/dashboard/MonthSelector";
+import { TransactionList } from "@/components/dashboard/TransactionList";
 
 const MONTH_REGEX = /^\d{4}-\d{2}$/;
 
@@ -37,7 +38,6 @@ export default async function DashboardPage({
       eq(transactions.status, "active"),
     ),
     orderBy: (t, { desc }) => desc(t.created_at),
-    limit: 10,
     with: { category: true },
   });
 
@@ -239,33 +239,10 @@ export default async function DashboardPage({
           <h2 className="h-section-title">Últimos movimientos</h2>
         </div>
         <div className="h-card-body">
-          <div className="h-tx-list">
-            {recentTx.length === 0 && (
-              <div className="h-empty">Sin movimientos este mes.</div>
-            )}
-            {recentTx.map(tx => {
-              const txWithCat = tx as typeof tx & { category?: { emoji: string; name: string } };
-              const iconBg = txWithCat.category?.name?.toLowerCase().includes("super")
-                ? "var(--haccent-soft)"
-                : txWithCat.category?.name?.toLowerCase().includes("verdu")
-                  ? "var(--hgreen-soft)"
-                  : "var(--hsurface2)";
-              return (
-                <div key={tx.id} className="h-tx-item">
-                  <div className="h-tx-icon" style={{ background: iconBg }}>
-                    {txWithCat.category?.emoji ?? "💸"}
-                  </div>
-                  <div className="h-tx-info">
-                    <div className="h-tx-name">{tx.merchant || txWithCat.category?.name}</div>
-                    <div className="h-tx-meta">
-                      {txWithCat.category?.name} · {new Date(tx.created_at).toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
-                    </div>
-                  </div>
-                  <div className="h-tx-amount">${tx.amount_ars.toLocaleString("es-AR")}</div>
-                </div>
-              );
-            })}
-          </div>
+          <TransactionList
+            transactions={recentTx as Parameters<typeof TransactionList>[0]["transactions"]}
+            month={month}
+          />
         </div>
       </div>
     </>
