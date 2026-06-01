@@ -177,6 +177,37 @@ describe("POST /api/categories", () => {
     expect(res.status).toBe(409);
   });
 
+  it("returns 409 when UNIQUE constraint fails on insert (race condition)", async () => {
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockDb.insert as jest.Mock).mockReturnValue({
+      values: jest.fn(() => ({
+        returning: jest.fn().mockRejectedValue(new Error("UNIQUE constraint failed: categories.slug")),
+      })),
+    });
+    const req = withUser(makeReq("http://localhost/api/categories", {
+      method: "POST",
+      body: JSON.stringify({ name: "Comida", emoji: "🍕", sort_order: 5 }),
+    }));
+    const res = await POST(req);
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toEqual({ error: "Ya existe una categoría con ese nombre." });
+  });
+
+  it("returns 500 when UNIQUE constraint fails on id", async () => {
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockDb.insert as jest.Mock).mockReturnValue({
+      values: jest.fn(() => ({
+        returning: jest.fn().mockRejectedValue(new Error("UNIQUE constraint failed: categories.id")),
+      })),
+    });
+    const req = withUser(makeReq("http://localhost/api/categories", {
+      method: "POST",
+      body: JSON.stringify({ name: "Comida", emoji: "🍕", sort_order: 5 }),
+    }));
+    const res = await POST(req);
+    expect(res.status).toBe(500);
+  });
+
   it("creates category and returns 201 when valid", async () => {
     (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue(null);
     const created = { id: "new-id", slug: "nueva", name: "Nueva", emoji: "🆕", sort_order: 10, default_hard_limit: 1, is_active: 1 };

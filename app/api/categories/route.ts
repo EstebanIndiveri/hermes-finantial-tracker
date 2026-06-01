@@ -78,6 +78,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("UNIQUE constraint failed: categories.slug")) {
+      return NextResponse.json({ error: "Ya existe una categoría con ese nombre." }, { status: 409 });
+    }
     console.error("Error creating category:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
