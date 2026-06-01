@@ -22,6 +22,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!MONTH_REGEX.test(month)) {
     return NextResponse.json({ error: "Parámetro month inválido. Usar formato YYYY-MM." }, { status: 400 });
   }
+  const monthNum = month.slice(5, 7);
+  if (monthNum < "01" || monthNum > "12") {
+    return NextResponse.json({ error: "Mes inválido. Usar valores entre 01 y 12." }, { status: 400 });
+  }
   if (format !== "csv" && format !== "xlsx") {
     return NextResponse.json({ error: "Parámetro format inválido. Usar csv o xlsx." }, { status: 400 });
   }
@@ -42,7 +46,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       merchant: tx.merchant,
       categoryName: tx.category?.name ?? "Sin categoría",
       categoryEmoji: tx.category?.emoji ?? "📦",
-      amount_ars: tx.amount_ars,
+      amount_ars: tx.amount_ars ?? 0,
       description: tx.description,
     }));
 
@@ -58,7 +62,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const spentMap: Record<string, number> = {};
     for (const tx of txRows) {
-      spentMap[tx.category_id] = (spentMap[tx.category_id] ?? 0) + tx.amount_ars;
+      spentMap[tx.category_id] = (spentMap[tx.category_id] ?? 0) + (tx.amount_ars ?? 0);
     }
 
     const exportCats: ExportCategory[] = allCats.map((cat) => ({
