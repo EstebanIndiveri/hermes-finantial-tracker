@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ExportPanel } from "@/components/dashboard/ExportPanel";
 
@@ -13,5 +15,16 @@ describe("ExportPanel", () => {
     expect(markup).toContain("Excel");
     expect(markup).toContain("Descargar CSV");
     expect(markup).toContain("Descargar Excel");
+  });
+});
+
+describe("export panel styles", () => {
+  it("includes the export panel selectors and spinner animation", () => {
+    const css = fs.readFileSync(path.join(process.cwd(), "app/hermes.css"), "utf8");
+
+    expect(css).toContain(".h-export-panel");
+    expect(css).toContain(".h-export-month-input");
+    expect(css).toContain(".h-export-btn-xl");
+    expect(css).toContain("@keyframes h-spin");
   });
 });

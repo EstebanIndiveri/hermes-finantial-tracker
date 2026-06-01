@@ -583,3 +583,106 @@
 [data-hermes] input[type="number"].h-form-control::-webkit-outer-spin-button,
 [data-hermes] input[type="number"].h-form-control::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 [data-hermes] input[type="number"].h-form-control { -moz-appearance: textfield; }
+
+/* ── Export Panel ──────────────────────────────────────────── */
+.h-export-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.h-export-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.h-export-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--htext2);
+  white-space: nowrap;
+}
+
+.h-export-month-input {
+  padding: 6px 10px;
+  border: 1px solid var(--hborder);
+  border-radius: var(--hradius-sm);
+  background: var(--hsurface);
+  color: var(--htext1);
+  font-size: 13px;
+  font-family: inherit;
+  transition: var(--htransition);
+  cursor: pointer;
+}
+
+.h-export-month-input:focus {
+  outline: none;
+  border-color: var(--haccent);
+  box-shadow: 0 0 0 3px var(--haccent-soft);
+}
+
+.h-export-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.h-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--hborder);
+  border-radius: var(--hradius-sm);
+  background: var(--hsurface);
+  color: var(--htext1);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: var(--htransition);
+}
+
+.h-export-btn:hover:not(:disabled) {
+  border-color: var(--haccent);
+  color: var(--haccent);
+  background: var(--haccent-soft);
+}
+
+.h-export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.h-export-btn-xl {
+  border-color: var(--hgreen);
+  color: var(--hgreen);
+}
+
+.h-export-btn-xl:hover:not(:disabled) {
+  background: var(--hgreen-soft);
+  border-color: var(--hgreen);
+  color: var(--hgreen);
+}
+
+.h-export-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: h-spin 0.6s linear infinite;
+}
+
+@keyframes h-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 640px) {
+  .h-export-panel {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
