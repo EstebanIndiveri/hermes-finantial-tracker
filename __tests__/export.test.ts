@@ -1,3 +1,4 @@
+import * as XLSX from "xlsx";
 import { generateCSV, generateXLSX } from "@/lib/export/generate";
 import type { ExportTransaction, ExportCategory } from "@/lib/export/generate";
 
@@ -154,5 +155,85 @@ describe("generateXLSX", () => {
   it("returns a non-empty buffer", () => {
     const buf = generateXLSX(sampleTxs, sampleCats);
     expect(buf.length).toBeGreaterThan(1000);
+  });
+
+  it("generates exactly 3 sheets", () => {
+    const buf = generateXLSX(sampleTxs, sampleCats);
+    const wb = XLSX.read(buf, { type: "buffer" });
+    expect(wb.SheetNames).toHaveLength(3);
+  });
+
+  it("has correct sheet names", () => {
+    const buf = generateXLSX(sampleTxs, sampleCats);
+    const wb = XLSX.read(buf, { type: "buffer" });
+    expect(wb.SheetNames).toEqual(["Movimientos", "Resumen por categoría", "Presupuestos"]);
+  });
+
+  it("Movimientos sheet has correct header", () => {
+    const buf = generateXLSX(sampleTxs, sampleCats);
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const sheet = wb.Sheets["Movimientos"];
+    expect(sheet["A1"]?.v).toBe("Fecha");
+    expect(sheet["B1"]?.v).toBe("Comercio");
+    expect(sheet["C1"]?.v).toBe("Categoría");
+    expect(sheet["D1"]?.v).toBe("Monto (ARS)");
+    expect(sheet["E1"]?.v).toBe("Descripción");
+  });
+
+  it("Resumen por categoría sheet has correct header", () => {
+    const buf = generateXLSX(sampleTxs, sampleCats);
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const sheet = wb.Sheets["Resumen por categoría"];
+    expect(sheet["A1"]?.v).toBe("Categoría");
+    expect(sheet["B1"]?.v).toBe("Presupuesto (ARS)");
+    expect(sheet["C1"]?.v).toBe("Gastado (ARS)");
+    expect(sheet["D1"]?.v).toBe("Saldo (ARS)");
+    expect(sheet["E1"]?.v).toBe("% Usado");
+  });
+
+  it("Presupuestos sheet has correct header", () => {
+    const buf = generateXLSX(sampleTxs, sampleCats);
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const sheet = wb.Sheets["Presupuestos"];
+    expect(sheet["A1"]?.v).toBe("Categoría");
+    expect(sheet["B1"]?.v).toBe("Límite mensual (ARS)");
+    expect(sheet["C1"]?.v).toBe("Estado");
+  });
+
+  it("Movimientos sheet has data rows matching input", () => {
+    const buf = generateXLSX(sampleTxs, sampleCats);
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets["Movimientos"], { header: 1 }) as unknown[][];
+    expect(rows).toHaveLength(sampleTxs.length + 1);
+    expect(rows[1]).toEqual(["10/05/2026", "Disco", "🛒 Supermercado", 15000, "compras semana"]);
+    expect(rows[2]).toEqual(["15/05/2026", "", "🍽️ Salidas", 8500, ""]);
+  });
+
+  it("Resumen por categoría sheet has data rows matching input", () => {
+    const buf = generateXLSX(sampleTxs, sampleCats);
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets["Resumen por categoría"], { header: 1 }) as unknown[][];
+    expect(rows).toHaveLength(sampleCats.length + 1);
+    expect(rows[1]).toEqual(["🛒 Supermercado", 50000, 15000, 35000, "30%"]);
+    expect(rows[2]).toEqual(["🍽️ Salidas", "Sin límite", 8500, "—", "—"]);
+  });
+
+  it("Presupuestos sheet has data rows matching input", () => {
+    const buf = generateXLSX(sampleTxs, sampleCats);
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets["Presupuestos"], { header: 1 }) as unknown[][];
+    expect(rows).toHaveLength(sampleCats.length + 1);
+    expect(rows[1]).toEqual(["🛒 Supermercado", 50000, "activo"]);
+    expect(rows[2]).toEqual(["🍽️ Salidas", "Sin límite", "activo"]);
+  });
+
+  it("generates workbook with empty inputs and keeps headers", () => {
+    const buf = generateXLSX([], []);
+    const wb = XLSX.read(buf, { type: "buffer" });
+
+    expect(wb.SheetNames).toEqual(["Movimientos", "Resumen por categoría", "Presupuestos"]);
+    expect(wb.Sheets["Movimientos"]["A1"]?.v).toBe("Fecha");
+    expect(wb.Sheets["Resumen por categoría"]["A1"]?.v).toBe("Categoría");
+    expect(wb.Sheets["Presupuestos"]["A1"]?.v).toBe("Categoría");
   });
 });
