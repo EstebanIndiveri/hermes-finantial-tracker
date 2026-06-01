@@ -23,7 +23,8 @@ CAMPOS:
   * restaurante → restaurantes, comida rápida, delivery, cafeterías
   * servicios → servicios, facturas (luz, gas, internet, teléfono)
   * tarjeta → resumen de tarjeta de crédito/débito
-  * viaje → combustible, peajes, transporte, viajes
+  * movilidad → combustible, nafta, peajes, estacionamiento, transporte, Uber, taxi, colectivo, tren, subte
+  * viaje → viajes de turismo, hoteles, vuelos, excursiones
   * compras_personales → ropa, calzado, electrónica, farmacia, perfumería
   * imprevistos → cualquier otro gasto no categorizable
   Si no podés determinar, devolvé null.

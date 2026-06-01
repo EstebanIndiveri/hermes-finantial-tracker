@@ -259,7 +259,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
     const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
     if (!cat) {
-      return `Categoría "${slug}" no encontrada.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, viaje, compras_personales, imprevistos`;
+      return `Categoría "${slug}" no encontrada.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, compras_personales, imprevistos`;
     }
 
     const settings = await db.query.monthly_settings.findFirst({
@@ -523,7 +523,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         `📅 <b>Fecha:</b> ${parsedDate}`,
         ``,
         `⚠️ No detecté la categoría. Respondé con la categoría para continuar:`,
-        `supermercado · verduleria · salidas_pareja · restaurante · servicios · tarjeta · viaje · compras_personales · imprevistos`,
+        `supermercado · verduleria · salidas_pareja · restaurante · servicios · tarjeta · movilidad · viaje · compras_personales · imprevistos`,
         ``,
         `O usá: /gasto ${amount_ars} [categoria]${merchant ? ` ${merchant}` : ""}`,
         `/cancelar_ticket → descartar`,
@@ -676,12 +676,12 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       return "Entendí que querés registrar un gasto pero no detecté el monto. Ej: \"gasté 47000 en supermercado\"";
     }
     if (!slug) {
-      return `Entendí $${amount_ars.toLocaleString("es-AR")} pero no detecté la categoría.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, viaje, compras_personales, imprevistos`;
+      return `Entendí $${amount_ars.toLocaleString("es-AR")} pero no detecté la categoría.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, compras_personales, imprevistos`;
     }
 
     const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
     if (!cat) {
-      return `No encontré la categoría "${slug}".\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, viaje, compras_personales, imprevistos`;
+      return `No encontré la categoría "${slug}".\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, compras_personales, imprevistos`;
     }
 
     const merchant = parsed.merchant ?? parsed.description ?? undefined;

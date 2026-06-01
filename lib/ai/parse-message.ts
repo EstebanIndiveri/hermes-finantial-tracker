@@ -24,7 +24,7 @@ INTENTS disponibles:
 - "delete_last": borrar, deshacer o eliminar el último gasto. Ej: "borrá el último gasto", "deshacer", "me equivoqué borrá"
 - "unknown": no encaja en ninguna categoría financiera
 
-Categorías válidas (slug): supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, viaje, compras_personales, imprevistos
+Categorías válidas (slug): supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, compras_personales, imprevistos
 
 Campos a devolver:
 - intent: uno de los 6 valores anteriores

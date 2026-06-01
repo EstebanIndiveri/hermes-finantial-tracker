@@ -23,6 +23,7 @@ async function seed() {
     { slug: "compras_personales",name: "Compras personales", emoji: "🛍️", sort_order: 8 },
     { slug: "imprevistos",       name: "Imprevistos",        emoji: "⚡", sort_order: 9 },
     { slug: "ingresos",          name: "Ingresos",           emoji: "💵", sort_order: 10 },
+    { slug: "movilidad",         name: "Movilidad",          emoji: "🚗", sort_order: 11 },
   ];
 
   const insertedCats: Record<string, string> = {};
