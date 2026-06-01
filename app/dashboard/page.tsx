@@ -9,6 +9,7 @@ import { SpendingChart } from "@/components/dashboard/SpendingChart";
 import { CategoryDonut } from "@/components/dashboard/CategoryDonut";
 import { MonthSelector } from "@/components/dashboard/MonthSelector";
 import { TransactionList } from "@/components/dashboard/TransactionList";
+import { ExportPanel } from "@/components/dashboard/ExportPanel";
 
 const MONTH_REGEX = /^\d{4}-\d{2}$/;
 
@@ -243,6 +244,16 @@ export default async function DashboardPage({
             transactions={recentTx as Parameters<typeof TransactionList>[0]["transactions"]}
             month={month}
           />
+        </div>
+      </div>
+
+      {/* ── Export ── */}
+      <div className="h-card h-animate" style={{ animationDelay: "0.3s" }}>
+        <div className="h-card-header">
+          <h2 className="h-card-title">Exportar movimientos</h2>
+        </div>
+        <div className="h-card-body">
+          <ExportPanel month={month} />
         </div>
       </div>
     </>

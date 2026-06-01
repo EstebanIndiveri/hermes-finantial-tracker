@@ -28,3 +28,13 @@ describe("export panel styles", () => {
     expect(css).toContain("@keyframes h-spin");
   });
 });
+
+describe("dashboard export integration", () => {
+  it("renders the export card from the dashboard page", () => {
+    const pageSource = fs.readFileSync(path.join(process.cwd(), "app/dashboard/page.tsx"), "utf8");
+
+    expect(pageSource).toContain('import { ExportPanel } from "@/components/dashboard/ExportPanel";');
+    expect(pageSource).toContain("<h2 className=\"h-card-title\">Exportar movimientos</h2>");
+    expect(pageSource).toContain("<ExportPanel month={month} />");
+  });
+});
