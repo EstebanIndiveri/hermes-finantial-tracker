@@ -25,6 +25,7 @@ CAMPOS:
   * tarjeta → resumen de tarjeta de crédito/débito
   * movilidad → combustible, nafta, peajes, estacionamiento, transporte, Uber, taxi, colectivo, tren, subte
   * viaje → viajes de turismo, hoteles, vuelos, excursiones
+  * pareja → gastos compartidos en pareja, regalos de pareja, planes románticos, aniversarios
   * compras_personales → ropa, calzado, electrónica, farmacia, perfumería
   * imprevistos → cualquier otro gasto no categorizable
   Si no podés determinar, devolvé null.

@@ -24,6 +24,7 @@ async function seed() {
     { slug: "imprevistos",       name: "Imprevistos",        emoji: "⚡", sort_order: 9 },
     { slug: "ingresos",          name: "Ingresos",           emoji: "💵", sort_order: 10 },
     { slug: "movilidad",         name: "Movilidad",          emoji: "🚗", sort_order: 11 },
+    { slug: "pareja",            name: "Pareja",             emoji: "💑", sort_order: 12 },
   ];
 
   const insertedCats: Record<string, string> = {};
