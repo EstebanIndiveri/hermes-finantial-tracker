@@ -1,7 +1,7 @@
-// components/dashboard/ExportPanel.tsx
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 
 interface ExportPanelProps {
   month: string; // "YYYY-MM"
@@ -11,16 +11,29 @@ export function ExportPanel({ month }: ExportPanelProps) {
   const [selectedMonth, setSelectedMonth] = useState(month);
   const [downloading, setDownloading] = useState<"csv" | "xlsx" | null>(null);
 
-  function handleDownload(format: "csv" | "xlsx") {
+  async function handleDownload(format: "csv" | "xlsx") {
     setDownloading(format);
-    const url = `/api/export?month=${selectedMonth}&format=${format}`;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `hermes-${selectedMonth}.${format}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => setDownloading(null), 1500);
+    try {
+      const response = await fetch(`/api/export?month=${selectedMonth}&format=${format}`);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: "Error al exportar" }));
+        toast.error(err.error ?? "Error al exportar");
+        return;
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `hermes-${selectedMonth}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Error de red al exportar");
+    } finally {
+      setTimeout(() => setDownloading(null), 1500);
+    }
   }
 
   return (
