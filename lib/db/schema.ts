@@ -30,6 +30,7 @@ export const categories = sqliteTable("categories", {
   emoji: text("emoji").notNull().default("📦"),
   is_active: integer("is_active").notNull().default(1),
   sort_order: integer("sort_order").notNull().default(0),
+  default_hard_limit: integer("default_hard_limit").notNull().default(1),
 });
 
 export const budgets = sqliteTable("budgets", {
