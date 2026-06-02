@@ -26,10 +26,14 @@ const sampleCats: ExportCategory[] = [
   { name: "Salidas", emoji: "🍽️", budget_ars: 0, gastado_ars: 8500, hard_limit: 1 },
 ];
 
+function stripBom(value: string): string {
+  return value.replace(/^\uFEFF/, "");
+}
+
 describe("generateCSV", () => {
   it("includes the correct header row", () => {
     const csv = generateCSV(sampleTxs);
-    const firstLine = csv.split("\n")[0];
+    const firstLine = stripBom(csv).split("\n")[0];
     expect(firstLine).toBe("Fecha,Comercio,Categoría,Monto (ARS),Descripción");
   });
 
@@ -101,6 +105,11 @@ describe("generateCSV", () => {
     const csv = generateCSV([]);
     const lines = csv.split("\n").filter(Boolean);
     expect(lines).toHaveLength(1);
+  });
+
+  it("prepends a UTF-8 BOM for Excel compatibility", () => {
+    const csv = generateCSV(sampleTxs);
+    expect(csv.startsWith("\uFEFF")).toBe(true);
   });
 
   it("escapes embedded quotes inside CSV values", () => {

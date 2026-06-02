@@ -38,6 +38,36 @@ function withUser(req: NextRequest, userId = "user-123") {
 
 const params = { params: Promise.resolve({ id: "cat-123" }) };
 
+function getReferencedColumnNames(sqlNode: unknown): string[] {
+  const names = new Set<string>();
+
+  const visit = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+
+    const record = node as {
+      name?: unknown;
+      queryChunks?: unknown[];
+      value?: unknown[];
+      table?: unknown;
+      columnType?: unknown;
+    };
+
+    if (typeof record.name === "string" && record.table && typeof record.columnType === "string") {
+      names.add(record.name);
+    }
+
+    if (Array.isArray(record.queryChunks)) record.queryChunks.forEach(visit);
+    if (Array.isArray(record.value)) record.value.forEach(visit);
+  };
+
+  visit(sqlNode);
+  return [...names];
+}
+
 describe("PATCH /api/categories/[id]", () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -152,6 +182,31 @@ describe("DELETE /api/categories/[id]", () => {
     expect(res.status).toBe(409);
     const data = await res.json();
     expect(data.count).toBe(1);
+  });
+
+  it("checks all referencing transactions, including soft-deleted ones", async () => {
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-123" });
+    const txWhere = jest.fn(() => [{ value: 0 }]);
+    (mockDb.select as jest.Mock)
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({
+          where: txWhere,
+        })),
+      })
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({
+          where: jest.fn(() => [{ value: 0 }]),
+        })),
+      });
+    (mockDb.delete as jest.Mock).mockReturnValue({
+      where: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([{ id: "cat-123" }]) })),
+    });
+    const req = withUser(makeReq("http://localhost/api/categories/cat-123", { method: "DELETE" }));
+    const res = await DELETE(req, params);
+    expect(res.status).toBe(200);
+    const txGuardColumns = getReferencedColumnNames(txWhere.mock.calls[0][0]);
+    expect(txGuardColumns).toContain("category_id");
+    expect(txGuardColumns).not.toContain("status");
   });
 
   it("returns 409 when category has budgets", async () => {

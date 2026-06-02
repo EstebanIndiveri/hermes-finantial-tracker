@@ -65,7 +65,7 @@ export function generateCSV(txs: ExportTransaction[]): string {
     ].join(",");
   });
 
-  return [header, ...rows].join("\n");
+  return `\uFEFF${[header, ...rows].join("\n")}`;
 }
 
 export function generateXLSX(

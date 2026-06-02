@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db/client";
+import { db, foreignKeysReady } from "@/lib/db/client";
 import { budgets, categories, transactions } from "@/lib/db/schema";
-import { and, count, eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { z } from "zod";
 
 const patchSchema = z.object({
@@ -62,6 +62,8 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
 
 export async function DELETE(req: NextRequest, { params }: RouteContext) {
   try {
+    await foreignKeysReady;
+
     const userId = req.headers.get("x-user-id");
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -75,7 +77,7 @@ export async function DELETE(req: NextRequest, { params }: RouteContext) {
     const [{ value: txCount }] = await db
       .select({ value: count() })
       .from(transactions)
-      .where(and(eq(transactions.category_id, id), eq(transactions.status, "active")));
+      .where(eq(transactions.category_id, id));
 
     if (txCount > 0) {
       return NextResponse.json(
