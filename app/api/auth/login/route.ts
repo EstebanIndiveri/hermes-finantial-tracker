@@ -77,9 +77,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return createSessionResponse(user.id);
   } catch (err) {
     console.error("Error in login:", err);
-    const errObj = err instanceof Error
-      ? { message: err.message, cause: String((err as NodeJS.ErrnoException).cause ?? ""), stack: err.stack?.split("\n")[0] }
-      : { raw: String(err) };
-    return NextResponse.json({ error: "Internal server error", detail: errObj }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
