@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { users, group_invitations } from "@/lib/db/schema";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, isNull } from "drizzle-orm";
 import { signSession } from "@/lib/utils/session";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const invitation = await db.query.group_invitations.findFirst({
       where: and(
         eq(group_invitations.token, invite_token),
-        eq(group_invitations.used, 0),
+        isNull(group_invitations.used_at),
         gt(group_invitations.expires_at, Date.now()),
       ),
     });
