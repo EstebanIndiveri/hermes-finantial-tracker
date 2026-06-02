@@ -26,6 +26,11 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
+  // /onboarding is accessible to authenticated users — skip group resolution
+  if (pathname === "/onboarding") {
+    return NextResponse.next();
+  }
+
   const res = NextResponse.next();
   res.headers.set("x-user-id", userId);
 
