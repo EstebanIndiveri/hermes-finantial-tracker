@@ -11,6 +11,88 @@ interface MonthlySettings {
 interface Category { id: string; name: string; emoji: string; }
 interface BudgetItem { budget_ars: number; hard_limit: boolean; }
 
+function MiCuenta() {
+  const [user, setUser] = useState<{ name: string; has_personal_token: boolean } | null>(null);
+  const [current, setCurrent] = useState("");
+  const [newTok, setNewTok] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(setUser);
+  }, []);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    if (newTok.length < 8) { setMsg({ type: "err", text: "El nuevo token debe tener al menos 8 caracteres." }); return; }
+    if (newTok !== confirm) { setMsg({ type: "err", text: "Los tokens no coinciden." }); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/auth/me/token", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_token: current, new_token: newTok }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMsg({ type: "err", text: data.error ?? "Error al guardar." }); return; }
+      setMsg({ type: "ok", text: "Token actualizado correctamente." });
+      setCurrent(""); setNewTok(""); setConfirm("");
+      setUser(u => u ? { ...u, has_personal_token: true } : u);
+    } catch {
+      setMsg({ type: "err", text: "Error de red." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!user) return null;
+
+  return (
+    <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
+      <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--htext1)", marginBottom: 4 }}>Mi cuenta</h2>
+      <p style={{ fontSize: "0.85rem", color: "var(--htext2)", marginBottom: 16 }}>Hola, <strong>{user.name}</strong></p>
+      {!user.has_personal_token && (
+        <div style={{ background: "var(--hyellow-soft)", border: "1px solid var(--hyellow)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: "0.82rem", color: "var(--hyellow)" }}>
+          ⚠️ Configurá tu token personal para el nuevo sistema de autenticación multi-usuario.
+        </div>
+      )}
+      <form onSubmit={handleSave}>
+        <div style={{ display: "grid", gap: 12 }}>
+          {["Token actual", "Nuevo token", "Confirmar nuevo token"].map((label, i) => {
+            const vals = [current, newTok, confirm];
+            const setters = [setCurrent, setNewTok, setConfirm];
+            return (
+              <div key={i}>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 500, color: "var(--htext2)", marginBottom: 4 }}>{label}</label>
+                <input
+                  type="password"
+                  value={vals[i]}
+                  onChange={e => setters[i](e.target.value)}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid var(--hborder)", background: "var(--hsurface2)", color: "var(--htext1)", fontSize: "0.88rem", boxSizing: "border-box" as const }}
+                />
+              </div>
+            );
+          })}
+        </div>
+        {msg && (
+          <p style={{ fontSize: "0.82rem", marginTop: 10, padding: "8px 12px", borderRadius: 6, background: msg.type === "ok" ? "var(--hgreen-soft)" : "var(--hred-soft)", color: msg.type === "ok" ? "var(--hgreen)" : "var(--hred)" }}>
+            {msg.text}
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={saving || !current || !newTok || !confirm}
+          style={{ marginTop: 14, padding: "9px 20px", borderRadius: 8, border: "none", background: saving || !current || !newTok || !confirm ? "var(--htext3)" : "var(--haccent)", color: "white", cursor: saving ? "not-allowed" : "pointer", fontSize: "0.88rem", fontWeight: 600 }}
+        >
+          {saving ? "Guardando..." : "Cambiar token"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<MonthlySettings | null>(null);
   const [cats, setCats] = useState<Category[]>([]);
@@ -87,6 +169,8 @@ export default function SettingsPage() {
 
   return (
     <div style={{ width: "100%" }}>
+      <MiCuenta />
+
       {/* Page title */}
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 26, fontWeight: 400, color: "var(--htext1)", marginBottom: 4 }}>
