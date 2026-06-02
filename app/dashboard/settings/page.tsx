@@ -112,7 +112,8 @@ function ConectarTelegram() {
     }
   }
 
-  const botName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "hermes_bot";
+  const botName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "HermesFinanceAssistBot";
+  const deepLink = code ? `https://t.me/${botName}?start=link_${code}` : null;
 
   return (
     <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
@@ -124,8 +125,25 @@ function ConectarTelegram() {
         <div>
           <div style={{ background: "var(--haccent-soft)", border: "1px solid var(--haccent)", borderRadius: 8, padding: "14px 16px", marginBottom: 12 }}>
             <p style={{ fontSize: "0.82rem", color: "var(--htext2)", marginBottom: 6 }}>
-              Enviá este comando al bot <strong>@{botName}</strong>:
+              Tocá el botón para vincular automáticamente desde Telegram:
             </p>
+            <a
+              href={deepLink!}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "10px 18px", borderRadius: 8, border: "none",
+                background: "#0088cc", color: "white", textDecoration: "none",
+                fontWeight: 600, fontSize: "0.9rem", marginBottom: 12,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/>
+              </svg>
+              Abrir en Telegram y vincular
+            </a>
+            <p style={{ fontSize: "0.78rem", color: "var(--htext2)", marginBottom: 4 }}>O enviá manualmente al bot <strong>@{botName}</strong>:</p>
             <code style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--haccent)", letterSpacing: "0.05em" }}>
               /vincular {code}
             </code>

@@ -38,6 +38,24 @@ export async function POST(req: NextRequest) {
   });
   if (existing) return NextResponse.json({ ok: true });
 
+  // Handle /vincular and /start link_CODE before user lookup — these work for unlinked users
+  const isVincular = messageText.trim().startsWith("/vincular");
+  const isStartLink = messageText.trim().startsWith("/start link_");
+  if (isVincular || isStartLink) {
+    const handlerText = isStartLink
+      ? messageText.trim().replace("/start link_", "/vincular ")
+      : messageText.trim();
+    const fakeUpdate = { ...update, message: { ...msg, text: handlerText } };
+    let response = "Error procesando el comando.";
+    try {
+      response = await handleTelegramMessage(fakeUpdate, "_", "_");
+    } catch (err) {
+      console.error("Telegram vincular error:", err instanceof Error ? err.message : err);
+    }
+    await sendTelegramMessage(chatId, response);
+    return NextResponse.json({ ok: true });
+  }
+
   // Find user by telegram_user_id
   const user = await db.query.users.findFirst({
     where: eq(users.telegram_user_id, telegramUserId),

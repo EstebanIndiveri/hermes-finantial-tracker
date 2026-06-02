@@ -20,6 +20,7 @@ export default async function DashboardPage({
 }) {
   const hdrs = await headers();
   const userId = hdrs.get("x-user-id")!;
+  const groupId = hdrs.get("x-group-id") ?? userId;
   const params = await searchParams;
   const currentMonth = getActiveMonthArgentina();
   const month =
@@ -28,13 +29,13 @@ export default async function DashboardPage({
       : currentMonth;
 
   const [summary, categoryBreakdown] = await Promise.all([
-    getMonthSummary(userId, month),
-    getCategoryBreakdown(userId, month),
+    getMonthSummary(groupId, month),
+    getCategoryBreakdown(groupId, month),
   ]);
 
   const recentTx = await db.query.transactions.findMany({
     where: and(
-      eq(transactions.user_id, userId),
+      eq(transactions.group_id, groupId),
       eq(transactions.month, month),
       eq(transactions.status, "active"),
     ),
