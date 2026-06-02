@@ -20,6 +20,7 @@ export default function JoinClient({ token }: { token: string }) {
 
   // Registration form state
   const [regName, setRegName] = useState("");
+  const [regUsername, setRegUsername] = useState("");
   const [regToken, setRegToken] = useState("");
   const [regConfirm, setRegConfirm] = useState("");
   const [regError, setRegError] = useState("");
@@ -42,15 +43,21 @@ export default function JoinClient({ token }: { token: string }) {
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setRegError("");
-    if (regToken.length < 8) { setRegError("El token debe tener al menos 8 caracteres."); return; }
-    if (regToken !== regConfirm) { setRegError("Los tokens no coinciden."); return; }
+
+    const USERNAME_REGEX = /^[a-zA-Z0-9_-]+$/;
+    if (!regUsername || regUsername.length < 3 || !USERNAME_REGEX.test(regUsername)) {
+      setRegError("El usuario debe tener al menos 3 caracteres (letras, números, - y _).");
+      return;
+    }
+    if (regToken.length < 8) { setRegError("La contraseña debe tener al menos 8 caracteres."); return; }
+    if (regToken !== regConfirm) { setRegError("Las contraseñas no coinciden."); return; }
 
     setRegistering(true);
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: regName, token: regToken, invite_token: token }),
+        body: JSON.stringify({ name: regName, username: regUsername, password: regToken, invite_token: token }),
       });
       if (!res.ok) {
         const d = await res.json();
@@ -187,7 +194,14 @@ export default function JoinClient({ token }: { token: string }) {
             <input
               type="text"
               value={regName}
-              onChange={e => setRegName(e.target.value)}
+              onChange={e => {
+                setRegName(e.target.value);
+                if (!regUsername) {
+                  setRegUsername(
+                    e.target.value.toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9_-]/g, "")
+                  );
+                }
+              }}
               placeholder="Ej: María García"
               style={inputStyle}
               required
@@ -195,7 +209,26 @@ export default function JoinClient({ token }: { token: string }) {
             />
           </div>
           <div style={{ marginBottom: 12 }}>
-            <label style={labelStyle}>Token personal (mínimo 8 caracteres)</label>
+            <label style={labelStyle}>Nombre de usuario</label>
+            <input
+              style={{ ...inputStyle, fontSize: "16px" }}
+              type="text"
+              autoCapitalize="none"
+              autoCorrect="off"
+              placeholder="ej: esteban_ind"
+              value={regUsername}
+              onChange={e => {
+                const val = e.target.value.toLowerCase().replace(/\s/g, "_");
+                setRegUsername(val);
+              }}
+              required
+            />
+            <span style={{ fontSize: "0.75rem", color: "var(--htext3)", marginTop: 2, display: "block" }}>
+              Solo letras, números, - y _
+            </span>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>Contraseña (mínimo 8 caracteres)</label>
             <input
               type="password"
               value={regToken}
@@ -206,7 +239,7 @@ export default function JoinClient({ token }: { token: string }) {
             />
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Confirmar token</label>
+            <label style={labelStyle}>Confirmar contraseña</label>
             <input
               type="password"
               value={regConfirm}
@@ -223,8 +256,8 @@ export default function JoinClient({ token }: { token: string }) {
           )}
           <button
             type="submit"
-            disabled={registering || !regName.trim() || !regToken || !regConfirm}
-            style={{ ...btnPrimary, background: registering || !regName.trim() || !regToken || !regConfirm ? "var(--htext3)" : "var(--haccent)", cursor: registering ? "not-allowed" : "pointer" }}
+            disabled={registering || !regName.trim() || !regUsername || !regToken || !regConfirm}
+            style={{ ...btnPrimary, background: registering || !regName.trim() || !regUsername || !regToken || !regConfirm ? "var(--htext3)" : "var(--haccent)", cursor: registering ? "not-allowed" : "pointer" }}
           >
             {registering ? "Creando cuenta..." : "Crear cuenta y unirme"}
           </button>
