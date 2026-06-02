@@ -27,6 +27,7 @@ export default function OnboardingPage() {
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadUser() {
@@ -59,18 +60,21 @@ export default function OnboardingPage() {
 
   async function fetchTelegramCode() {
     setLoadingCode(true);
+    setError(null);
     try {
       const res = await fetch("/api/auth/telegram/link-code", { method: "POST" });
       if (!res.ok) {
-        console.error("Error fetching telegram code");
+        setError("No se pudo generar el código. Tocá 'Saltar' e intentalo desde Configuración.");
         return;
       }
       const data = await res.json();
       if (data?.code && typeof data.code === "string") {
         setTelegramCode(data.code);
+      } else {
+        setError("Respuesta inválida del servidor. Podés saltar este paso.");
       }
-    } catch (err) {
-      console.error("Error fetching telegram code:", err);
+    } catch {
+      setError("Error de conexión al generar el código de Telegram.");
     } finally {
       setLoadingCode(false);
     }
@@ -78,6 +82,7 @@ export default function OnboardingPage() {
 
   async function completeOnboarding() {
     setCompleting(true);
+    setError(null);
     try {
       const res = await fetch("/api/auth/me", {
         method: "PATCH",
@@ -85,13 +90,13 @@ export default function OnboardingPage() {
         body: JSON.stringify({ onboarding_completed: true }),
       });
       if (!res.ok) {
-        console.error("Error completing onboarding: response not ok");
+        setError("No se pudo guardar el progreso. Intentá de nuevo.");
         setCompleting(false);
         return;
       }
       router.push("/dashboard");
-    } catch (err) {
-      console.error("Error completing onboarding:", err);
+    } catch {
+      setError("Error de conexión. Verificá tu internet.");
       setCompleting(false);
     }
   }
@@ -249,7 +254,24 @@ export default function OnboardingPage() {
               </ul>
             </div>
 
-            <button onClick={() => setStep(2)} disabled={completing} style={btnPrimary}>
+            {error && (
+              <div style={{
+                background: "var(--hred-soft)",
+                border: "1px solid var(--hred)",
+                borderRadius: 8,
+                padding: "10px 14px",
+                marginBottom: 12,
+                fontSize: "0.82rem",
+                color: "var(--hred)",
+              }}>
+                {error}
+              </div>
+            )}
+
+            <button onClick={() => {
+              setError(null);
+              setStep(2);
+            }} disabled={completing} style={btnPrimary}>
               Ver qué puedo hacer →
             </button>
             <button onClick={completeOnboarding} disabled={completing} style={btnGhost}>
@@ -354,9 +376,24 @@ export default function OnboardingPage() {
               </button>
             </div>
 
+            {error && (
+              <div style={{
+                background: "var(--hred-soft)",
+                border: "1px solid var(--hred)",
+                borderRadius: 8,
+                padding: "10px 14px",
+                marginBottom: 12,
+                fontSize: "0.82rem",
+                color: "var(--hred)",
+              }}>
+                {error}
+              </div>
+            )}
+
             <button
               onClick={() => {
                 if (slideIndex === TOUR_SLIDES.length - 1) {
+                  setError(null);
                   setStep(3);
                   if (!telegramLinked && !telegramCode) {
                     fetchTelegramCode();
@@ -371,6 +408,7 @@ export default function OnboardingPage() {
             </button>
             <button
               onClick={() => {
+                setError(null);
                 setStep(3);
                 if (!telegramLinked && !telegramCode) {
                   fetchTelegramCode();
@@ -514,6 +552,20 @@ export default function OnboardingPage() {
             >
               Podés conectarlo después en Configuración
             </p>
+
+            {error && (
+              <div style={{
+                background: "var(--hred-soft)",
+                border: "1px solid var(--hred)",
+                borderRadius: 8,
+                padding: "10px 14px",
+                marginBottom: 12,
+                fontSize: "0.82rem",
+                color: "var(--hred)",
+              }}>
+                {error}
+              </div>
+            )}
 
             <button
               onClick={completeOnboarding}
