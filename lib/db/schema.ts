@@ -5,6 +5,8 @@ export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   telegram_user_id: text("telegram_user_id").unique(),
+  personal_token_hash: text("personal_token_hash"),
+  active_telegram_group_id: text("active_telegram_group_id").references(() => groups.id),
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
 
@@ -133,6 +135,13 @@ export const group_invitations = sqliteTable("group_invitations", {
   groupIdx: index("gi_group_id_idx").on(t.group_id),
 }));
 
+export const telegram_link_codes = sqliteTable("telegram_link_codes", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expires_at: integer("expires_at").notNull(),
+  used: integer("used").notNull().default(0),
+});
+
 // Relations for query builder with `with` syntax
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -141,6 +150,14 @@ export const usersRelations = relations(users, ({ many }) => ({
   budgets: many(budgets),
   bot_messages: many(bot_messages),
   receipt_imports: many(receipt_imports),
+  telegram_link_codes: many(telegram_link_codes),
+}));
+
+export const telegramLinkCodesRelations = relations(telegram_link_codes, ({ one }) => ({
+  user: one(users, {
+    fields: [telegram_link_codes.user_id],
+    references: [users.id],
+  }),
 }));
 
 export const receiptImportsRelations = relations(receipt_imports, ({ one }) => ({
