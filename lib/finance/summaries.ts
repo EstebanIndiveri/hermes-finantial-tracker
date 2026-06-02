@@ -3,9 +3,9 @@ import { transactions, budgets, monthly_settings, categories } from "@/lib/db/sc
 import { eq, and, sum } from "drizzle-orm";
 import { calculateMonthStatus, calculateCategoryStatus } from "./rules";
 
-export async function getMonthSummary(userId: string, month: string) {
+export async function getMonthSummary(groupId: string, month: string) {
   const settings = await db.query.monthly_settings.findFirst({
-    where: and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)),
+    where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
   });
   if (!settings) return null;
 
@@ -13,7 +13,7 @@ export async function getMonthSummary(userId: string, month: string) {
     .select({ total: sum(transactions.amount_usd) })
     .from(transactions)
     .where(and(
-      eq(transactions.user_id, userId),
+      eq(transactions.group_id, groupId),
       eq(transactions.month, month),
       eq(transactions.status, "active"),
     ));
@@ -40,14 +40,14 @@ export async function getMonthSummary(userId: string, month: string) {
   };
 }
 
-export async function getCategoryBreakdown(userId: string, month: string) {
+export async function getCategoryBreakdown(groupId: string, month: string) {
   const allCats = await db.query.categories.findMany({
-    where: eq(categories.is_active, 1),
+    where: eq(categories.group_id, groupId),
     orderBy: (c, { asc }) => asc(c.sort_order),
   });
 
   const budgetRows = await db.query.budgets.findMany({
-    where: and(eq(budgets.user_id, userId), eq(budgets.month, month)),
+    where: and(eq(budgets.group_id, groupId), eq(budgets.month, month)),
   });
   const budgetMap = Object.fromEntries(budgetRows.map(b => [b.category_id, b]));
 
@@ -55,7 +55,7 @@ export async function getCategoryBreakdown(userId: string, month: string) {
     .select({ category_id: transactions.category_id, total: sum(transactions.amount_ars) })
     .from(transactions)
     .where(and(
-      eq(transactions.user_id, userId),
+      eq(transactions.group_id, groupId),
       eq(transactions.month, month),
       eq(transactions.status, "active"),
     ))

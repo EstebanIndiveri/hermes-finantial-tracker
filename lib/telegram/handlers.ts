@@ -33,7 +33,7 @@ const pendingExceptions = new Map<string, { category_id: string; amount_ars: num
 
 /** Receipt proposals are persisted in receipt_imports table (status="pending") — no in-memory state needed */
 
-export async function handleTelegramMessage(update: TelegramUpdate, userId: string): Promise<string> {
+export async function handleTelegramMessage(update: TelegramUpdate, userId: string, groupId: string): Promise<string> {
   const msg = update.message;
   if (!msg) return "Mensaje no reconocido.";
   
@@ -46,7 +46,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   }
 
   if (text === "/resumen") {
-    const summary = await getMonthSummary(userId, month);
+    const summary = await getMonthSummary(groupId, month);
     if (!summary) return "No hay configuración para este mes. Configurá desde la web.";
     return formatResumen({ month, ...summary });
   }
@@ -55,10 +55,12 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     const slug = text.split(" ")[1]?.toLowerCase();
     if (!slug) return "Uso: /disponible categoria\nEjemplo: /disponible supermercado";
 
-    const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
+    const cat = await db.query.categories.findFirst({
+      where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+    });
     if (!cat) return `No encontré la categoría "${slug}".`;
 
-    const breakdown = await getCategoryBreakdown(userId, month);
+    const breakdown = await getCategoryBreakdown(groupId, month);
     const catData = breakdown.find(c => c.id === cat.id);
     if (!catData) return `Sin datos para ${cat.name} este mes.`;
 
@@ -75,7 +77,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   if (text === "/ultimo") {
     const last = await db.query.transactions.findFirst({
       where: and(
-        eq(transactions.user_id, userId),
+        eq(transactions.group_id, groupId),
         eq(transactions.month, month),
         eq(transactions.status, "active")
       ),
@@ -91,7 +93,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   if (text === "/borrar_ultimo") {
     const last = await db.query.transactions.findFirst({
       where: and(
-        eq(transactions.user_id, userId),
+        eq(transactions.group_id, groupId),
         eq(transactions.month, month),
         eq(transactions.status, "active")
       ),
@@ -100,14 +102,14 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     if (!last) return "No hay transacciones activas para borrar.";
     await db.update(transactions)
       .set({ status: "deleted", deleted_at: Date.now() })
-      .where(eq(transactions.id, last.id));
+      .where(and(eq(transactions.id, last.id), eq(transactions.group_id, groupId)));
     return `✅ Eliminado: $${last.amount_ars.toLocaleString("es-AR")} del ${last.date}`;
   }
 
   if (text === "/confirmar" && pendingExceptions.has(chatId)) {
     const pending = pendingExceptions.get(chatId)!;
     pendingExceptions.delete(chatId);
-    return (await registerTransaction(userId, pending.category_id, pending.amount_ars, pending.merchant, month, true)).message;
+    return (await registerTransaction(userId, groupId, pending.category_id, pending.amount_ars, pending.merchant, month, true)).message;
   }
 
   if (text === "/cancelar") {
@@ -138,14 +140,14 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       return `⚠️ Falta la categoría. Escribila primero (ej: <code>servicios</code>) y luego /confirmar_ticket.`;
     }
 
-    const catRows = await db.select().from(categories).where(eq(categories.slug, slug)).limit(1);
+    const catRows = await db.select().from(categories).where(and(eq(categories.slug, slug), eq(categories.group_id, groupId))).limit(1);
     const cat = catRows[0] ?? null;
     if (!cat) {
       return `⚠️ Categoría "${slug}" no encontrada. Escribí la categoría correcta para continuar.`;
     }
 
     const result = await registerTransaction(
-      userId, cat.id, pendingImport.parsed_amount_ars,
+      userId, groupId, cat.id, pendingImport.parsed_amount_ars,
       pendingImport.parsed_merchant ?? undefined, month, false
     );
 
@@ -204,7 +206,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
     if (parsed.category) {
       const slug = parsed.category.toLowerCase();
-      const catEditRows = await db.select().from(categories).where(eq(categories.slug, slug)).limit(1);
+      const catEditRows = await db.select().from(categories).where(and(eq(categories.slug, slug), eq(categories.group_id, groupId))).limit(1);
       if (catEditRows[0]) newSlug = slug;
     }
 
@@ -229,7 +231,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
     // Resolve category display info
     const catDispRows = newSlug
-      ? await db.select().from(categories).where(eq(categories.slug, newSlug)).limit(1)
+      ? await db.select().from(categories).where(and(eq(categories.slug, newSlug), eq(categories.group_id, groupId))).limit(1)
       : [];
     const cat = catDispRows[0] ?? null;
 
@@ -257,19 +259,21 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     const slug = parts[2].toLowerCase();
     const merchant = parts.slice(3).join(" ") || undefined;
 
-    const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
+    const cat = await db.query.categories.findFirst({
+      where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+    });
     if (!cat) {
       return `Categoría "${slug}" no encontrada.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos`;
     }
 
     const settings = await db.query.monthly_settings.findFirst({
-      where: and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)),
+      where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
     });
     if (!settings) return "Sin configuración mensual. Configurá desde la web.";
 
     const budget = await db.query.budgets.findFirst({
       where: and(
-        eq(budgets.user_id, userId),
+        eq(budgets.group_id, groupId),
         eq(budgets.month, month),
         eq(budgets.category_id, cat.id)
       ),
@@ -280,7 +284,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         .select({ total: sum(transactions.amount_ars) })
         .from(transactions)
         .where(and(
-          eq(transactions.user_id, userId),
+          eq(transactions.group_id, groupId),
           eq(transactions.month, month),
           eq(transactions.category_id, cat.id),
           eq(transactions.status, "active")
@@ -301,7 +305,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       }
     }
 
-    return (await registerTransaction(userId, cat.id, amount_ars, merchant, month, false)).message;
+    return (await registerTransaction(userId, groupId, cat.id, amount_ars, merchant, month, false)).message;
   }
 
   // ── /puedo monto categoria ──
@@ -319,8 +323,8 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     const slug = parts[2]?.toLowerCase() ?? null;
 
     const [summary, breakdown] = await Promise.all([
-      getMonthSummary(userId, month),
-      getCategoryBreakdown(userId, month),
+      getMonthSummary(groupId, month),
+      getCategoryBreakdown(groupId, month),
     ]);
 
     if (!summary) return "Sin configuración mensual. Configurá desde la web.";
@@ -413,7 +417,9 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       ) {
         const slug = parsed.category?.toLowerCase() ?? null;
         const cat = slug
-          ? await db.query.categories.findFirst({ where: eq(categories.slug, slug) })
+          ? await db.query.categories.findFirst({
+              where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+            })
           : null;
 
         await saveReceiptImport({
@@ -488,7 +494,9 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     })();
 
     const cat = slug
-      ? await db.query.categories.findFirst({ where: eq(categories.slug, slug) })
+      ? await db.query.categories.findFirst({
+          where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+        })
       : null;
 
     await saveReceiptImport({
@@ -587,7 +595,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
   // ── query_summary → /resumen ──
   if (parsed.intent === "query_summary") {
-    const summary = await getMonthSummary(userId, month);
+    const summary = await getMonthSummary(groupId, month);
     if (!summary) return "No hay configuración para este mes. Configurá desde la web.";
     return formatResumen({ month, ...summary });
   }
@@ -596,7 +604,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   if (parsed.intent === "delete_last") {
     const last = await db.query.transactions.findFirst({
       where: and(
-        eq(transactions.user_id, userId),
+        eq(transactions.group_id, groupId),
         eq(transactions.month, month),
         eq(transactions.status, "active")
       ),
@@ -605,7 +613,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     if (!last) return "No hay transacciones activas para borrar.";
     await db.update(transactions)
       .set({ status: "deleted", deleted_at: Date.now() })
-      .where(eq(transactions.id, last.id));
+      .where(and(eq(transactions.id, last.id), eq(transactions.group_id, groupId)));
     return `✅ Eliminado: $${last.amount_ars.toLocaleString("es-AR")} del ${last.date}`;
   }
 
@@ -614,7 +622,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     const slug = parsed.category?.toLowerCase() ?? null;
     if (!slug) {
       // No specific category — show all
-      const breakdown = await getCategoryBreakdown(userId, month);
+      const breakdown = await getCategoryBreakdown(groupId, month);
       const lines = breakdown
         .filter(c => c.budget_ars > 0)
         .map(c => {
@@ -627,9 +635,11 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         : "Sin presupuestos configurados.";
     }
 
-    const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
+    const cat = await db.query.categories.findFirst({
+      where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+    });
     if (!cat) return `No encontré la categoría "${slug}".`;
-    const breakdown = await getCategoryBreakdown(userId, month);
+    const breakdown = await getCategoryBreakdown(groupId, month);
     const catData = breakdown.find(c => c.id === cat.id);
     if (!catData) return `Sin datos para ${cat.name} este mes.`;
     return formatDisponible({
@@ -650,8 +660,8 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     }
     const slug = parsed.category?.toLowerCase() ?? null;
     const [summary, breakdown] = await Promise.all([
-      getMonthSummary(userId, month),
-      getCategoryBreakdown(userId, month),
+      getMonthSummary(groupId, month),
+      getCategoryBreakdown(groupId, month),
     ]);
     if (!summary) return "Sin configuración mensual. Configurá desde la web.";
     const exchangeRate = summary.exchange_rate || 1;
@@ -712,7 +722,9 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       return `Entendí $${amount_ars.toLocaleString("es-AR")} pero no detecté la categoría.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos`;
     }
 
-    const cat = await db.query.categories.findFirst({ where: eq(categories.slug, slug) });
+    const cat = await db.query.categories.findFirst({
+      where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+    });
     if (!cat) {
       return `No encontré la categoría "${slug}".\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos`;
     }
@@ -720,7 +732,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     const merchant = parsed.merchant ?? parsed.description ?? undefined;
 
     const budget = await db.query.budgets.findFirst({
-      where: and(eq(budgets.user_id, userId), eq(budgets.month, month), eq(budgets.category_id, cat.id)),
+      where: and(eq(budgets.group_id, groupId), eq(budgets.month, month), eq(budgets.category_id, cat.id)),
     });
 
     if (budget && budget.budget_ars > 0) {
@@ -728,7 +740,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         .select({ total: sum(transactions.amount_ars) })
         .from(transactions)
         .where(and(
-          eq(transactions.user_id, userId),
+          eq(transactions.group_id, groupId),
           eq(transactions.month, month),
           eq(transactions.category_id, cat.id),
           eq(transactions.status, "active")
@@ -749,7 +761,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       }
     }
 
-    return (await registerTransaction(userId, cat.id, amount_ars, merchant, month, false)).message;
+    return (await registerTransaction(userId, groupId, cat.id, amount_ars, merchant, month, false)).message;
   }
 
   return "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]";
@@ -757,6 +769,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
 async function registerTransaction(
   userId: string,
+  groupId: string,
   category_id: string,
   amount_ars: number,
   merchant: string | undefined,
@@ -765,7 +778,7 @@ async function registerTransaction(
 ): Promise<{ message: string; transactionId: string }> {
   merchant = merchant ? escapeHtml(merchant) : undefined;
   const settings = await db.query.monthly_settings.findFirst({
-    where: and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)),
+    where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
   });
   if (!settings) return { message: "Sin configuración mensual.", transactionId: "" };
 
@@ -776,6 +789,7 @@ async function registerTransaction(
   await db.insert(transactions).values({
     id: txId,
     user_id: userId,
+    group_id: groupId,
     category_id,
     amount_ars,
     amount_usd,
@@ -789,14 +803,14 @@ async function registerTransaction(
   });
 
   const budget = await db.query.budgets.findFirst({
-    where: and(eq(budgets.user_id, userId), eq(budgets.month, month), eq(budgets.category_id, category_id)),
+    where: and(eq(budgets.group_id, groupId), eq(budgets.month, month), eq(budgets.category_id, category_id)),
   });
 
   const spentRows = await db
     .select({ total: sum(transactions.amount_ars) })
     .from(transactions)
     .where(and(
-      eq(transactions.user_id, userId),
+      eq(transactions.group_id, groupId),
       eq(transactions.month, month),
       eq(transactions.category_id, category_id),
       eq(transactions.status, "active")
@@ -810,7 +824,7 @@ async function registerTransaction(
     where: eq(categories.id, category_id),
   });
 
-  const summary = await getMonthSummary(userId, month);
+  const summary = await getMonthSummary(groupId, month);
 
   return {
     message: formatTransactionConfirm({

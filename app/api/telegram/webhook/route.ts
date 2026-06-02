@@ -4,6 +4,7 @@ import { bot_messages, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { handleTelegramMessage } from "@/lib/telegram/handlers";
+import { getPersonalGroup } from "@/lib/groups/permissions";
 import { randomUUID, timingSafeEqual } from "crypto";
 
 export async function POST(req: NextRequest) {
@@ -27,16 +28,9 @@ export async function POST(req: NextRequest) {
   const chatId = String(update.message.chat.id);
   const msg = update.message;
   const messageText =
-    msg.text ??
-    msg.caption ??
+    msg.text ?? msg.caption ??
     (msg.photo?.length ? "[photo]" : null) ??
-    (msg.document ? "[document]" : null) ??
-    "";
-  const allowedId = process.env.TELEGRAM_ALLOWED_USER_ID;
-
-  if (!allowedId || telegramUserId !== allowedId) {
-    return NextResponse.json({ ok: true });
-  }
+    (msg.document ? "[document]" : null) ?? "";
 
   const updateId = String(update.update_id);
   const existing = await db.query.bot_messages.findFirst({
@@ -44,15 +38,36 @@ export async function POST(req: NextRequest) {
   });
   if (existing) return NextResponse.json({ ok: true });
 
-  const user = await db.query.users.findFirst();
+  // Find user by telegram_user_id
+  const user = await db.query.users.findFirst({
+    where: eq(users.telegram_user_id, telegramUserId),
+  });
+
   if (!user) {
-    console.error("Telegram webhook: no user found in database");
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://hermes-finantial-tracker.vercel.app";
+    await sendTelegramMessage(chatId, `Para usar el bot, vinculá tu cuenta en ${appUrl}/dashboard/settings`);
+    return NextResponse.json({ ok: true });
+  }
+
+  // Resolve active group: user's active_telegram_group_id or personal group
+  let groupId: string | null = user.active_telegram_group_id;
+  if (!groupId) {
+    try {
+      const personalGroup = await getPersonalGroup(user.id);
+      groupId = personalGroup ?? null;
+    } catch {
+      groupId = null;
+    }
+  }
+
+  if (!groupId) {
+    await sendTelegramMessage(chatId, "No tenés ningún grupo activo. Creá uno desde la web.");
     return NextResponse.json({ ok: true });
   }
 
   let response_text = "Error interno.";
   try {
-    response_text = await handleTelegramMessage(update, user.id);
+    response_text = await handleTelegramMessage(update, user.id, groupId);
   } catch (err) {
     console.error("Telegram handler error:", {
       message: err instanceof Error ? err.message : "Unknown error",
@@ -79,14 +94,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  try {
-    await sendTelegramMessage(chatId, response_text);
-  } catch (err) {
-    console.error("Failed to send Telegram message:", {
-      message: err instanceof Error ? err.message : "Unknown error",
-      chatId: chatId.slice(0, 4) + "...",
-    });
-  }
-
+  await sendTelegramMessage(chatId, response_text);
   return NextResponse.json({ ok: true });
 }
