@@ -9,16 +9,26 @@ interface InvitationInfo {
   expires_at: number;
 }
 
+type Status = "loading" | "ready" | "register" | "error" | "expired" | "used";
+
 export default function JoinClient({ token }: { token: string }) {
   const router = useRouter();
   const [info, setInfo] = useState<InvitationInfo | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "error" | "expired" | "used">("loading");
+  const [status, setStatus] = useState<Status>("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [joining, setJoining] = useState(false);
+
+  // Registration form state
+  const [regName, setRegName] = useState("");
+  const [regToken, setRegToken] = useState("");
+  const [regConfirm, setRegConfirm] = useState("");
+  const [regError, setRegError] = useState("");
+  const [registering, setRegistering] = useState(false);
 
   useEffect(() => {
     fetch(`/api/join/${token}`)
       .then(async r => {
+        if (r.status === 401) { setStatus("register"); return; }
         if (r.status === 410) { setStatus("expired"); return; }
         if (r.status === 409) { setStatus("used"); return; }
         if (!r.ok) { setStatus("error"); setErrorMsg("Invitación no encontrada."); return; }
@@ -29,11 +39,52 @@ export default function JoinClient({ token }: { token: string }) {
       .catch(() => { setStatus("error"); setErrorMsg("Error de red."); });
   }, [token]);
 
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setRegError("");
+    if (regToken.length < 8) { setRegError("El token debe tener al menos 8 caracteres."); return; }
+    if (regToken !== regConfirm) { setRegError("Los tokens no coinciden."); return; }
+
+    setRegistering(true);
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: regName, token: regToken, invite_token: token }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setRegError(d.error ?? "Error al crear cuenta.");
+        setRegistering(false);
+        return;
+      }
+      // User created + session set — now accept the invitation
+      const joinRes = await fetch(`/api/join/${token}`, { method: "POST" });
+      if (!joinRes.ok) {
+        const d = await joinRes.json();
+        setRegError(d.error ?? "Error al unirse al grupo.");
+        setRegistering(false);
+        return;
+      }
+      const joinData = await joinRes.json();
+      await fetch("/api/groups/active", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ group_id: joinData.group_id }),
+      });
+      router.push("/dashboard");
+    } catch {
+      setRegError("Error de red.");
+    } finally {
+      setRegistering(false);
+    }
+  }
+
   async function handleAccept() {
     setJoining(true);
     try {
       const res = await fetch(`/api/join/${token}`, { method: "POST" });
-      if (res.status === 401) { router.push(`/login?redirect=/join/${token}`); return; }
+      if (res.status === 401) { setStatus("register"); setJoining(false); return; }
       if (!res.ok) {
         const d = await res.json();
         setStatus("error");
@@ -41,7 +92,11 @@ export default function JoinClient({ token }: { token: string }) {
         return;
       }
       const data = await res.json();
-      await fetch("/api/groups/active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ group_id: data.group_id }) });
+      await fetch("/api/groups/active", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ group_id: data.group_id }),
+      });
       router.push("/dashboard");
     } catch { setStatus("error"); setErrorMsg("Error de red."); }
     finally { setJoining(false); }
@@ -53,7 +108,26 @@ export default function JoinClient({ token }: { token: string }) {
   };
   const cardStyle: React.CSSProperties = {
     background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 16,
-    padding: "36px 28px", width: "100%", maxWidth: 360, textAlign: "center",
+    padding: "36px 28px", width: "100%", maxWidth: 380, boxShadow: "var(--hshadow-lg)",
+  };
+  const inputStyle: React.CSSProperties = {
+    width: "100%", padding: "10px 12px", borderRadius: 8,
+    border: "1px solid var(--hborder)", background: "var(--hsurface2)",
+    color: "var(--htext1)", fontSize: "0.9rem", outline: "none", boxSizing: "border-box",
+    marginTop: 4,
+  };
+  const labelStyle: React.CSSProperties = {
+    display: "block", fontSize: "0.82rem", fontWeight: 500, color: "var(--htext2)", marginBottom: 2,
+  };
+  const btnPrimary: React.CSSProperties = {
+    width: "100%", padding: "11px", borderRadius: 8, border: "none",
+    background: "var(--haccent)", color: "white", cursor: "pointer",
+    fontSize: "0.9rem", fontWeight: 600, marginBottom: 8,
+  };
+  const btnSecondary: React.CSSProperties = {
+    width: "100%", padding: "11px", borderRadius: 8,
+    border: "1px solid var(--hborder)", background: "transparent",
+    color: "var(--htext2)", cursor: "pointer", fontSize: "0.9rem",
   };
 
   if (status === "loading") return (
@@ -77,8 +151,8 @@ export default function JoinClient({ token }: { token: string }) {
       <div style={cardStyle}>
         <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>✅</div>
         <h1 style={{ fontSize: "1.1rem", marginBottom: 8 }}>Invitación ya usada</h1>
-        <p style={{ color: "var(--htext3)", fontSize: "0.85rem" }}>Este link de invitación ya fue utilizado.</p>
-        <button onClick={() => router.push("/dashboard")} style={{ marginTop: 16, padding: "10px 20px", borderRadius: 8, border: "none", background: "var(--haccent)", color: "white", cursor: "pointer" }}>
+        <p style={{ color: "var(--htext3)", fontSize: "0.85rem" }}>Este link ya fue utilizado.</p>
+        <button onClick={() => router.push("/dashboard")} style={{ ...btnPrimary, marginTop: 16 }}>
           Ir al dashboard
         </button>
       </div>
@@ -95,12 +169,79 @@ export default function JoinClient({ token }: { token: string }) {
     </div>
   );
 
+  if (status === "register") return (
+    <div data-hermes="" style={containerStyle}>
+      <div style={cardStyle}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: "2rem" }}>👋</div>
+          <h1 style={{ fontSize: "1.2rem", fontWeight: 700, color: "var(--htext1)", marginTop: 8, marginBottom: 4 }}>
+            Creá tu acceso
+          </h1>
+          <p style={{ fontSize: "0.82rem", color: "var(--htext3)" }}>
+            Necesitás una cuenta para unirte al grupo
+          </p>
+        </div>
+        <form onSubmit={handleRegister}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>Tu nombre</label>
+            <input
+              type="text"
+              value={regName}
+              onChange={e => setRegName(e.target.value)}
+              placeholder="Ej: María García"
+              style={inputStyle}
+              required
+              maxLength={50}
+            />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>Token personal (mínimo 8 caracteres)</label>
+            <input
+              type="password"
+              value={regToken}
+              onChange={e => setRegToken(e.target.value)}
+              placeholder="••••••••"
+              style={inputStyle}
+              required
+            />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle}>Confirmar token</label>
+            <input
+              type="password"
+              value={regConfirm}
+              onChange={e => setRegConfirm(e.target.value)}
+              placeholder="••••••••"
+              style={inputStyle}
+              required
+            />
+          </div>
+          {regError && (
+            <p style={{ fontSize: "0.82rem", color: "var(--hred)", background: "var(--hred-soft)", padding: "8px 12px", borderRadius: 6, marginBottom: 12 }}>
+              {regError}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={registering || !regName.trim() || !regToken || !regConfirm}
+            style={{ ...btnPrimary, background: registering || !regName.trim() || !regToken || !regConfirm ? "var(--htext3)" : "var(--haccent)", cursor: registering ? "not-allowed" : "pointer" }}
+          >
+            {registering ? "Creando cuenta..." : "Crear cuenta y unirme"}
+          </button>
+        </form>
+        <p style={{ fontSize: "0.78rem", color: "var(--htext3)", textAlign: "center", marginTop: 12 }}>
+          ¿Ya tenés cuenta? <a href="/login" style={{ color: "var(--haccent)" }}>Iniciá sesión</a>
+        </p>
+      </div>
+    </div>
+  );
+
   return (
     <div data-hermes="" style={containerStyle}>
       <div style={cardStyle}>
-        <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🏠</div>
-        <h1 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4 }}>Te invitaron al grupo</h1>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "var(--haccent-bg)", borderRadius: 8, padding: "10px 16px", margin: "12px 0 16px" }}>
+        <div style={{ fontSize: "2.5rem", marginBottom: 12, textAlign: "center" }}>🏠</div>
+        <h1 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4, textAlign: "center" }}>Te invitaron al grupo</h1>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "var(--haccent-soft)", borderRadius: 8, padding: "10px 16px", margin: "12px 0 16px", width: "100%", boxSizing: "border-box" }}>
           <span style={{ fontSize: "1.1rem" }}>🏠</span>
           <div style={{ textAlign: "left" }}>
             <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--htext1)" }}>{info?.group.name}</div>
@@ -117,14 +258,11 @@ export default function JoinClient({ token }: { token: string }) {
         <button
           onClick={handleAccept}
           disabled={joining}
-          style={{ width: "100%", padding: "11px", borderRadius: 8, border: "none", background: "var(--haccent)", color: "white", cursor: "pointer", fontSize: "0.9rem", fontWeight: 600, marginBottom: 8 }}
+          style={{ ...btnPrimary, background: joining ? "var(--htext3)" : "var(--haccent)", cursor: joining ? "not-allowed" : "pointer" }}
         >
           {joining ? "Uniéndome..." : "Aceptar invitación"}
         </button>
-        <button
-          onClick={() => router.push("/")}
-          style={{ width: "100%", padding: "11px", borderRadius: 8, border: "1px solid var(--hborder)", background: "transparent", color: "var(--htext2)", cursor: "pointer", fontSize: "0.9rem" }}
-        >
+        <button onClick={() => router.push("/")} style={btnSecondary}>
           Rechazar
         </button>
       </div>
