@@ -17,5 +17,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     name: user.name,
     has_personal_token: !!user.personal_token_hash,
     has_telegram: !!user.telegram_user_id,
+    onboarding_completed: !!user.onboarding_completed_at,
   });
+}
+
+export async function PATCH(req: NextRequest): Promise<NextResponse> {
+  const cookie = req.cookies.get("hermes_session")?.value;
+  const userId = cookie ? await verifySession(cookie) : null;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json().catch(() => null);
+  if (!body || body.onboarding_completed !== true) {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  }
+
+  await db.update(users)
+    .set({ onboarding_completed_at: Date.now() })
+    .where(eq(users.id, userId));
+
+  return NextResponse.json({ ok: true });
 }
