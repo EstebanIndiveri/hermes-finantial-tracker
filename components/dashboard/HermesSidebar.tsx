@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { GroupSwitcher } from "./GroupSwitcher";
 
 export function HermesSidebar() {
   const { theme, setTheme } = useTheme();
@@ -53,6 +54,9 @@ export function HermesSidebar() {
           </div>
         </div>
 
+        {/* Group Switcher */}
+        <GroupSwitcher />
+
         {/* Nav */}
         <nav className="h-sidebar-nav">
           <div className="h-nav-label">Principal</div>
@@ -76,6 +80,18 @@ export function HermesSidebar() {
               <path d="M7 7h.01M7 12h.01M7 17h.01M11 7h6M11 12h6M11 17h6"/>
             </svg>
             Categorías
+          </Link>
+
+          <div className="h-nav-label" style={{ marginTop: 16 }}>Grupo</div>
+          <Link
+            href="/dashboard/group/settings"
+            className={`h-nav-item${pathname === "/dashboard/group/settings" ? " active" : ""}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+            </svg>
+            Miembros y permisos
           </Link>
 
           <div className="h-nav-label" style={{ marginTop: 16 }}>Configuración</div>
