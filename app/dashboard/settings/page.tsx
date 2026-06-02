@@ -13,6 +13,7 @@ interface BudgetItem { budget_ars: number; hard_limit: boolean; }
 
 function MiCuenta() {
   const [user, setUser] = useState<{ name: string; has_personal_token: boolean } | null>(null);
+  const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState("");
   const [newTok, setNewTok] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -40,6 +41,7 @@ function MiCuenta() {
       setMsg({ type: "ok", text: "Token actualizado correctamente." });
       setCurrent(""); setNewTok(""); setConfirm("");
       setUser(u => u ? { ...u, has_personal_token: true } : u);
+      setOpen(false);
     } catch {
       setMsg({ type: "err", text: "Error de red." });
     } finally {
@@ -50,53 +52,78 @@ function MiCuenta() {
   if (!user) return null;
 
   return (
-    <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
-      <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--htext1)", marginBottom: 4 }}>Mi cuenta</h2>
-      <p style={{ fontSize: "0.85rem", color: "var(--htext2)", marginBottom: 16 }}>Hola, <strong>{user.name}</strong></p>
-      {!user.has_personal_token && (
-        <div style={{ background: "var(--hyellow-soft)", border: "1px solid var(--hyellow)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: "0.82rem", color: "var(--hyellow)" }}>
-          ⚠️ Configurá tu token personal para el nuevo sistema de autenticación multi-usuario.
+    <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, marginBottom: 20, overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "16px 24px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "1rem", fontWeight: 600, color: "var(--htext1)" }}>Mi cuenta</div>
+          <div style={{ fontSize: "0.82rem", color: "var(--htext2)", marginTop: 2 }}>Hola, <strong>{user.name}</strong>{user.has_personal_token ? " · token personal configurado" : " · sin token personal"}</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--htext3)" strokeWidth="2"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s", flexShrink: 0 }}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      {open && (
+        <div style={{ padding: "0 24px 20px", borderTop: "1px solid var(--hborder)" }}>
+          {!user.has_personal_token && (
+            <div style={{ background: "var(--hyellow-soft)", border: "1px solid var(--hyellow)", borderRadius: 8, padding: "10px 14px", margin: "16px 0", fontSize: "0.82rem", color: "var(--hyellow)" }}>
+              ⚠️ Configurá tu token personal para el nuevo sistema de autenticación multi-usuario.
+            </div>
+          )}
+          <form onSubmit={handleSave} style={{ marginTop: 16 }}>
+            <div style={{ display: "grid", gap: 12 }}>
+              {["Token actual", "Nuevo token", "Confirmar nuevo token"].map((label, i) => {
+                const vals = [current, newTok, confirm];
+                const setters = [setCurrent, setNewTok, setConfirm];
+                return (
+                  <div key={i}>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 500, color: "var(--htext2)", marginBottom: 4 }}>{label}</label>
+                    <input
+                      type="password"
+                      value={vals[i]}
+                      onChange={e => setters[i](e.target.value)}
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid var(--hborder)", background: "var(--hsurface2)", color: "var(--htext1)", fontSize: "16px", boxSizing: "border-box" as const }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            {msg && (
+              <p style={{ fontSize: "0.82rem", marginTop: 10, padding: "8px 12px", borderRadius: 6, background: msg.type === "ok" ? "var(--hgreen-soft)" : "var(--hred-soft)", color: msg.type === "ok" ? "var(--hgreen)" : "var(--hred)" }}>
+                {msg.text}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={saving || !current || !newTok || !confirm}
+              style={{ marginTop: 14, padding: "9px 20px", borderRadius: 8, border: "none", background: saving || !current || !newTok || !confirm ? "var(--htext3)" : "var(--haccent)", color: "white", cursor: saving ? "not-allowed" : "pointer", fontSize: "0.88rem", fontWeight: 600 }}
+            >
+              {saving ? "Guardando..." : "Cambiar token"}
+            </button>
+          </form>
         </div>
       )}
-      <form onSubmit={handleSave}>
-        <div style={{ display: "grid", gap: 12 }}>
-          {["Token actual", "Nuevo token", "Confirmar nuevo token"].map((label, i) => {
-            const vals = [current, newTok, confirm];
-            const setters = [setCurrent, setNewTok, setConfirm];
-            return (
-              <div key={i}>
-                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 500, color: "var(--htext2)", marginBottom: 4 }}>{label}</label>
-                <input
-                  type="password"
-                  value={vals[i]}
-                  onChange={e => setters[i](e.target.value)}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid var(--hborder)", background: "var(--hsurface2)", color: "var(--htext1)", fontSize: "0.88rem", boxSizing: "border-box" as const }}
-                />
-              </div>
-            );
-          })}
-        </div>
-        {msg && (
-          <p style={{ fontSize: "0.82rem", marginTop: 10, padding: "8px 12px", borderRadius: 6, background: msg.type === "ok" ? "var(--hgreen-soft)" : "var(--hred-soft)", color: msg.type === "ok" ? "var(--hgreen)" : "var(--hred)" }}>
-            {msg.text}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={saving || !current || !newTok || !confirm}
-          style={{ marginTop: 14, padding: "9px 20px", borderRadius: 8, border: "none", background: saving || !current || !newTok || !confirm ? "var(--htext3)" : "var(--haccent)", color: "white", cursor: saving ? "not-allowed" : "pointer", fontSize: "0.88rem", fontWeight: 600 }}
-        >
-          {saving ? "Guardando..." : "Cambiar token"}
-        </button>
-      </form>
     </section>
   );
 }
 
 function ConectarTelegram() {
+  const [linked, setLinked] = useState<boolean | null>(null);
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setLinked(!!data.has_telegram); });
+  }, []);
 
   async function generateCode() {
     setLoading(true);
@@ -115,58 +142,75 @@ function ConectarTelegram() {
   const botName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "HermesFinanceAssistBot";
   const deepLink = code ? `https://t.me/${botName}?start=link_${code}` : null;
 
+  if (linked === null) return null;
+
   return (
     <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
       <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--htext1)", marginBottom: 4 }}>Conectar Telegram</h2>
-      <p style={{ fontSize: "0.85rem", color: "var(--htext2)", marginBottom: 16 }}>
-        Vinculá tu cuenta de Telegram para usar el bot con tu usuario.
-      </p>
-      {code ? (
+
+      {linked ? (
         <div>
-          <div style={{ background: "var(--haccent-soft)", border: "1px solid var(--haccent)", borderRadius: 8, padding: "14px 16px", marginBottom: 12 }}>
-            <p style={{ fontSize: "0.82rem", color: "var(--htext2)", marginBottom: 6 }}>
-              Tocá el botón para vincular automáticamente desde Telegram:
-            </p>
-            <a
-              href={deepLink!}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "10px 18px", borderRadius: 8, border: "none",
-                background: "#0088cc", color: "white", textDecoration: "none",
-                fontWeight: 600, fontSize: "0.9rem", marginBottom: 12,
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/>
-              </svg>
-              Abrir en Telegram y vincular
-            </a>
-            <p style={{ fontSize: "0.78rem", color: "var(--htext2)", marginBottom: 4 }}>O enviá manualmente al bot <strong>@{botName}</strong>:</p>
-            <code style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--haccent)", letterSpacing: "0.05em" }}>
-              /vincular {code}
-            </code>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--hgreen-soft)", border: "1px solid var(--hgreen)", borderRadius: 8, padding: "12px 16px" }}>
+            <span style={{ fontSize: "1.2rem" }}>✅</span>
+            <div>
+              <p style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--hgreen)", margin: 0 }}>Telegram conectado</p>
+              <p style={{ fontSize: "0.78rem", color: "var(--htext2)", margin: "2px 0 0" }}>Tu cuenta ya está vinculada al bot <strong>@{botName}</strong></p>
+            </div>
           </div>
-          <p style={{ fontSize: "0.75rem", color: "var(--htext3)" }}>
-            Código válido hasta {expiresAt ? new Date(expiresAt).toLocaleTimeString("es-AR") : ""}. Generá uno nuevo si expira.
-          </p>
-          <button
-            onClick={generateCode}
-            disabled={loading}
-            style={{ marginTop: 10, padding: "8px 16px", borderRadius: 8, border: "1px solid var(--hborder)", background: "transparent", color: "var(--htext2)", cursor: "pointer", fontSize: "0.82rem" }}
-          >
-            Generar nuevo código
-          </button>
         </div>
       ) : (
-        <button
-          onClick={generateCode}
-          disabled={loading}
-          style={{ padding: "9px 20px", borderRadius: 8, border: "none", background: loading ? "var(--htext3)" : "var(--haccent)", color: "white", cursor: loading ? "not-allowed" : "pointer", fontSize: "0.88rem", fontWeight: 600 }}
-        >
-          {loading ? "Generando..." : "Generar código de vinculación"}
-        </button>
+        <div>
+          <p style={{ fontSize: "0.85rem", color: "var(--htext2)", marginBottom: 16 }}>
+            Vinculá tu cuenta de Telegram para usar el bot con tu usuario.
+          </p>
+          {code ? (
+            <div>
+              <div style={{ background: "var(--haccent-soft)", border: "1px solid var(--haccent)", borderRadius: 8, padding: "14px 16px", marginBottom: 12 }}>
+                <p style={{ fontSize: "0.82rem", color: "var(--htext2)", marginBottom: 10 }}>
+                  Tocá el botón para vincular automáticamente desde Telegram:
+                </p>
+                <a
+                  href={deepLink!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    padding: "10px 18px", borderRadius: 8, border: "none",
+                    background: "#0088cc", color: "white", textDecoration: "none",
+                    fontWeight: 600, fontSize: "0.9rem", marginBottom: 12,
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/>
+                  </svg>
+                  Abrir en Telegram y vincular
+                </a>
+                <p style={{ fontSize: "0.78rem", color: "var(--htext2)", marginBottom: 4 }}>O enviá manualmente al bot <strong>@{botName}</strong>:</p>
+                <code style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--haccent)", letterSpacing: "0.05em" }}>
+                  /vincular {code}
+                </code>
+              </div>
+              <p style={{ fontSize: "0.75rem", color: "var(--htext3)" }}>
+                Código válido hasta {expiresAt ? new Date(expiresAt).toLocaleTimeString("es-AR") : ""}. Generá uno nuevo si expira.
+              </p>
+              <button
+                onClick={generateCode}
+                disabled={loading}
+                style={{ marginTop: 10, padding: "8px 16px", borderRadius: 8, border: "1px solid var(--hborder)", background: "transparent", color: "var(--htext2)", cursor: "pointer", fontSize: "0.82rem" }}
+              >
+                Generar nuevo código
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={generateCode}
+              disabled={loading}
+              style={{ padding: "9px 20px", borderRadius: 8, border: "none", background: loading ? "var(--htext3)" : "var(--haccent)", color: "white", cursor: loading ? "not-allowed" : "pointer", fontSize: "0.88rem", fontWeight: 600 }}
+            >
+              {loading ? "Generando..." : "Generar código de vinculación"}
+            </button>
+          )}
+        </div>
       )}
     </section>
   );

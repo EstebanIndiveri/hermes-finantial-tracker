@@ -102,7 +102,7 @@ function LoginForm() {
                 border: "1px solid var(--hborder)",
                 background: "var(--hsurface2)",
                 color: "var(--htext1)",
-                fontSize: "0.9rem",
+                fontSize: "16px",
                 outline: "none",
                 boxSizing: "border-box",
               }}

@@ -16,5 +16,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     id: user.id,
     name: user.name,
     has_personal_token: !!user.personal_token_hash,
+    has_telegram: !!user.telegram_user_id,
   });
 }

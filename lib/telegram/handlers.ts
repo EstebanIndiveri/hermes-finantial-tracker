@@ -42,7 +42,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   const month = getActiveMonthArgentina();
 
   if (text === "/start") {
-    return "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible categoria\n/ultimo\n/borrar_ultimo";
+    return "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible [categoria]\n/ultimo\n/borrar_ultimo\n\nTambién podés escribirme en lenguaje natural: \"¿Cuánto me queda en salidas pareja?\"";
   }
 
   if (text === "/resumen") {
@@ -52,16 +52,45 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   }
 
   if (text.startsWith("/disponible")) {
-    const slug = text.split(" ")[1]?.toLowerCase();
-    if (!slug) return "Uso: /disponible categoria\nEjemplo: /disponible supermercado";
+    const rawArg = text.slice("/disponible".length).trim();
 
-    const cat = await db.query.categories.findFirst({
-      where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+    // No argument → show all categories summary
+    if (!rawArg) {
+      const breakdown = await getCategoryBreakdown(groupId, month);
+      const lines = breakdown
+        .filter(c => c.budget_ars > 0)
+        .map(c => {
+          const icon = c.status === "OK" ? "🟢" : c.status === "WARNING" ? "🟡" : "🔴";
+          const disp = c.disponible_ars !== null ? `$${c.disponible_ars.toLocaleString("es-AR")} disponible` : "sin límite";
+          return `${icon} ${c.emoji} ${c.name}: ${disp}`;
+        });
+      return lines.length > 0
+        ? `<b>💰 Disponible este mes:</b>\n\n${lines.join("\n")}`
+        : "Sin presupuestos configurados para este mes.";
+    }
+
+    // Try exact slug match first (e.g. "salidas_pareja")
+    const slugExact = rawArg.toLowerCase().replace(/\s+/g, "_");
+    let cat = await db.query.categories.findFirst({
+      where: and(eq(categories.slug, slugExact), eq(categories.group_id, groupId)),
     });
-    if (!cat) return `No encontré la categoría "${slug}".`;
+
+    // Fuzzy: if no exact match, search by partial name/slug
+    if (!cat) {
+      const allCats = await db.query.categories.findMany({ where: eq(categories.group_id, groupId) });
+      const inputWords = rawArg.toLowerCase().split(/[\s_]+/).filter(Boolean);
+      cat = allCats.find(c =>
+        // slug contains all input words
+        inputWords.every(w => c.slug.includes(w)) ||
+        // name (lowercased) contains all input words
+        inputWords.every(w => c.name.toLowerCase().includes(w))
+      ) ?? undefined;
+    }
+
+    if (!cat) return `No encontré la categoría "${rawArg}".\n\nUsá /disponible para ver todas las categorías.`;
 
     const breakdown = await getCategoryBreakdown(groupId, month);
-    const catData = breakdown.find(c => c.id === cat.id);
+    const catData = breakdown.find(c => c.id === cat!.id);
     if (!catData) return `Sin datos para ${cat.name} este mes.`;
 
     return formatDisponible({
@@ -660,12 +689,24 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         : "Sin presupuestos configurados.";
     }
 
-    const cat = await db.query.categories.findFirst({
+    // Exact slug match first
+    let cat = await db.query.categories.findFirst({
       where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
     });
-    if (!cat) return `No encontré la categoría "${slug}".`;
+
+    // Fuzzy match if exact fails
+    if (!cat) {
+      const allCats = await db.query.categories.findMany({ where: eq(categories.group_id, groupId) });
+      const inputWords = slug.split(/[\s_]+/).filter(Boolean);
+      cat = allCats.find(c =>
+        inputWords.every(w => c.slug.includes(w)) ||
+        inputWords.every(w => c.name.toLowerCase().includes(w))
+      ) ?? undefined;
+    }
+
+    if (!cat) return `No encontré la categoría "${slug}".\n\nUsá /disponible para ver todas las categorías disponibles.`;
     const breakdown = await getCategoryBreakdown(groupId, month);
-    const catData = breakdown.find(c => c.id === cat.id);
+    const catData = breakdown.find(c => c.id === cat!.id);
     if (!catData) return `Sin datos para ${cat.name} este mes.`;
     return formatDisponible({
       category: catData.name,
