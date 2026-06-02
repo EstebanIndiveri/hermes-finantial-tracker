@@ -2,8 +2,16 @@ import { POST } from "../route";
 import { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
 
-jest.mock("@/lib/db/client", () => ({ db: { query: { users: { findMany: jest.fn() } } } }));
-jest.mock("@/lib/utils/session", () => ({ signSession: jest.fn().mockResolvedValue("signed-session-token") }));
+jest.mock("@/lib/db/client", () => ({
+  db: {
+    query: {
+      users: { findFirst: jest.fn() },
+    },
+  },
+}));
+jest.mock("@/lib/utils/session", () => ({
+  signSession: jest.fn().mockResolvedValue("signed-session-token"),
+}));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { db } = require("@/lib/db/client");
@@ -19,49 +27,49 @@ function makeReq(body: object) {
 describe("POST /api/auth/login", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("returns 400 when token is missing", async () => {
-    jest.mocked(db.query.users.findMany).mockResolvedValue([]);
-    const res = await POST(makeReq({}));
+  it("returns 400 when username is missing", async () => {
+    const res = await POST(makeReq({ password: "somepass" }));
     expect(res.status).toBe(400);
   });
 
-  it("authenticates user by bcrypt token hash", async () => {
-    const hash = await bcrypt.hash("mysecrettoken", 10);
-    jest.mocked(db.query.users.findMany).mockResolvedValue([
-      { id: "user-1", name: "Alice", personal_token_hash: hash, telegram_user_id: null, active_telegram_group_id: null, created_at: 0 },
-    ] as any);
-    const res = await POST(makeReq({ token: "mysecrettoken" }));
+  it("returns 400 when password is missing", async () => {
+    const res = await POST(makeReq({ username: "alice" }));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 401 when username not found", async () => {
+    jest.mocked(db.query.users.findFirst).mockResolvedValue(undefined);
+    const res = await POST(makeReq({ username: "notexist", password: "anypass" }));
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when password does not match", async () => {
+    const hash = await bcrypt.hash("correctpass", 10);
+    jest.mocked(db.query.users.findFirst).mockResolvedValue({
+      id: "user-1", name: "Alice", username: "alice", personal_token_hash: hash,
+    } as any);
+    const res = await POST(makeReq({ username: "alice", password: "wrongpass" }));
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 200 and sets session cookie when credentials are correct", async () => {
+    const hash = await bcrypt.hash("correctpass", 10);
+    jest.mocked(db.query.users.findFirst).mockResolvedValue({
+      id: "user-1", name: "Alice", username: "alice", personal_token_hash: hash,
+    } as any);
+    const res = await POST(makeReq({ username: "alice", password: "correctpass" }));
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.ok).toBe(true);
+    expect(res.headers.get("Set-Cookie")).toContain("hermes_session");
   });
 
-  it("returns 401 when token does not match any user hash", async () => {
-    const hash = await bcrypt.hash("correcttoken", 10);
-    jest.mocked(db.query.users.findMany).mockResolvedValue([
-      { id: "user-1", name: "Alice", personal_token_hash: hash, telegram_user_id: null, active_telegram_group_id: null, created_at: 0 },
-    ] as any);
-    const res = await POST(makeReq({ token: "wrongtoken" }));
-    expect(res.status).toBe(401);
-  });
-
-  it("falls back to WEB_ACCESS_TOKEN env var for legacy user with null hash", async () => {
-    process.env.WEB_ACCESS_TOKEN = "legacy-env-token";
-    jest.mocked(db.query.users.findMany).mockResolvedValue([
-      { id: "owner-1", name: "Owner", personal_token_hash: null, telegram_user_id: null, active_telegram_group_id: null, created_at: 0 },
-    ] as any);
-    const res = await POST(makeReq({ token: "legacy-env-token" }));
+  it("lookup is case-insensitive for username", async () => {
+    const hash = await bcrypt.hash("mypass", 10);
+    jest.mocked(db.query.users.findFirst).mockResolvedValue({
+      id: "user-1", name: "Alice", username: "alice", personal_token_hash: hash,
+    } as any);
+    const res = await POST(makeReq({ username: "ALICE", password: "mypass" }));
     expect(res.status).toBe(200);
-    delete process.env.WEB_ACCESS_TOKEN;
-  });
-
-  it("returns 401 when legacy token does not match env var", async () => {
-    process.env.WEB_ACCESS_TOKEN = "correct-env-token";
-    jest.mocked(db.query.users.findMany).mockResolvedValue([
-      { id: "owner-1", name: "Owner", personal_token_hash: null, telegram_user_id: null, active_telegram_group_id: null, created_at: 0 },
-    ] as any);
-    const res = await POST(makeReq({ token: "wrong-token" }));
-    expect(res.status).toBe(401);
-    delete process.env.WEB_ACCESS_TOKEN;
   });
 });

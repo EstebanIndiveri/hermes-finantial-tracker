@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signSession } from "@/lib/utils/session";
 import { db } from "@/lib/db/client";
+import { users } from "@/lib/db/schema";
+import { eq, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { timingSafeEqual } from "crypto";
 
 // In-memory rate limiter: max 10 login attempts per IP per 5 minutes
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -48,40 +49,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const body = await req.json().catch(() => null);
-    if (!body?.token || typeof body.token !== "string") {
-      return NextResponse.json({ error: "Missing token" }, { status: 400 });
+    if (!body?.username || typeof body.username !== "string") {
+      return NextResponse.json({ error: "Missing username" }, { status: 400 });
     }
-    const { token } = body;
-
-    const allUsers = await db.query.users.findMany();
-
-    // Phase 1: check per-user bcrypt hashes
-    for (const user of allUsers) {
-      if (user.personal_token_hash) {
-        const match = await bcrypt.compare(token, user.personal_token_hash);
-        if (match) return createSessionResponse(user.id);
-      }
+    if (!body?.password || typeof body.password !== "string") {
+      return NextResponse.json({ error: "Missing password" }, { status: 400 });
     }
 
-    // Phase 2: legacy fallback for owner without personal_token_hash
-    const legacyUser = allUsers.find(u => !u.personal_token_hash);
-    if (legacyUser) {
-      const envToken = process.env.WEB_ACCESS_TOKEN ?? "";
-      if (!envToken) {
-        console.error("Login: owner has no personal_token_hash and WEB_ACCESS_TOKEN is not set");
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-      }
-      const providedBuf = Buffer.from(token);
-      const expectedBuf = Buffer.from(envToken);
-      if (
-        providedBuf.length === expectedBuf.length &&
-        timingSafeEqual(providedBuf, expectedBuf)
-      ) {
-        return createSessionResponse(legacyUser.id);
-      }
+    const { username, password } = body as { username: string; password: string };
+
+    const user = await db.query.users.findFirst({
+      where: eq(sql`lower(${users.username})`, username.toLowerCase()),
+    });
+
+    if (!user || !user.personal_token_hash) {
+      return NextResponse.json({ error: "Usuario o contraseña incorrectos" }, { status: 401 });
     }
 
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const match = await bcrypt.compare(password, user.personal_token_hash);
+    if (!match) {
+      return NextResponse.json({ error: "Usuario o contraseña incorrectos" }, { status: 401 });
+    }
+
+    return createSessionResponse(user.id);
   } catch (err) {
     console.error("Error in login:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
