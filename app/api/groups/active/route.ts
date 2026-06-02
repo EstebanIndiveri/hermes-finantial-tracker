@@ -4,6 +4,12 @@ import { z } from "zod";
 
 const schema = z.object({ group_id: z.string().uuid() });
 
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const groupId = req.headers.get("x-group-id");
+  if (!groupId) return NextResponse.json({ group_id: null });
+  return NextResponse.json({ group_id: groupId });
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const userId = req.headers.get("x-user-id");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

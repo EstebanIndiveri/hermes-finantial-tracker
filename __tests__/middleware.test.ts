@@ -7,6 +7,7 @@ process.env.SESSION_SECRET = "test-secret-32-chars-long-padding!!";
 // Mock the database-dependent getPersonalGroup function
 jest.mock("@/lib/groups/permissions", () => ({
   getPersonalGroup: jest.fn(),
+  getGroupMembership: jest.fn(),
 }));
 
 // Mock the DB client
@@ -14,7 +15,7 @@ jest.mock("@/lib/db/client", () => ({
   db: { select: jest.fn() },
 }));
 
-import { getPersonalGroup } from "@/lib/groups/permissions";
+import { getPersonalGroup, getGroupMembership } from "@/lib/groups/permissions";
 
 // Helper: configure the db.select mock chain to resolve with given rows
 function mockDbChainWith(rows: object[]) {
@@ -34,6 +35,8 @@ describe("middleware", () => {
   beforeEach(() => {
     // Default: user has completed onboarding
     mockDbChainWith([{ onboarding_completed_at: 1_700_000_000_000 }]);
+    // Default: group membership is valid
+    (getGroupMembership as jest.Mock).mockResolvedValue({ group_id: "group-abc", user_id: "user-123", role: "member" });
   });
   test("allows public path /login without authentication", async () => {
     const req = new NextRequest("http://localhost:3000/login");
@@ -173,6 +176,23 @@ describe("middleware", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-group-id")).toBe("group-abc");
     expect(res.headers.get("x-user-id")).toBe("user-123");
+  });
+
+  test("clears stale active_group_id cookie when user is no longer a member", async () => {
+    (getGroupMembership as jest.Mock).mockResolvedValueOnce(null);
+    (getPersonalGroup as jest.Mock).mockResolvedValueOnce(null);
+    const sessionValue = await signSession("user-removed");
+    const req = new NextRequest("http://localhost:3000/dashboard", {
+      headers: {
+        cookie: `hermes_session=${sessionValue}; active_group_id=group-old`,
+      },
+    });
+    const res = await middleware(req);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-group-id")).toBeNull();
+    const setCookieHeader = res.headers.get("set-cookie");
+    // Cookie should be cleared (max-age=0 or expires in the past)
+    expect(setCookieHeader).toMatch(/active_group_id=;|active_group_id=%3B|Max-Age=0/i);
   });
 
   test("resolves personal group and sets cookie when active_group_id is missing", async () => {

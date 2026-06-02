@@ -319,8 +319,8 @@ export default function SettingsPage() {
       fetch("/api/settings/monthly").then(r => r.ok ? r.json() : null),
       fetch("/api/categories").then(r => r.ok ? r.json() : null),
     ]).then(([s, c]) => {
-      if (!s || !Array.isArray(c)) { setNoGroup(true); return; }
-      setSettings(s);
+      if (!Array.isArray(c)) { setNoGroup(true); return; }
+      setSettings(s ?? { income_usd: 0, exchange_rate: 1, saving_goal_usd: 0, saving_goal_yellow: 0 });
       setCats(c);
     }).catch(() => toast.error("Error al cargar configuración"));
 

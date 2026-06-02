@@ -53,5 +53,14 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     .set(updates)
     .where(eq(users.id, userId));
 
-  return NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true });
+  if (updates.onboarding_completed_at) {
+    response.cookies.set("onboarding_done", "1", {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 30 * 24 * 60 * 60,
+    });
+  }
+  return response;
 }

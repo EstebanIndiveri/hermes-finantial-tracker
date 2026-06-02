@@ -24,11 +24,17 @@ export function GroupSwitcher({ onGroupChange }: GroupSwitcherProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch("/api/groups")
-      .then(r => r.json())
-      .then((data: Group[]) => {
+    Promise.all([
+      fetch("/api/groups").then(r => r.json()),
+      fetch("/api/groups/active").then(r => r.json()),
+    ])
+      .then(([data, active]: [Group[], { group_id: string | null }]) => {
         setGroups(data);
-        if (data.length > 0) setActiveGroupId(data[0].group_id);
+        if (active?.group_id) {
+          setActiveGroupId(active.group_id);
+        } else if (data.length > 0) {
+          setActiveGroupId(data[0].group_id);
+        }
       })
       .catch(() => {});
   }, []);
