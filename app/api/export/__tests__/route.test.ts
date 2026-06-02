@@ -29,13 +29,24 @@ jest.mock("@/lib/export/generate", () => ({
   generateXLSX: jest.fn(() => Buffer.from("xlsx-content")),
 }));
 
+jest.mock("@/lib/groups/permissions", () => ({
+  getGroupMembership: jest.fn(),
+}));
+
 describe("GET /api/export", () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
     (headers as jest.Mock).mockResolvedValue({
-      get: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      get: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
+
+    const { getGroupMembership } = require("@/lib/groups/permissions");
+    getGroupMembership.mockResolvedValue({ group_id: "group-123", user_id: "user-123", role: "member" });
 
     (db.query.transactions.findMany as jest.Mock).mockResolvedValue([]);
     (db.query.categories.findMany as jest.Mock).mockResolvedValue([]);

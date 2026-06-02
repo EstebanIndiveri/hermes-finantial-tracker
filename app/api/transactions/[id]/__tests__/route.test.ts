@@ -17,9 +17,15 @@ jest.mock("@/lib/db/client", () => ({
   },
 }));
 
+jest.mock("@/lib/groups/permissions", () => ({
+  getGroupMembership: jest.fn(),
+}));
+
 describe("DELETE /api/transactions/[id]", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    const { getGroupMembership } = require("@/lib/groups/permissions");
+    getGroupMembership.mockResolvedValue({ group_id: "group-123", user_id: "user-123", role: "member" });
   });
 
   test("returns 401 when x-user-id header is missing", async () => {
@@ -45,7 +51,11 @@ describe("DELETE /api/transactions/[id]", () => {
       method: "DELETE",
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await DELETE(req, { params: Promise.resolve({ id: "tx-1" }) });
@@ -63,7 +73,11 @@ describe("DELETE /api/transactions/[id]", () => {
       method: "DELETE",
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await DELETE(req, { params: Promise.resolve({ id: "tx-999" }) });
@@ -84,7 +98,11 @@ describe("DELETE /api/transactions/[id]", () => {
       method: "DELETE",
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await DELETE(req, { params: Promise.resolve({ id: "tx-1" }) });
@@ -130,7 +148,11 @@ describe("DELETE /api/transactions/[id]", () => {
       method: "DELETE",
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     await DELETE(req, { params: Promise.resolve({ id: "tx-1" }) });

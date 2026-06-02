@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, foreignKeysReady } from "@/lib/db/client";
 import { budgets, categories, transactions } from "@/lib/db/schema";
-import { count, eq } from "drizzle-orm";
+import { count, eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { getGroupMembership } from "@/lib/groups/permissions";
 
 const patchSchema = z.object({
   name: z.string().min(1).max(40).optional(),
@@ -19,10 +20,16 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     const userId = req.headers.get("x-user-id");
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const groupId = req.headers.get("x-group-id");
+    if (!groupId) return NextResponse.json({ error: "No active group" }, { status: 400 });
+
+    const membership = await getGroupMembership(userId, groupId);
+    if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const { id } = await params;
 
     const existing = await db.query.categories.findFirst({
-      where: eq(categories.id, id),
+      where: and(eq(categories.id, id), eq(categories.group_id, groupId)),
     });
     if (!existing) return NextResponse.json({ error: "Categoría no encontrada." }, { status: 404 });
 
@@ -67,10 +74,16 @@ export async function DELETE(req: NextRequest, { params }: RouteContext) {
     const userId = req.headers.get("x-user-id");
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const groupId = req.headers.get("x-group-id");
+    if (!groupId) return NextResponse.json({ error: "No active group" }, { status: 400 });
+
+    const membership = await getGroupMembership(userId, groupId);
+    if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const { id } = await params;
 
     const existing = await db.query.categories.findFirst({
-      where: eq(categories.id, id),
+      where: and(eq(categories.id, id), eq(categories.group_id, groupId)),
     });
     if (!existing) return NextResponse.json({ error: "Categoría no encontrada." }, { status: 404 });
 

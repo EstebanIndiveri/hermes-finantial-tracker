@@ -25,14 +25,19 @@ jest.mock("@/lib/db/client", () => ({
   },
 }));
 
+jest.mock("@/lib/groups/permissions", () => ({
+  getGroupMembership: jest.fn(),
+}));
+
 const mockDb = db as jest.Mocked<typeof db>;
 
 function makeReq(url: string, options?: RequestInit) {
   return new NextRequest(url, options);
 }
 
-function withUser(req: NextRequest, userId = "user-123") {
+function withUser(req: NextRequest, userId = "user-123", groupId = "group-123") {
   req.headers.set("x-user-id", userId);
+  req.headers.set("x-group-id", groupId);
   return req;
 }
 
@@ -69,7 +74,11 @@ function getReferencedColumnNames(sqlNode: unknown): string[] {
 }
 
 describe("PATCH /api/categories/[id]", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const { getGroupMembership } = require("@/lib/groups/permissions");
+    getGroupMembership.mockResolvedValue({ group_id: "group-123", user_id: "user-123", role: "member" });
+  });
 
   it("returns 401 when no x-user-id", async () => {
     const req = makeReq("http://localhost/api/categories/cat-123", {
@@ -155,7 +164,11 @@ describe("PATCH /api/categories/[id]", () => {
 });
 
 describe("DELETE /api/categories/[id]", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const { getGroupMembership } = require("@/lib/groups/permissions");
+    getGroupMembership.mockResolvedValue({ group_id: "group-123", user_id: "user-123", role: "member" });
+  });
 
   it("returns 401 when no x-user-id", async () => {
     const req = makeReq("http://localhost/api/categories/cat-123", { method: "DELETE" });

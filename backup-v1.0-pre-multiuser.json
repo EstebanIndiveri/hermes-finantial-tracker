@@ -1,0 +1,23 @@
+{
+  "users": {
+    "count": 1
+  },
+  "categories": {
+    "count": 12
+  },
+  "transactions": {
+    "count": 16
+  },
+  "budgets": {
+    "count": 12
+  },
+  "monthly_settings": {
+    "count": 2
+  },
+  "bot_messages": {
+    "count": 94
+  },
+  "receipt_imports": {
+    "count": 11
+  }
+}
