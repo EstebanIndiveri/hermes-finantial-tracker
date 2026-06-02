@@ -153,12 +153,20 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
     fields: [transactions.category_id],
     references: [categories.id],
   }),
+  group: one(groups, {
+    fields: [transactions.group_id],
+    references: [groups.id],
+  }),
 }));
 
 export const monthlySettingsRelations = relations(monthly_settings, ({ one }) => ({
   user: one(users, {
     fields: [monthly_settings.user_id],
     references: [users.id],
+  }),
+  group: one(groups, {
+    fields: [monthly_settings.group_id],
+    references: [groups.id],
   }),
 }));
 
@@ -171,11 +179,19 @@ export const budgetsRelations = relations(budgets, ({ one }) => ({
     fields: [budgets.category_id],
     references: [categories.id],
   }),
+  group: one(groups, {
+    fields: [budgets.group_id],
+    references: [groups.id],
+  }),
 }));
 
-export const categoriesRelations = relations(categories, ({ many }) => ({
+export const categoriesRelations = relations(categories, ({ one, many }) => ({
   transactions: many(transactions),
   budgets: many(budgets),
+  group: one(groups, {
+    fields: [categories.group_id],
+    references: [groups.id],
+  }),
 }));
 
 export const botMessagesRelations = relations(bot_messages, ({ one }) => ({
@@ -199,4 +215,5 @@ export const groupMembersRelations = relations(group_members, ({ one }) => ({
 export const groupInvitationsRelations = relations(group_invitations, ({ one }) => ({
   group: one(groups, { fields: [group_invitations.group_id], references: [groups.id] }),
   creator: one(users, { fields: [group_invitations.created_by], references: [users.id] }),
+  usedBy: one(users, { fields: [group_invitations.used_by], references: [users.id] }),
 }));
