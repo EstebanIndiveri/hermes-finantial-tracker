@@ -93,6 +93,67 @@ function MiCuenta() {
   );
 }
 
+function ConectarTelegram() {
+  const [code, setCode] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function generateCode() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/telegram/link-code", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setCode(data.code);
+        setExpiresAt(data.expires_at);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const botName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "hermes_bot";
+
+  return (
+    <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
+      <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--htext1)", marginBottom: 4 }}>Conectar Telegram</h2>
+      <p style={{ fontSize: "0.85rem", color: "var(--htext2)", marginBottom: 16 }}>
+        Vinculá tu cuenta de Telegram para usar el bot con tu usuario.
+      </p>
+      {code ? (
+        <div>
+          <div style={{ background: "var(--haccent-soft)", border: "1px solid var(--haccent)", borderRadius: 8, padding: "14px 16px", marginBottom: 12 }}>
+            <p style={{ fontSize: "0.82rem", color: "var(--htext2)", marginBottom: 6 }}>
+              Enviá este comando al bot <strong>@{botName}</strong>:
+            </p>
+            <code style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--haccent)", letterSpacing: "0.05em" }}>
+              /vincular {code}
+            </code>
+          </div>
+          <p style={{ fontSize: "0.75rem", color: "var(--htext3)" }}>
+            Código válido hasta {expiresAt ? new Date(expiresAt).toLocaleTimeString("es-AR") : ""}. Generá uno nuevo si expira.
+          </p>
+          <button
+            onClick={generateCode}
+            disabled={loading}
+            style={{ marginTop: 10, padding: "8px 16px", borderRadius: 8, border: "1px solid var(--hborder)", background: "transparent", color: "var(--htext2)", cursor: "pointer", fontSize: "0.82rem" }}
+          >
+            Generar nuevo código
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={generateCode}
+          disabled={loading}
+          style={{ padding: "9px 20px", borderRadius: 8, border: "none", background: loading ? "var(--htext3)" : "var(--haccent)", color: "white", cursor: loading ? "not-allowed" : "pointer", fontSize: "0.88rem", fontWeight: 600 }}
+        >
+          {loading ? "Generando..." : "Generar código de vinculación"}
+        </button>
+      )}
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<MonthlySettings | null>(null);
   const [cats, setCats] = useState<Category[]>([]);
@@ -170,6 +231,7 @@ export default function SettingsPage() {
   return (
     <div style={{ width: "100%" }}>
       <MiCuenta />
+      <ConectarTelegram />
 
       {/* Page title */}
       <div style={{ marginBottom: 28 }}>
