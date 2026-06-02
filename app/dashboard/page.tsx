@@ -235,7 +235,7 @@ export default async function DashboardPage({
       </div>
 
       {/* ── Transactions ── */}
-      <div className="h-card h-animate" style={{ animationDelay: "0.25s" }}>
+      <div className="h-card h-animate" style={{ animationDelay: "0.25s", marginBottom: 20 }}>
         <div className="h-card-header">
           <h2 className="h-section-title">Últimos movimientos</h2>
         </div>
