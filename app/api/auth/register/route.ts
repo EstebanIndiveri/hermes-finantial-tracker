@@ -6,22 +6,31 @@ import { signSession } from "@/lib/utils/session";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 
+const USERNAME_REGEX = /^[a-zA-Z0-9_-]+$/;
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.json().catch(() => null);
     if (!body) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 
-    const { name, token, invite_token } = body as {
+    const { name, username, password, invite_token } = body as {
       name?: string;
-      token?: string;
+      username?: string;
+      password?: string;
       invite_token?: string;
     };
 
     if (!name || typeof name !== "string" || name.trim().length < 1 || name.trim().length > 50) {
       return NextResponse.json({ error: "El nombre debe tener entre 1 y 50 caracteres" }, { status: 400 });
     }
-    if (!token || typeof token !== "string" || token.length < 8) {
-      return NextResponse.json({ error: "El token debe tener al menos 8 caracteres" }, { status: 400 });
+    if (!username || typeof username !== "string" || username.length < 3 || username.length > 30) {
+      return NextResponse.json({ error: "El usuario debe tener entre 3 y 30 caracteres" }, { status: 400 });
+    }
+    if (!USERNAME_REGEX.test(username)) {
+      return NextResponse.json({ error: "El usuario solo puede contener letras, números, - y _" }, { status: 400 });
+    }
+    if (!password || typeof password !== "string" || password.length < 8) {
+      return NextResponse.json({ error: "La contraseña debe tener al menos 8 caracteres" }, { status: 400 });
     }
     if (!invite_token) {
       return NextResponse.json({ error: "Token de invitación requerido" }, { status: 400 });
@@ -39,12 +48,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Invitación inválida o expirada" }, { status: 410 });
     }
 
-    const personal_token_hash = await bcrypt.hash(token, 10);
+    const existing = await db.query.users.findFirst({
+      where: eq(users.username, username.toLowerCase()),
+    });
+    if (existing) {
+      return NextResponse.json({ error: "Ese nombre de usuario ya está en uso" }, { status: 409 });
+    }
+
+    const personal_token_hash = await bcrypt.hash(password, 10);
     const userId = randomUUID();
 
     await db.insert(users).values({
       id: userId,
       name: name.trim(),
+      username: username.toLowerCase(),
       personal_token_hash,
     });
 
