@@ -107,6 +107,21 @@ describe("PATCH /api/categories/[id]", () => {
     const data = await res.json();
     expect(data.name).toBe("Comida Updated");
   });
+
+  it("returns 404 when update affects no rows (concurrent delete)", async () => {
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-123" });
+    (mockDb.update as jest.Mock).mockReturnValue({
+      set: jest.fn(() => ({
+        where: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([]) })),
+      })),
+    });
+    const req = withUser(makeReq("http://localhost/api/categories/cat-123", {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Test" }),
+    }));
+    const res = await PATCH(req, params);
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("DELETE /api/categories/[id]", () => {
@@ -159,6 +174,50 @@ describe("DELETE /api/categories/[id]", () => {
     expect(data.count).toBe(2);
   });
 
+  it("returns 404 when delete affects no rows after validation", async () => {
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-123" });
+    (mockDb.select as jest.Mock)
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({
+          where: jest.fn(() => [{ value: 0 }]),
+        })),
+      })
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({
+          where: jest.fn(() => [{ value: 0 }]),
+        })),
+      });
+    (mockDb.delete as jest.Mock).mockReturnValue({
+      where: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([]) })),
+    });
+    const req = withUser(makeReq("http://localhost/api/categories/cat-123", { method: "DELETE" }));
+    const res = await DELETE(req, params);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 409 when delete hits FK constraint after validation", async () => {
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-123" });
+    (mockDb.select as jest.Mock)
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({
+          where: jest.fn(() => [{ value: 0 }]),
+        })),
+      })
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({
+          where: jest.fn(() => [{ value: 0 }]),
+        })),
+      });
+    (mockDb.delete as jest.Mock).mockReturnValue({
+      where: jest.fn(() => ({
+        returning: jest.fn().mockRejectedValue(new Error("SQLITE_CONSTRAINT: FOREIGN KEY constraint failed")),
+      })),
+    });
+    const req = withUser(makeReq("http://localhost/api/categories/cat-123", { method: "DELETE" }));
+    const res = await DELETE(req, params);
+    expect(res.status).toBe(409);
+  });
+
   it("returns 200 when category has no active transactions or budgets", async () => {
     (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-123" });
     (mockDb.select as jest.Mock)
@@ -173,7 +232,7 @@ describe("DELETE /api/categories/[id]", () => {
         })),
       });
     (mockDb.delete as jest.Mock).mockReturnValue({
-      where: jest.fn().mockResolvedValue(undefined),
+      where: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([{ id: "cat-123" }]) })),
     });
     const req = withUser(makeReq("http://localhost/api/categories/cat-123", { method: "DELETE" }));
     const res = await DELETE(req, params);

@@ -49,6 +49,10 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
       .where(eq(categories.id, id))
       .returning();
 
+    if (!updated) {
+      return NextResponse.json({ error: "Categoría no encontrada." }, { status: 404 });
+    }
+
     return NextResponse.json(updated);
   } catch (err) {
     console.error("Error updating category:", err);
@@ -92,10 +96,21 @@ export async function DELETE(req: NextRequest, { params }: RouteContext) {
       );
     }
 
-    await db.delete(categories).where(eq(categories.id, id));
+    const result = await db.delete(categories).where(eq(categories.id, id)).returning();
+
+    if (result.length === 0) {
+      return NextResponse.json({ error: "Categoría no encontrada." }, { status: 404 });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("FOREIGN KEY constraint") || msg.includes("SQLITE_CONSTRAINT")) {
+      return NextResponse.json(
+        { error: "No se puede eliminar: tiene movimientos o presupuestos asociados." },
+        { status: 409 }
+      );
+    }
     console.error("Error deleting category:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
