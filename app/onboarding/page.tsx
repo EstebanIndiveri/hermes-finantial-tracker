@@ -26,6 +26,7 @@ export default function OnboardingPage() {
   const [loadingCode, setLoadingCode] = useState(false);
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [completing, setCompleting] = useState(false);
 
   useEffect(() => {
     async function loadUser() {
@@ -36,12 +37,16 @@ export default function OnboardingPage() {
           return;
         }
         const data = await res.json();
-        if (data.onboarding_completed) {
+        if (!data || typeof data.name !== "string") {
+          router.replace("/login?redirect=/onboarding");
+          return;
+        }
+        if (data.onboarding_completed === true) {
           router.replace("/dashboard");
           return;
         }
         setUser(data);
-        setTelegramLinked(data.has_telegram);
+        setTelegramLinked(data.has_telegram === true);
       } catch (err) {
         console.error("Error loading user:", err);
         router.replace("/login?redirect=/onboarding");
@@ -61,7 +66,9 @@ export default function OnboardingPage() {
         return;
       }
       const data = await res.json();
-      setTelegramCode(data.code);
+      if (data?.code && typeof data.code === "string") {
+        setTelegramCode(data.code);
+      }
     } catch (err) {
       console.error("Error fetching telegram code:", err);
     } finally {
@@ -70,15 +77,22 @@ export default function OnboardingPage() {
   }
 
   async function completeOnboarding() {
+    setCompleting(true);
     try {
-      await fetch("/api/auth/me", {
+      const res = await fetch("/api/auth/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ onboarding_completed: true }),
       });
+      if (!res.ok) {
+        console.error("Error completing onboarding: response not ok");
+        setCompleting(false);
+        return;
+      }
       router.push("/dashboard");
     } catch (err) {
       console.error("Error completing onboarding:", err);
+      setCompleting(false);
     }
   }
 
@@ -161,11 +175,12 @@ export default function OnboardingPage() {
     borderRadius: 2,
     background:
       index < step
-        ? "#10b981"
+        ? "var(--haccent)"
         : index === step
-        ? "#2563EB"
+        ? "var(--haccent)"
         : "var(--hborder)",
     transition: "background 0.3s ease",
+    opacity: index < step ? 0.6 : 1,
   });
 
   return (
@@ -234,11 +249,11 @@ export default function OnboardingPage() {
               </ul>
             </div>
 
-            <button onClick={() => setStep(2)} style={btnPrimary}>
+            <button onClick={() => setStep(2)} disabled={completing} style={btnPrimary}>
               Ver qué puedo hacer →
             </button>
-            <button onClick={completeOnboarding} style={btnGhost}>
-              Ir al dashboard directo
+            <button onClick={completeOnboarding} disabled={completing} style={btnGhost}>
+              {completing ? "Guardando..." : "Ir al dashboard directo"}
             </button>
           </div>
         )}
@@ -500,8 +515,20 @@ export default function OnboardingPage() {
               Podés conectarlo después en Configuración
             </p>
 
-            <button onClick={completeOnboarding} style={btnPrimary}>
-              {telegramLinked ? "¡Listo! Ir al dashboard 🚀" : "Continuar sin Telegram"}
+            <button
+              onClick={completeOnboarding}
+              disabled={completing}
+              style={{
+                ...btnPrimary,
+                background: completing ? "var(--htext3)" : "var(--haccent)",
+                cursor: completing ? "not-allowed" : "pointer",
+              }}
+            >
+              {completing
+                ? "Guardando..."
+                : telegramLinked
+                ? "¡Listo! Ir al dashboard 🚀"
+                : "Continuar sin Telegram"}
             </button>
           </div>
         )}
