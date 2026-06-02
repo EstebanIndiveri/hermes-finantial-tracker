@@ -49,7 +49,7 @@ export default function JoinClient({ token }: { token: string }) {
 
   const containerStyle: React.CSSProperties = {
     minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-    background: "var(--hbg)", padding: 20,
+    background: "var(--hbg)", padding: 20, width: "100%",
   };
   const cardStyle: React.CSSProperties = {
     background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 16,
@@ -57,13 +57,13 @@ export default function JoinClient({ token }: { token: string }) {
   };
 
   if (status === "loading") return (
-    <div style={containerStyle}>
+    <div data-hermes="" style={containerStyle}>
       <div style={cardStyle}><p style={{ color: "var(--htext2)" }}>Verificando invitación...</p></div>
     </div>
   );
 
   if (status === "expired") return (
-    <div style={containerStyle}>
+    <div data-hermes="" style={containerStyle}>
       <div style={cardStyle}>
         <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>⏰</div>
         <h1 style={{ fontSize: "1.1rem", marginBottom: 8 }}>Invitación vencida</h1>
@@ -73,7 +73,7 @@ export default function JoinClient({ token }: { token: string }) {
   );
 
   if (status === "used") return (
-    <div style={containerStyle}>
+    <div data-hermes="" style={containerStyle}>
       <div style={cardStyle}>
         <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>✅</div>
         <h1 style={{ fontSize: "1.1rem", marginBottom: 8 }}>Invitación ya usada</h1>
@@ -86,7 +86,7 @@ export default function JoinClient({ token }: { token: string }) {
   );
 
   if (status === "error") return (
-    <div style={containerStyle}>
+    <div data-hermes="" style={containerStyle}>
       <div style={cardStyle}>
         <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>❌</div>
         <h1 style={{ fontSize: "1.1rem", marginBottom: 8 }}>Invitación no válida</h1>
@@ -96,7 +96,7 @@ export default function JoinClient({ token }: { token: string }) {
   );
 
   return (
-    <div style={containerStyle}>
+    <div data-hermes="" style={containerStyle}>
       <div style={cardStyle}>
         <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🏠</div>
         <h1 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4 }}>Te invitaron al grupo</h1>
