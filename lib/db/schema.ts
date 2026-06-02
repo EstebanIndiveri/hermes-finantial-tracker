@@ -11,6 +11,7 @@ export const users = sqliteTable("users", {
 export const monthly_settings = sqliteTable("monthly_settings", {
   id: text("id").primaryKey(),
   user_id: text("user_id").notNull().references(() => users.id),
+  group_id: text("group_id").references(() => groups.id),
   month: text("month").notNull(),
   income_usd: real("income_usd").notNull().default(0),
   exchange_rate: real("exchange_rate").notNull().default(1),
@@ -25,6 +26,7 @@ export const monthly_settings = sqliteTable("monthly_settings", {
 
 export const categories = sqliteTable("categories", {
   id: text("id").primaryKey(),
+  group_id: text("group_id").references(() => groups.id),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   emoji: text("emoji").notNull().default("📦"),
@@ -36,6 +38,7 @@ export const categories = sqliteTable("categories", {
 export const budgets = sqliteTable("budgets", {
   id: text("id").primaryKey(),
   user_id: text("user_id").notNull().references(() => users.id),
+  group_id: text("group_id").references(() => groups.id),
   month: text("month").notNull(),
   category_id: text("category_id").notNull().references(() => categories.id),
   budget_ars: real("budget_ars").notNull().default(0),
@@ -48,6 +51,7 @@ export const budgets = sqliteTable("budgets", {
 export const transactions = sqliteTable("transactions", {
   id: text("id").primaryKey(),
   user_id: text("user_id").notNull().references(() => users.id),
+  group_id: text("group_id").references(() => groups.id),
   category_id: text("category_id").notNull().references(() => categories.id),
   amount_ars: real("amount_ars").notNull(),
   amount_usd: real("amount_usd").notNull(),
@@ -77,7 +81,6 @@ export const bot_messages = sqliteTable("bot_messages", {
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
 
-// Relations for query builder with `with` syntax
 export const receipt_imports = sqliteTable("receipt_imports", {
   id: text("id").primaryKey(),
   user_id: text("user_id").notNull().references(() => users.id),
@@ -94,6 +97,37 @@ export const receipt_imports = sqliteTable("receipt_imports", {
   fail_reason: text("fail_reason"),
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
+
+export const groups = sqliteTable("groups", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  owner_id: text("owner_id").notNull().references(() => users.id),
+  created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+});
+
+export const group_members = sqliteTable("group_members", {
+  group_id: text("group_id").notNull().references(() => groups.id),
+  user_id: text("user_id").notNull().references(() => users.id),
+  role: text("role", { enum: ["owner", "admin", "member"] }).notNull(),
+  joined_at: integer("joined_at").notNull().default(sql`(unixepoch() * 1000)`),
+}, (t) => ({
+  pk: uniqueIndex("gm_group_user_idx").on(t.group_id, t.user_id),
+}));
+
+export const group_invitations = sqliteTable("group_invitations", {
+  id: text("id").primaryKey(),
+  group_id: text("group_id").notNull().references(() => groups.id),
+  token: text("token").notNull(),
+  role: text("role", { enum: ["admin", "member"] }).notNull(),
+  created_by: text("created_by").notNull().references(() => users.id),
+  expires_at: integer("expires_at").notNull(),
+  used_at: integer("used_at"),
+  used_by: text("used_by").references(() => users.id),
+}, (t) => ({
+  tokenIdx: uniqueIndex("gi_token_idx").on(t.token),
+}));
+
+// Relations for query builder with `with` syntax
 
 export const usersRelations = relations(users, ({ many }) => ({
   transactions: many(transactions),
@@ -149,4 +183,20 @@ export const botMessagesRelations = relations(bot_messages, ({ one }) => ({
     fields: [bot_messages.user_id],
     references: [users.id],
   }),
+}));
+
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+  owner: one(users, { fields: [groups.owner_id], references: [users.id] }),
+  members: many(group_members),
+  invitations: many(group_invitations),
+}));
+
+export const groupMembersRelations = relations(group_members, ({ one }) => ({
+  group: one(groups, { fields: [group_members.group_id], references: [groups.id] }),
+  user: one(users, { fields: [group_members.user_id], references: [users.id] }),
+}));
+
+export const groupInvitationsRelations = relations(group_invitations, ({ one }) => ({
+  group: one(groups, { fields: [group_invitations.group_id], references: [groups.id] }),
+  creator: one(users, { fields: [group_invitations.created_by], references: [users.id] }),
 }));
