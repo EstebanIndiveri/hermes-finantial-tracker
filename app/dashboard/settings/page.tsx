@@ -11,6 +11,92 @@ interface MonthlySettings {
 interface Category { id: string; name: string; emoji: string; }
 interface BudgetItem { budget_ars: number; hard_limit: boolean; }
 
+function ChangeNameSection({ initialName, onSaved }: { initialName: string; onSaved: (name: string) => void }) {
+  const [nameOpen, setNameOpen] = useState(false);
+  const [nameVal, setNameVal] = useState(initialName);
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameMsg, setNameMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  async function handleNameSave(e: React.FormEvent) {
+    e.preventDefault();
+    setNameMsg(null);
+    if (!nameVal.trim() || nameVal.trim().length > 50) {
+      setNameMsg({ type: "err", text: "El nombre debe tener entre 1 y 50 caracteres." });
+      return;
+    }
+    setNameSaving(true);
+    try {
+      const res = await fetch("/api/auth/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nameVal.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setNameMsg({ type: "err", text: data.error ?? "Error al guardar." }); return; }
+      setNameMsg({ type: "ok", text: "Nombre actualizado." });
+      onSaved(nameVal.trim());
+      setNameOpen(false);
+    } catch {
+      setNameMsg({ type: "err", text: "Error de red." });
+    } finally {
+      setNameSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <button
+        onClick={() => setNameOpen(o => !o)}
+        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--haccent)", fontSize: "0.85rem", padding: 0 }}
+      >
+        {nameOpen ? "▲ Cancelar" : "✏️ Cambiar nombre"}
+      </button>
+      {nameOpen && (
+        <form onSubmit={handleNameSave} style={{ marginTop: 10 }}>
+          <input
+            value={nameVal}
+            onChange={e => setNameVal(e.target.value)}
+            placeholder="Tu nombre"
+            maxLength={50}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 8,
+              border: "1px solid var(--hborder)",
+              background: "var(--hsurface2)",
+              color: "var(--htext1)",
+              fontSize: "16px",
+              outline: "none",
+              boxSizing: "border-box" as const,
+              marginBottom: 8,
+            }}
+          />
+          {nameMsg && (
+            <div style={{ fontSize: "0.82rem", color: nameMsg.type === "ok" ? "var(--hsuccess)" : "var(--herror)", marginBottom: 8 }}>
+              {nameMsg.text}
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={nameSaving}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "none",
+              background: "var(--haccent)",
+              color: "#fff",
+              fontSize: "0.85rem",
+              cursor: nameSaving ? "not-allowed" : "pointer",
+            }}
+          >
+            {nameSaving ? "Guardando..." : "Guardar nombre"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function MiCuenta() {
   const [user, setUser] = useState<{ name: string; has_personal_token: boolean } | null>(null);
   const [open, setOpen] = useState(false);
@@ -27,8 +113,8 @@ function MiCuenta() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
-    if (newTok.length < 8) { setMsg({ type: "err", text: "El nuevo token debe tener al menos 8 caracteres." }); return; }
-    if (newTok !== confirm) { setMsg({ type: "err", text: "Los tokens no coinciden." }); return; }
+    if (newTok.length < 8) { setMsg({ type: "err", text: "La nueva contraseña debe tener al menos 8 caracteres." }); return; }
+    if (newTok !== confirm) { setMsg({ type: "err", text: "Las contraseñas no coinciden." }); return; }
     setSaving(true);
     try {
       const res = await fetch("/api/auth/me/token", {
@@ -38,7 +124,7 @@ function MiCuenta() {
       });
       const data = await res.json();
       if (!res.ok) { setMsg({ type: "err", text: data.error ?? "Error al guardar." }); return; }
-      setMsg({ type: "ok", text: "Token actualizado correctamente." });
+      setMsg({ type: "ok", text: "Contraseña actualizada correctamente." });
       setCurrent(""); setNewTok(""); setConfirm("");
       setUser(u => u ? { ...u, has_personal_token: true } : u);
       setOpen(false);
@@ -62,7 +148,7 @@ function MiCuenta() {
       >
         <div>
           <div style={{ fontSize: "1rem", fontWeight: 600, color: "var(--htext1)" }}>Mi cuenta</div>
-          <div style={{ fontSize: "0.82rem", color: "var(--htext2)", marginTop: 2 }}>Hola, <strong>{user.name}</strong>{user.has_personal_token ? " · token personal configurado" : " · sin token personal"}</div>
+          <div style={{ fontSize: "0.82rem", color: "var(--htext2)", marginTop: 2 }}>Hola, <strong>{user.name}</strong>{user.has_personal_token ? " · contraseña configurada" : " · sin contraseña configurada"}</div>
         </div>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--htext3)" strokeWidth="2"
           style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s", flexShrink: 0 }}>
@@ -71,14 +157,19 @@ function MiCuenta() {
       </button>
       {open && (
         <div style={{ padding: "0 24px 20px", borderTop: "1px solid var(--hborder)" }}>
+          <ChangeNameSection
+            initialName={user.name}
+            onSaved={(newName) => setUser(u => u ? { ...u, name: newName } : u)}
+          />
+          <hr style={{ border: "none", borderTop: "1px solid var(--hborder)", margin: "12px 0" }} />
           {!user.has_personal_token && (
             <div style={{ background: "var(--hyellow-soft)", border: "1px solid var(--hyellow)", borderRadius: 8, padding: "10px 14px", margin: "16px 0", fontSize: "0.82rem", color: "var(--hyellow)" }}>
-              ⚠️ Configurá tu token personal para el nuevo sistema de autenticación multi-usuario.
+              ⚠️ Configurá tu contraseña para el nuevo sistema de autenticación multi-usuario.
             </div>
           )}
           <form onSubmit={handleSave} style={{ marginTop: 16 }}>
             <div style={{ display: "grid", gap: 12 }}>
-              {["Token actual", "Nuevo token", "Confirmar nuevo token"].map((label, i) => {
+              {["Contraseña actual", "Nueva contraseña", "Confirmar nueva contraseña"].map((label, i) => {
                 const vals = [current, newTok, confirm];
                 const setters = [setCurrent, setNewTok, setConfirm];
                 return (
@@ -104,7 +195,7 @@ function MiCuenta() {
               disabled={saving || !current || !newTok || !confirm}
               style={{ marginTop: 14, padding: "9px 20px", borderRadius: 8, border: "none", background: saving || !current || !newTok || !confirm ? "var(--htext3)" : "var(--haccent)", color: "white", cursor: saving ? "not-allowed" : "pointer", fontSize: "0.88rem", fontWeight: 600 }}
             >
-              {saving ? "Guardando..." : "Cambiar token"}
+              {saving ? "Guardando..." : "Cambiar contraseña"}
             </button>
           </form>
         </div>
