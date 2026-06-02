@@ -72,7 +72,7 @@ export default function JoinClient({ token }: { token: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ group_id: joinData.group_id }),
       });
-      router.push("/dashboard");
+      router.push("/onboarding");
     } catch {
       setRegError("Error de red.");
     } finally {
@@ -97,7 +97,7 @@ export default function JoinClient({ token }: { token: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ group_id: data.group_id }),
       });
-      router.push("/dashboard");
+      router.push("/onboarding");
     } catch { setStatus("error"); setErrorMsg("Error de red."); }
     finally { setJoining(false); }
   }
