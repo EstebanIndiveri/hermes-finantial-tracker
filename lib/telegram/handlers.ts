@@ -1,5 +1,5 @@
 import { db } from "@/lib/db/client";
-import { transactions, categories, monthly_settings, budgets, bot_messages, receipt_imports, telegram_link_codes, users } from "@/lib/db/schema";
+import { transactions, categories, monthly_settings, budgets, bot_messages, receipt_imports, telegram_link_codes, users, groups } from "@/lib/db/schema";
 import { eq, and, sum, desc, gt } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
@@ -579,6 +579,31 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     await db.update(telegram_link_codes).set({ used: 1 }).where(eq(telegram_link_codes.id, code));
 
     return "✅ ¡Cuenta vinculada correctamente! Ya podés usar el bot con tu usuario.";
+  }
+
+  if (text.startsWith("/grupo")) {
+    const groupName = text.replace("/grupo", "").trim();
+
+    if (!groupName) {
+      // Show current active group
+      const currentGroup = await db.query.groups.findFirst({
+        where: eq(groups.id, groupId),
+      });
+      return `📁 Grupo activo: *${currentGroup?.name ?? "desconocido"}*\n\nPara cambiar: /grupo NombreDelGrupo`;
+    }
+
+    // Find group by name among user's groups
+    const { getUserGroups } = await import("@/lib/groups/permissions");
+    const myGroups = await getUserGroups(userId);
+    const target = myGroups.find(g => g.group.name.toLowerCase() === groupName.toLowerCase());
+
+    if (!target) {
+      const names = myGroups.map(g => `• ${g.group.name}`).join("\n");
+      return `❌ No encontré un grupo con ese nombre.\n\nTus grupos:\n${names}`;
+    }
+
+    await db.update(users).set({ active_telegram_group_id: target.group.id }).where(eq(users.id, userId));
+    return `✅ Grupo activo cambiado a *${target.group.name}*`;
   }
 
   const groqKey = process.env.GROQ_API_KEY;
