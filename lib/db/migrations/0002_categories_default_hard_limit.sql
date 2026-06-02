@@ -1,0 +1,1 @@
+ALTER TABLE categories ADD COLUMN default_hard_limit INTEGER NOT NULL DEFAULT 1;

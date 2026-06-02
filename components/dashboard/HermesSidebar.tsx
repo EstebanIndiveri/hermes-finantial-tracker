@@ -67,6 +67,16 @@ export function HermesSidebar() {
             </svg>
             Dashboard
           </Link>
+          <Link
+            href="/dashboard/categories"
+            className={`h-nav-item${pathname === "/dashboard/categories" ? " active" : ""}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path d="M7 7h.01M7 12h.01M7 17h.01M11 7h6M11 12h6M11 17h6"/>
+            </svg>
+            Categorías
+          </Link>
 
           <div className="h-nav-label" style={{ marginTop: 16 }}>Configuración</div>
           <Link

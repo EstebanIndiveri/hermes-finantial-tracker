@@ -7,4 +7,7 @@ const client = createClient({
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
+export const foreignKeysReady = client.execute("PRAGMA foreign_keys = ON").catch((error) => {
+  console.error("Failed to enable SQLite foreign keys:", error);
+});
 export const db = drizzle(client, { schema });
