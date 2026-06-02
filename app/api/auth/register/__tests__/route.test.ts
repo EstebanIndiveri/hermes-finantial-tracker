@@ -1,18 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "../route";
 import { NextRequest } from "next/server";
 
-vi.mock("@/lib/db/client", () => ({
+jest.mock("@/lib/db/client", () => ({
   db: {
     query: {
-      group_invitations: { findFirst: vi.fn() },
+      group_invitations: { findFirst: jest.fn() },
     },
-    insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+    insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
   },
 }));
-vi.mock("@/lib/utils/session", () => ({ signSession: vi.fn().mockResolvedValue("test-session") }));
+jest.mock("@/lib/utils/session", () => ({ signSession: jest.fn().mockResolvedValue("test-session") }));
 
-const { db } = await import("@/lib/db/client");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { db } = require("@/lib/db/client");
 
 const validInvite = {
   id: "inv-1",
@@ -32,10 +32,10 @@ function makeReq(body: object) {
 }
 
 describe("POST /api/auth/register", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => jest.clearAllMocks());
 
   it("returns 400 when name is missing", async () => {
-    vi.mocked(db.query.group_invitations.findFirst).mockResolvedValue(validInvite as any);
+    jest.mocked(db.query.group_invitations.findFirst).mockResolvedValue(validInvite as any);
     const res = await POST(makeReq({ token: "longtoken123", invite_token: "valid-invite-token" }));
     expect(res.status).toBe(400);
     const d = await res.json();
@@ -43,7 +43,7 @@ describe("POST /api/auth/register", () => {
   });
 
   it("returns 400 when token is shorter than 8 chars", async () => {
-    vi.mocked(db.query.group_invitations.findFirst).mockResolvedValue(validInvite as any);
+    jest.mocked(db.query.group_invitations.findFirst).mockResolvedValue(validInvite as any);
     const res = await POST(makeReq({ name: "Alice", token: "short", invite_token: "valid-invite-token" }));
     expect(res.status).toBe(400);
     const d = await res.json();
@@ -51,13 +51,13 @@ describe("POST /api/auth/register", () => {
   });
 
   it("returns 410 when invite_token is invalid", async () => {
-    vi.mocked(db.query.group_invitations.findFirst).mockResolvedValue(undefined);
+    jest.mocked(db.query.group_invitations.findFirst).mockResolvedValue(undefined);
     const res = await POST(makeReq({ name: "Alice", token: "validtoken123", invite_token: "bad-token" }));
     expect(res.status).toBe(410);
   });
 
   it("creates user and returns group_id on valid input", async () => {
-    vi.mocked(db.query.group_invitations.findFirst).mockResolvedValue(validInvite as any);
+    jest.mocked(db.query.group_invitations.findFirst).mockResolvedValue(validInvite as any);
     const res = await POST(makeReq({ name: "Alice", token: "validtoken123", invite_token: "valid-invite-token" }));
     expect(res.status).toBe(200);
     const data = await res.json();

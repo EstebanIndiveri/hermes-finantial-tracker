@@ -108,6 +108,6 @@ describe("parseFinancialMessage", () => {
 
     const callArgs = (global.fetch as jest.Mock).mock.calls[0][1];
     const body = JSON.parse(callArgs.body);
-    expect(body.model).toBe("llama3-8b-8192");
+    expect(body.model).toBe("llama-3.1-8b-instant");
   });
 });

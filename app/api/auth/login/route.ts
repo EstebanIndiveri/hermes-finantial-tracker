@@ -4,6 +4,25 @@ import { db } from "@/lib/db/client";
 import bcrypt from "bcryptjs";
 import { timingSafeEqual } from "crypto";
 
+// In-memory rate limiter: max 10 login attempts per IP per 5 minutes
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_ATTEMPTS = 10;
+const WINDOW_MS = 5 * 60 * 1000;
+
+function checkRateLimit(ip: string): { limited: boolean; retryAfter: number } {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry || now > entry.resetAt) {
+    loginAttempts.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+    return { limited: false, retryAfter: 0 };
+  }
+  entry.count += 1;
+  if (entry.count > MAX_ATTEMPTS) {
+    return { limited: true, retryAfter: Math.ceil((entry.resetAt - now) / 1000) };
+  }
+  return { limited: false, retryAfter: 0 };
+}
+
 async function createSessionResponse(userId: string): Promise<NextResponse> {
   const sessionValue = await signSession(userId);
   const res = NextResponse.json({ ok: true });
@@ -18,6 +37,15 @@ async function createSessionResponse(userId: string): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+  const { limited, retryAfter } = checkRateLimit(ip);
+  if (limited) {
+    return NextResponse.json(
+      { error: "Too many login attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   try {
     const body = await req.json().catch(() => null);
     if (!body?.token || typeof body.token !== "string") {
