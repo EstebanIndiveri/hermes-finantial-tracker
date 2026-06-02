@@ -120,7 +120,7 @@ export default function JoinClient({ token }: { token: string }) {
   const inputStyle: React.CSSProperties = {
     width: "100%", padding: "10px 12px", borderRadius: 8,
     border: "1px solid var(--hborder)", background: "var(--hsurface2)",
-    color: "var(--htext1)", fontSize: "0.9rem", outline: "none", boxSizing: "border-box",
+    color: "var(--htext1)", fontSize: "16px", outline: "none", boxSizing: "border-box",
     marginTop: 4,
   };
   const labelStyle: React.CSSProperties = {
@@ -211,7 +211,7 @@ export default function JoinClient({ token }: { token: string }) {
           <div style={{ marginBottom: 12 }}>
             <label style={labelStyle}>Nombre de usuario</label>
             <input
-              style={{ ...inputStyle, fontSize: "16px" }}
+              style={inputStyle}
               type="text"
               autoCapitalize="none"
               autoCorrect="off"
