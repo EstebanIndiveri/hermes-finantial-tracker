@@ -21,19 +21,21 @@ export const monthly_settings = sqliteTable("monthly_settings", {
   saving_goal_yellow: real("saving_goal_yellow").notNull().default(0),
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 }, (t) => ({
-  uniqUserMonth: uniqueIndex("ms_user_month_idx").on(t.user_id, t.month),
+  uniqGroupMonth: uniqueIndex("ms_group_month_idx").on(t.group_id, t.month),
 }));
 
 export const categories = sqliteTable("categories", {
   id: text("id").primaryKey(),
   group_id: text("group_id").references(() => groups.id),
-  slug: text("slug").notNull().unique(),
+  slug: text("slug").notNull(),
   name: text("name").notNull(),
   emoji: text("emoji").notNull().default("📦"),
   is_active: integer("is_active").notNull().default(1),
   sort_order: integer("sort_order").notNull().default(0),
   default_hard_limit: integer("default_hard_limit").notNull().default(1),
-});
+}, (t) => ({
+  slugGroupIdx: uniqueIndex("categories_slug_group_idx").on(t.slug, t.group_id),
+}));
 
 export const budgets = sqliteTable("budgets", {
   id: text("id").primaryKey(),
@@ -45,7 +47,8 @@ export const budgets = sqliteTable("budgets", {
   hard_limit: integer("hard_limit").notNull().default(1),
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 }, (t) => ({
-  uniqUserMonthCat: uniqueIndex("budgets_user_month_cat_idx").on(t.user_id, t.month, t.category_id),
+  uniqGroupMonthCat: uniqueIndex("budgets_group_month_cat_idx").on(t.group_id, t.month, t.category_id),
+  groupIdx: index("budgets_group_id_idx").on(t.group_id),
 }));
 
 export const transactions = sqliteTable("transactions", {
@@ -67,6 +70,7 @@ export const transactions = sqliteTable("transactions", {
 }, (t) => ({
   userMonthIdx: index("tx_user_month_idx").on(t.user_id, t.month),
   categoryIdx: index("tx_category_idx").on(t.category_id),
+  groupIdx: index("tx_group_id_idx").on(t.group_id),
 }));
 
 export const bot_messages = sqliteTable("bot_messages", {
@@ -112,6 +116,7 @@ export const group_members = sqliteTable("group_members", {
   joined_at: integer("joined_at").notNull().default(sql`(unixepoch() * 1000)`),
 }, (t) => ({
   pk: uniqueIndex("gm_group_user_idx").on(t.group_id, t.user_id),
+  userIdx: index("gm_user_id_idx").on(t.user_id),
 }));
 
 export const group_invitations = sqliteTable("group_invitations", {
@@ -125,6 +130,7 @@ export const group_invitations = sqliteTable("group_invitations", {
   used_by: text("used_by").references(() => users.id),
 }, (t) => ({
   tokenIdx: uniqueIndex("gi_token_idx").on(t.token),
+  groupIdx: index("gi_group_id_idx").on(t.group_id),
 }));
 
 // Relations for query builder with `with` syntax
