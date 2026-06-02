@@ -22,6 +22,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<Step>(1);
   const [slideIndex, setSlideIndex] = useState(0);
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [displayName, setDisplayName] = useState("");
   const [telegramCode, setTelegramCode] = useState("");
   const [loadingCode, setLoadingCode] = useState(false);
   const [telegramLinked, setTelegramLinked] = useState(false);
@@ -47,6 +48,7 @@ export default function OnboardingPage() {
           return;
         }
         setUser(data);
+        setDisplayName(data.name);
         setTelegramLinked(data.has_telegram === true);
       } catch (err) {
         console.error("Error loading user:", err);
@@ -87,7 +89,10 @@ export default function OnboardingPage() {
       const res = await fetch("/api/auth/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ onboarding_completed: true }),
+        body: JSON.stringify({
+          onboarding_completed: true,
+          name: displayName.trim() || user?.name || "",
+        }),
       });
       if (!res.ok) {
         setError("No se pudo guardar el progreso. Intentá de nuevo.");
@@ -252,6 +257,34 @@ export default function OnboardingPage() {
                 <li>Consultar historial de transacciones</li>
                 <li>Usar el bot de Telegram</li>
               </ul>
+            </div>
+
+            {/* Display name editor */}
+            <div style={{ margin: "20px 0 8px" }}>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 500, color: "var(--htext2)", marginBottom: 6 }}>
+                ¿Cómo querés que te llamemos?
+              </label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={e => setDisplayName(e.target.value)}
+                placeholder="Tu nombre"
+                maxLength={50}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  border: "1px solid var(--hborder)",
+                  background: "var(--hsurface2)",
+                  color: "var(--htext1)",
+                  fontSize: "16px",
+                  outline: "none",
+                  boxSizing: "border-box" as const,
+                }}
+              />
+              <span style={{ fontSize: "0.75rem", color: "var(--htext3)", marginTop: 4, display: "block" }}>
+                Este nombre es visible en la app. Podés cambiarlo después en Configuración.
+              </span>
             </div>
 
             {error && (
