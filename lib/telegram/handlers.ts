@@ -1,6 +1,6 @@
 import { db } from "@/lib/db/client";
-import { transactions, categories, monthly_settings, budgets, bot_messages, receipt_imports } from "@/lib/db/schema";
-import { eq, and, sum, desc } from "drizzle-orm";
+import { transactions, categories, monthly_settings, budgets, bot_messages, receipt_imports, telegram_link_codes, users } from "@/lib/db/schema";
+import { eq, and, sum, desc, gt } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
 import { calculateCategoryStatus, calculateMonthStatus } from "@/lib/finance/rules";
@@ -538,6 +538,39 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       date: parsedDate,
       source: "ocr",
     });
+  }
+
+  if (text.startsWith("/vincular")) {
+    const parts = text.split(" ");
+    const code = parts[1]?.trim();
+    if (!code) return "Uso: /vincular XXXXXX\nGenerá tu código en el dashboard → Configuración.";
+
+    const telegramUserId = String(msg.from.id);
+
+    const linkCode = await db.query.telegram_link_codes.findFirst({
+      where: and(
+        eq(telegram_link_codes.id, code),
+        eq(telegram_link_codes.used, 0),
+        gt(telegram_link_codes.expires_at, Date.now()),
+      ),
+    });
+
+    if (!linkCode) {
+      return "❌ Código inválido o expirado. Generá uno nuevo desde el dashboard → Configuración → Conectar Telegram.";
+    }
+
+    // Check if this Telegram account is already linked to another user
+    const existingLink = await db.query.users.findFirst({
+      where: eq(users.telegram_user_id, telegramUserId),
+    });
+    if (existingLink && existingLink.id !== linkCode.user_id) {
+      return "⚠️ Este Telegram ya está vinculado a otra cuenta. Desvinculá desde la web primero.";
+    }
+
+    await db.update(users).set({ telegram_user_id: telegramUserId }).where(eq(users.id, linkCode.user_id));
+    await db.update(telegram_link_codes).set({ used: 1 }).where(eq(telegram_link_codes.id, code));
+
+    return "✅ ¡Cuenta vinculada correctamente! Ya podés usar el bot con tu usuario.";
   }
 
   const groqKey = process.env.GROQ_API_KEY;
