@@ -6,7 +6,7 @@ export const users = sqliteTable("users", {
   name: text("name").notNull(),
   telegram_user_id: text("telegram_user_id").unique(),
   personal_token_hash: text("personal_token_hash"),
-  active_telegram_group_id: text("active_telegram_group_id").references(() => groups.id),
+  active_telegram_group_id: text("active_telegram_group_id"), // FK to groups.id — constraint defined in migration
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
 
