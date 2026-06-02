@@ -1,40 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signSession } from "@/lib/utils/session";
 import { db } from "@/lib/db/client";
-import { users } from "@/lib/db/schema";
+import bcrypt from "bcryptjs";
 import { timingSafeEqual } from "crypto";
 
-/**
- * Login endpoint - validates access token and creates session
- * @param req - NextRequest with JSON body { token: string }
- * @returns JSON response with { ok: true } and sets hermes_session cookie
- */
+async function createSessionResponse(userId: string): Promise<NextResponse> {
+  const sessionValue = await signSession(userId);
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set("hermes_session", sessionValue, {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  return res;
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.json().catch(() => null);
-    if (!body?.token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
+    if (!body?.token || typeof body.token !== "string") {
+      return NextResponse.json({ error: "Missing token" }, { status: 400 });
+    }
+    const { token } = body;
 
-    const providedToken = Buffer.from(body.token);
-    const expectedToken = Buffer.from(process.env.WEB_ACCESS_TOKEN ?? "");
-    
-    if (providedToken.length !== expectedToken.length || !timingSafeEqual(providedToken, expectedToken)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const allUsers = await db.query.users.findMany();
+
+    // Phase 1: check per-user bcrypt hashes
+    for (const user of allUsers) {
+      if (user.personal_token_hash) {
+        const match = await bcrypt.compare(token, user.personal_token_hash);
+        if (match) return createSessionResponse(user.id);
+      }
     }
 
-    const user = await db.query.users.findFirst();
+    // Phase 2: legacy fallback for owner without personal_token_hash
+    const legacyUser = allUsers.find(u => !u.personal_token_hash);
+    if (legacyUser) {
+      const envToken = process.env.WEB_ACCESS_TOKEN ?? "";
+      if (!envToken) {
+        console.error("Login: owner has no personal_token_hash and WEB_ACCESS_TOKEN is not set");
+        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+      }
+      const providedBuf = Buffer.from(token);
+      const expectedBuf = Buffer.from(envToken);
+      if (
+        providedBuf.length === expectedBuf.length &&
+        timingSafeEqual(providedBuf, expectedBuf)
+      ) {
+        return createSessionResponse(legacyUser.id);
+      }
+    }
 
-    if (!user) return NextResponse.json({ error: "No user found. Run seed first." }, { status: 500 });
-
-    const sessionValue = await signSession(user.id);
-    const res = NextResponse.json({ ok: true });
-    res.cookies.set("hermes_session", sessionValue, {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30,
-    });
-    return res;
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   } catch (err) {
     console.error("Error in login:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
