@@ -6,6 +6,7 @@ import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
+import { getPersonalGroup } from "@/lib/groups/permissions";
 
 /**
  * Daily cron job for proactive Telegram alerts.
@@ -45,6 +46,13 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
+      // Resolve user's active group (personal group fallback)
+      const groupId = user.active_telegram_group_id ?? await getPersonalGroup(user.id);
+      if (!groupId) {
+        results.push({ userId: user.id, sent: false, reason: "no_group" });
+        continue;
+      }
+
       // Get today's transactions (created_at between start and end of today ARS)
       const startOfDay = new Date(todayStr + "T00:00:00-03:00").getTime();
       const endOfDay = new Date(todayStr + "T23:59:59-03:00").getTime();
@@ -61,8 +69,8 @@ export async function GET(req: NextRequest) {
       });
 
       const [summary, categoryBreakdown] = await Promise.all([
-        getMonthSummary(user.id, month),
-        getCategoryBreakdown(user.id, month),
+        getMonthSummary(groupId, month),
+        getCategoryBreakdown(groupId, month),
       ]);
 
       if (!summary) {
