@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { users, group_invitations } from "@/lib/db/schema";
+import { users, group_invitations, groups, group_members } from "@/lib/db/schema";
 import { eq, and, gt, isNull } from "drizzle-orm";
 import { signSession } from "@/lib/utils/session";
 import bcrypt from "bcryptjs";
@@ -65,12 +65,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       personal_token_hash,
     });
 
+    const groupId = randomUUID();
+    await db.insert(groups).values({
+      id: groupId,
+      name: "Mi espacio",
+      owner_id: userId,
+    });
+    await db.insert(group_members).values({
+      group_id: groupId,
+      user_id: userId,
+      role: "owner",
+    });
+
     const sessionValue = await signSession(userId);
     const res = NextResponse.json({ user_id: userId, group_id: invitation.group_id });
     res.cookies.set("hermes_session", sessionValue, {
       httpOnly: true,
       sameSite: "strict",
       secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+    res.cookies.set("active_group_id", groupId, {
+      httpOnly: true,
+      sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 30,
     });

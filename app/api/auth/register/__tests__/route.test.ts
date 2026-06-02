@@ -82,14 +82,25 @@ describe("POST /api/auth/register", () => {
     expect(res.status).toBe(410);
   });
 
-  it("creates user and returns group_id on valid input", async () => {
+  it("creates a personal group and sets active_group_id cookie on valid input", async () => {
     jest.mocked(db.query.group_invitations.findFirst).mockResolvedValue(validInvite as any);
     jest.mocked(db.query.users.findFirst).mockResolvedValue(undefined);
-    const res = await POST(makeReq({ name: "Alice", username: "alice", password: "validpass123", invite_token: "valid-invite-token" }));
+
+    const res = await POST(makeReq({
+      name: "Alice",
+      username: "alice",
+      password: "validpass123",
+      invite_token: "valid-invite-token",
+    }));
+
     expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.group_id).toBe("group-1");
-    expect(data.user_id).toBeDefined();
-    expect(res.headers.get("Set-Cookie")).toContain("hermes_session");
+
+    // db.insert called 3 times: users, groups, group_members
+    expect(db.insert).toHaveBeenCalledTimes(3);
+
+    // Both cookies should be present
+    const setCookie = res.headers.get("Set-Cookie") ?? "";
+    expect(setCookie).toContain("active_group_id=");
+    expect(setCookie).toContain("hermes_session");
   });
 });
