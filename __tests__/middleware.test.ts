@@ -4,6 +4,13 @@ import { signSession } from "@/lib/utils/session";
 
 process.env.SESSION_SECRET = "test-secret-32-chars-long-padding!!";
 
+// Mock the database-dependent getPersonalGroup function
+jest.mock("@/lib/groups/permissions", () => ({
+  getPersonalGroup: jest.fn(),
+}));
+
+import { getPersonalGroup } from "@/lib/groups/permissions";
+
 describe("middleware", () => {
   test("allows public path /login without authentication", async () => {
     const req = new NextRequest("http://localhost:3000/login");
@@ -118,5 +125,84 @@ describe("middleware", () => {
     });
     const res = await middleware(req);
     expect(res.status).toBe(200);
+  });
+
+  test("allows public path /api/join without authentication", async () => {
+    const req = new NextRequest("http://localhost:3000/api/join");
+    const res = await middleware(req);
+    expect(res.status).toBe(200);
+  });
+
+  test("allows public path /join without authentication", async () => {
+    const req = new NextRequest("http://localhost:3000/join");
+    const res = await middleware(req);
+    expect(res.status).toBe(200);
+  });
+
+  test("sets x-group-id header from active_group_id cookie when present", async () => {
+    const sessionValue = await signSession("user-123");
+    const req = new NextRequest("http://localhost:3000/dashboard", {
+      headers: {
+        cookie: `hermes_session=${sessionValue}; active_group_id=group-abc`,
+      },
+    });
+    const res = await middleware(req);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-group-id")).toBe("group-abc");
+    expect(res.headers.get("x-user-id")).toBe("user-123");
+  });
+
+  test("resolves personal group and sets cookie when active_group_id is missing", async () => {
+    const sessionValue = await signSession("user-456");
+    (getPersonalGroup as jest.Mock).mockResolvedValueOnce("group-personal-456");
+    
+    const req = new NextRequest("http://localhost:3000/dashboard", {
+      headers: {
+        cookie: `hermes_session=${sessionValue}`,
+      },
+    });
+    const res = await middleware(req);
+    
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-group-id")).toBe("group-personal-456");
+    expect(res.headers.get("x-user-id")).toBe("user-456");
+    expect(getPersonalGroup).toHaveBeenCalledWith("user-456");
+    
+    // Check that the cookie was set
+    const setCookieHeader = res.headers.get("set-cookie");
+    expect(setCookieHeader).toContain("active_group_id=group-personal-456");
+    expect(setCookieHeader).toContain("HttpOnly");
+  });
+
+  test("proceeds without x-group-id when getPersonalGroup returns null", async () => {
+    const sessionValue = await signSession("user-nomigration");
+    (getPersonalGroup as jest.Mock).mockResolvedValueOnce(null);
+    
+    const req = new NextRequest("http://localhost:3000/dashboard", {
+      headers: {
+        cookie: `hermes_session=${sessionValue}`,
+      },
+    });
+    const res = await middleware(req);
+    
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-user-id")).toBe("user-nomigration");
+    expect(res.headers.get("x-group-id")).toBeNull();
+  });
+
+  test("proceeds without x-group-id when getPersonalGroup throws (pre-migration)", async () => {
+    const sessionValue = await signSession("user-error");
+    (getPersonalGroup as jest.Mock).mockRejectedValueOnce(new Error("Table does not exist"));
+    
+    const req = new NextRequest("http://localhost:3000/dashboard", {
+      headers: {
+        cookie: `hermes_session=${sessionValue}`,
+      },
+    });
+    const res = await middleware(req);
+    
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-user-id")).toBe("user-error");
+    expect(res.headers.get("x-group-id")).toBeNull();
   });
 });
