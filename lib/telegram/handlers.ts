@@ -42,7 +42,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   const month = getActiveMonthArgentina();
 
   if (text === "/start") {
-    return "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible [categoria]\n/ultimo\n/borrar_ultimo\n\nTambién podés escribirme en lenguaje natural: \"¿Cuánto me queda en salidas pareja?\"";
+    return "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible [categoria]\n/ultimo\n/borrar_ultimo\n/grupo [nombre] — ver o cambiar tu grupo activo\n\nTambién podés escribirme en lenguaje natural: \"¿Cuánto me queda en salidas pareja?\"";
   }
 
   if (text === "/resumen") {
