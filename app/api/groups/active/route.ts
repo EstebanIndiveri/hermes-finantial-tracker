@@ -6,8 +6,10 @@ const schema = z.object({ group_id: z.string().uuid() });
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const groupId = req.headers.get("x-group-id");
-  if (!groupId) return NextResponse.json({ group_id: null });
-  return NextResponse.json({ group_id: groupId });
+  const userId = req.headers.get("x-user-id");
+  if (!groupId || !userId) return NextResponse.json({ group_id: null, role: null });
+  const membership = await getGroupMembership(userId, groupId);
+  return NextResponse.json({ group_id: groupId, role: membership?.role ?? null });
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {

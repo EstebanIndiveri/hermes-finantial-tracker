@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getActiveMonthArgentina } from "@/lib/utils/dates";
 import { randomUUID } from "crypto";
+import { getGroupMembership } from "@/lib/groups/permissions";
 
 const monthRegex = /^\d{4}-\d{2}$/;
 
@@ -18,16 +19,18 @@ const schema = z.object({
 });
 
 /**
- * Returns budgets for the active month
+ * Returns budgets for the active group and month
  */
 export async function GET(req: NextRequest) {
   try {
     const userId = req.headers.get("x-user-id");
+    const groupId = req.headers.get("x-group-id");
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!groupId) return NextResponse.json({ error: "No active group" }, { status: 401 });
 
     const month = getActiveMonthArgentina();
     const rows = await db.select().from(budgets).where(
-      and(eq(budgets.user_id, userId), eq(budgets.month, month))
+      and(eq(budgets.group_id, groupId), eq(budgets.month, month))
     );
 
     return NextResponse.json(rows.map(r => ({
@@ -42,14 +45,21 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * Batch updates or creates budgets for multiple categories
- * @param req - NextRequest with x-user-id header and JSON body { items: Array<{category_id, budget_ars, hard_limit?}>, month? }
+ * Batch updates or creates budgets for the active group (owner/admin only)
+ * @param req - NextRequest with x-user-id and x-group-id headers and JSON body { items: Array<{category_id, budget_ars, hard_limit?}>, month? }
  * @returns JSON response with { ok: true } or error
  */
 export async function PATCH(req: NextRequest) {
   try {
     const userId = req.headers.get("x-user-id");
+    const groupId = req.headers.get("x-group-id");
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!groupId) return NextResponse.json({ error: "No active group" }, { status: 401 });
+
+    const membership = await getGroupMembership(userId, groupId);
+    if (!membership || membership.role === "member") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const body = await req.json().catch(() => null);
     const parsed = schema.safeParse(body);
@@ -61,12 +71,13 @@ export async function PATCH(req: NextRequest) {
       await db.insert(budgets).values({
         id: randomUUID(),
         user_id: userId,
+        group_id: groupId,
         month,
         category_id: item.category_id,
         budget_ars: item.budget_ars,
         hard_limit: item.hard_limit ? 1 : 0,
       }).onConflictDoUpdate({
-        target: [budgets.user_id, budgets.month, budgets.category_id],
+        target: [budgets.group_id, budgets.month, budgets.category_id],
         set: {
           budget_ars: item.budget_ars,
           hard_limit: item.hard_limit ? 1 : 0,

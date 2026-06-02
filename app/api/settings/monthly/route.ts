@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { getActiveMonthArgentina } from "@/lib/utils/dates";
 import { randomUUID } from "crypto";
+import { getGroupMembership } from "@/lib/groups/permissions";
 
 const monthRegex = /^\d{4}-\d{2}$/;
 
@@ -17,14 +18,16 @@ const schema = z.object({
 });
 
 /**
- * Retrieves monthly settings for a user
- * @param req - NextRequest with x-user-id header and optional month query parameter
+ * Retrieves monthly settings for the active group
+ * @param req - NextRequest with x-user-id and x-group-id headers and optional month query parameter
  * @returns JSON response with settings or null
  */
 export async function GET(req: NextRequest) {
   try {
     const userId = req.headers.get("x-user-id");
+    const groupId = req.headers.get("x-group-id");
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!groupId) return NextResponse.json({ error: "No active group" }, { status: 401 });
 
     const monthParam = req.nextUrl.searchParams.get("month");
     if (monthParam && !monthRegex.test(monthParam)) {
@@ -33,7 +36,7 @@ export async function GET(req: NextRequest) {
 
     const month = monthParam ?? getActiveMonthArgentina();
     const settings = await db.query.monthly_settings.findFirst({
-      where: and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)),
+      where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
     });
     return NextResponse.json(settings ?? null);
   } catch (err) {
@@ -43,14 +46,21 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * Creates or updates monthly settings for a user
- * @param req - NextRequest with x-user-id header and JSON body
+ * Creates or updates monthly settings for the active group (owner/admin only)
+ * @param req - NextRequest with x-user-id and x-group-id headers and JSON body
  * @returns JSON response with updated settings or error
  */
 export async function PATCH(req: NextRequest) {
   try {
     const userId = req.headers.get("x-user-id");
+    const groupId = req.headers.get("x-group-id");
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!groupId) return NextResponse.json({ error: "No active group" }, { status: 401 });
+
+    const membership = await getGroupMembership(userId, groupId);
+    if (!membership || membership.role === "member") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const body = await req.json().catch(() => null);
     const parsed = schema.safeParse(body);
@@ -58,17 +68,17 @@ export async function PATCH(req: NextRequest) {
 
     const month = parsed.data.month ?? getActiveMonthArgentina();
     const existing = await db.query.monthly_settings.findFirst({
-      where: and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)),
+      where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
     });
 
     if (existing) {
-      await db.update(monthly_settings).set({ ...parsed.data, month: undefined }).where(and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)));
+      await db.update(monthly_settings).set({ ...parsed.data, month: undefined }).where(and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)));
     } else {
-      await db.insert(monthly_settings).values({ id: randomUUID(), user_id: userId, month, income_usd: 0, exchange_rate: 1, saving_goal_usd: 0, saving_goal_yellow: 0, ...parsed.data });
+      await db.insert(monthly_settings).values({ id: randomUUID(), user_id: userId, group_id: groupId, month, income_usd: 0, exchange_rate: 1, saving_goal_usd: 0, saving_goal_yellow: 0, ...parsed.data });
     }
 
     const updated = await db.query.monthly_settings.findFirst({
-      where: and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)),
+      where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
     });
     return NextResponse.json(updated);
   } catch (err) {
