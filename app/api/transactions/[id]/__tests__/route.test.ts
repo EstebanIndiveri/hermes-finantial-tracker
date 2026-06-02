@@ -119,7 +119,11 @@ describe("DELETE /api/transactions/[id]", () => {
       method: "DELETE",
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-456" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-456";
+        if (key === "x-group-id") return "group-1";
+        return null;
+      }),
     });
 
     const response = await DELETE(req, { params: Promise.resolve({ id: "tx-1" }) });

@@ -53,7 +53,7 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     const [updated] = await db
       .update(categories)
       .set(updateData)
-      .where(eq(categories.id, id))
+      .where(and(eq(categories.id, id), eq(categories.group_id, groupId)))
       .returning();
 
     if (!updated) {
@@ -90,7 +90,7 @@ export async function DELETE(req: NextRequest, { params }: RouteContext) {
     const [{ value: txCount }] = await db
       .select({ value: count() })
       .from(transactions)
-      .where(eq(transactions.category_id, id));
+      .where(and(eq(transactions.category_id, id), eq(transactions.group_id, groupId)));
 
     if (txCount > 0) {
       return NextResponse.json(
@@ -102,7 +102,7 @@ export async function DELETE(req: NextRequest, { params }: RouteContext) {
     const [{ value: budgetCount }] = await db
       .select({ value: count() })
       .from(budgets)
-      .where(eq(budgets.category_id, id));
+      .where(and(eq(budgets.category_id, id), eq(budgets.group_id, groupId)));
 
     if (budgetCount > 0) {
       return NextResponse.json(
@@ -111,7 +111,7 @@ export async function DELETE(req: NextRequest, { params }: RouteContext) {
       );
     }
 
-    const result = await db.delete(categories).where(eq(categories.id, id)).returning();
+    const result = await db.delete(categories).where(and(eq(categories.id, id), eq(categories.group_id, groupId))).returning();
 
     if (result.length === 0) {
       return NextResponse.json({ error: "Categoría no encontrada." }, { status: 404 });

@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const category = await db.query.categories.findFirst({
-      where: eq(categories.id, category_id),
+      where: and(eq(categories.id, category_id), eq(categories.group_id, groupId)),
     });
     if (!category) return NextResponse.json({ error: "Category not found" }, { status: 404 });
 
