@@ -43,6 +43,10 @@ describe("PATCH /api/auth/me", () => {
     mockUpdate.mockReturnValue({ set: mockSet } as any);
     mockSet.mockReturnValue({ where: mockWhere });
 
+    // Mock findFirst to return a user
+    const mockDb = db as any;
+    mockDb.query.users.findFirst.mockResolvedValueOnce({ id: "user-123" });
+
     // Create a valid session cookie
     const cookie = await signSession("user-123");
     const res = await PATCH(makeRequest({ onboarding_completed: true }, cookie));

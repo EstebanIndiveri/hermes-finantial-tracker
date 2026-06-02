@@ -31,6 +31,9 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   await db.update(users)
     .set({ onboarding_completed_at: Date.now() })
     .where(eq(users.id, userId));
