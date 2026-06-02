@@ -312,12 +312,14 @@ export default function SettingsPage() {
   const [cats, setCats] = useState<Category[]>([]);
   const [budgets, setBudgets] = useState<Record<string, BudgetItem>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [noGroup, setNoGroup] = useState(false);
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/settings/monthly").then(r => r.json() as Promise<MonthlySettings>),
-      fetch("/api/categories").then(r => r.json() as Promise<Category[]>),
+      fetch("/api/settings/monthly").then(r => r.ok ? r.json() : null),
+      fetch("/api/categories").then(r => r.ok ? r.json() : null),
     ]).then(([s, c]) => {
+      if (!s || !Array.isArray(c)) { setNoGroup(true); return; }
       setSettings(s);
       setCats(c);
     }).catch(() => toast.error("Error al cargar configuración"));
@@ -374,6 +376,18 @@ export default function SettingsPage() {
     } catch { toast.error("Error de conexión"); }
     finally { setSaving(null); }
   }
+
+  if (noGroup) return (
+    <div style={{ padding: "40px 20px", color: "var(--htext3)", fontFamily: "DM Sans, sans-serif" }}>
+      <MiCuenta />
+      <ConectarTelegram />
+      <div style={{ marginTop: 32, textAlign: "center" }}>
+        <div style={{ fontSize: "2rem", marginBottom: 12 }}>🏠</div>
+        <p>No estás en ningún grupo activo.</p>
+        <p style={{ fontSize: "0.85rem", marginTop: 8 }}>Pedile al owner una invitación para unirte a un grupo.</p>
+      </div>
+    </div>
+  );
 
   if (!settings) return (
     <div style={{ padding: 40, color: "var(--htext3)", fontFamily: "DM Sans, sans-serif" }}>

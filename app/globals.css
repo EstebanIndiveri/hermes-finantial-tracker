@@ -208,3 +208,10 @@
 .bg-status-ok      { background: rgba(16,185,129,0.1);  border-color: rgba(16,185,129,0.3); }
 .bg-status-warning { background: rgba(245,158,11,0.1);  border-color: rgba(245,158,11,0.3); }
 .bg-status-closed  { background: rgba(239,68,68,0.1);   border-color: rgba(239,68,68,0.3); }
+
+/* ─── PLACEHOLDER COLOR ──────────────────────────────────── */
+[data-hermes] input::placeholder,
+[data-hermes] textarea::placeholder {
+  color: var(--htext3);
+  opacity: 0.7;
+}

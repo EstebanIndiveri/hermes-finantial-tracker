@@ -10,6 +10,7 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -106,26 +107,46 @@ function LoginForm() {
             >
               Contraseña
             </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              style={{
-                width: "100%",
-                padding: "12px 14px",
-                borderRadius: 10,
-                border: "1px solid var(--hborder)",
-                background: "var(--hsurface2)",
-                color: "var(--htext1)",
-                fontSize: "16px",
-                outline: "none",
-                boxSizing: "border-box",
-              }}
-            />
+            <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                style={{
+                  width: "100%",
+                  padding: "12px 40px 12px 14px",
+                  borderRadius: 10,
+                  border: "1px solid var(--hborder)",
+                  background: "var(--hsurface2)",
+                  color: "var(--htext1)",
+                  fontSize: "16px",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                style={{
+                  position: "absolute",
+                  right: 10,
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--htext3)",
+                  fontSize: "1rem",
+                  padding: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                {showPassword ? "🙈" : "👁"}
+              </button>
+            </div>
           </div>
 
           {error && (

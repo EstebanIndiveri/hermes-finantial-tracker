@@ -37,6 +37,7 @@ function categoryToEdit(cat: Category): EditState {
 export default function CategoriesPage() {
   const [cats, setCats] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [noGroup, setNoGroup] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -46,7 +47,11 @@ export default function CategoriesPage() {
   useEffect(() => {
     fetch("/api/categories?all=true")
       .then(r => r.json())
-      .then((data: Category[]) => setCats(data))
+      .then((data: unknown) => {
+        if (!Array.isArray(data)) { setNoGroup(true); setLoading(false); return; }
+        setCats(data as Category[]);
+        setLoading(false);
+      })
       .catch(() => toast.error("Error al cargar categorías"))
       .finally(() => setLoading(false));
   }, []);
@@ -140,6 +145,14 @@ export default function CategoriesPage() {
       </div>
     );
   }
+
+  if (noGroup) return (
+    <div style={{ padding: "40px 20px", color: "var(--htext3)", fontFamily: "DM Sans, sans-serif", textAlign: "center" }}>
+      <div style={{ fontSize: "2rem", marginBottom: 12 }}>🏠</div>
+      <p>No estás en ningún grupo activo.</p>
+      <p style={{ fontSize: "0.85rem", marginTop: 8 }}>Pedile al owner una invitación para unirte a un grupo.</p>
+    </div>
+  );
 
   return (
     <>

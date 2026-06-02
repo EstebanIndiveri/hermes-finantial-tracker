@@ -9,9 +9,32 @@ jest.mock("@/lib/groups/permissions", () => ({
   getPersonalGroup: jest.fn(),
 }));
 
+// Mock the DB client
+jest.mock("@/lib/db/client", () => ({
+  db: { select: jest.fn() },
+}));
+
 import { getPersonalGroup } from "@/lib/groups/permissions";
 
+// Helper: configure the db.select mock chain to resolve with given rows
+function mockDbChainWith(rows: object[]) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { db } = jest.requireMock("@/lib/db/client") as { db: { select: jest.Mock } };
+  const chain = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue(rows),
+    // Support .then() chained directly on the builder
+    then: (resolve: (v: object[]) => unknown) => Promise.resolve(rows).then(resolve),
+  };
+  db.select.mockReturnValue(chain);
+}
+
 describe("middleware", () => {
+  beforeEach(() => {
+    // Default: user has completed onboarding
+    mockDbChainWith([{ onboarding_completed_at: 1_700_000_000_000 }]);
+  });
   test("allows public path /login without authentication", async () => {
     const req = new NextRequest("http://localhost:3000/login");
     const res = await middleware(req);
@@ -127,10 +150,10 @@ describe("middleware", () => {
     expect(res.status).toBe(200);
   });
 
-  test("allows public path /api/join without authentication", async () => {
-    const req = new NextRequest("http://localhost:3000/api/join");
+  test("returns 401 when accessing /api/join without authentication", async () => {
+    const req = new NextRequest("http://localhost:3000/api/join/some-token");
     const res = await middleware(req);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
   });
 
   test("allows public path /join without authentication", async () => {
@@ -204,5 +227,26 @@ describe("middleware", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-user-id")).toBe("user-error");
     expect(res.headers.get("x-group-id")).toBeNull();
+  });
+
+  test("redirects to /onboarding when user has not completed onboarding and visits /dashboard", async () => {
+    mockDbChainWith([{ onboarding_completed_at: null }]);
+    const sessionValue = await signSession("user-new");
+    const req = new NextRequest("http://localhost:3000/dashboard", {
+      headers: { cookie: `hermes_session=${sessionValue}` },
+    });
+    const res = await middleware(req);
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe("http://localhost:3000/onboarding");
+  });
+
+  test("allows /dashboard access when onboarding is completed", async () => {
+    mockDbChainWith([{ onboarding_completed_at: 1_700_000_000_000 }]);
+    const sessionValue = await signSession("user-done");
+    const req = new NextRequest("http://localhost:3000/dashboard", {
+      headers: { cookie: `hermes_session=${sessionValue}` },
+    });
+    const res = await middleware(req);
+    expect(res.status).toBe(200);
   });
 });

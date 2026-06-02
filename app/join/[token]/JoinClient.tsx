@@ -25,6 +25,8 @@ export default function JoinClient({ token }: { token: string }) {
   const [regConfirm, setRegConfirm] = useState("");
   const [regError, setRegError] = useState("");
   const [registering, setRegistering] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     fetch(`/api/join/${token}`)
@@ -79,7 +81,7 @@ export default function JoinClient({ token }: { token: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ group_id: joinData.group_id }),
       });
-      router.push("/onboarding");
+      router.push("/dashboard");
     } catch {
       setRegError("Error de red.");
     } finally {
@@ -104,7 +106,7 @@ export default function JoinClient({ token }: { token: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ group_id: data.group_id }),
       });
-      router.push("/onboarding");
+      router.push("/dashboard");
     } catch { setStatus("error"); setErrorMsg("Error de red."); }
     finally { setJoining(false); }
   }
@@ -135,6 +137,23 @@ export default function JoinClient({ token }: { token: string }) {
     width: "100%", padding: "11px", borderRadius: 8,
     border: "1px solid var(--hborder)", background: "transparent",
     color: "var(--htext2)", cursor: "pointer", fontSize: "0.9rem",
+  };
+  const passwordWrapperStyle: React.CSSProperties = {
+    position: "relative",
+    display: "flex",
+    alignItems: "center",
+  };
+  const eyeBtnStyle: React.CSSProperties = {
+    position: "absolute",
+    right: 10,
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    color: "var(--htext3)",
+    fontSize: "1rem",
+    padding: "4px",
+    display: "flex",
+    alignItems: "center",
   };
 
   if (status === "loading") return (
@@ -229,25 +248,35 @@ export default function JoinClient({ token }: { token: string }) {
           </div>
           <div style={{ marginBottom: 12 }}>
             <label style={labelStyle}>Contraseña (mínimo 8 caracteres)</label>
-            <input
-              type="password"
-              value={regToken}
-              onChange={e => setRegToken(e.target.value)}
-              placeholder="••••••••"
-              style={inputStyle}
-              required
-            />
+            <div style={passwordWrapperStyle}>
+              <input
+                type={showPassword ? "text" : "password"}
+                value={regToken}
+                onChange={e => setRegToken(e.target.value)}
+                placeholder="••••••••"
+                style={{ ...inputStyle, paddingRight: 36 }}
+                required
+              />
+              <button type="button" onClick={() => setShowPassword(v => !v)} style={eyeBtnStyle}>
+                {showPassword ? "🙈" : "👁"}
+              </button>
+            </div>
           </div>
           <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>Confirmar contraseña</label>
-            <input
-              type="password"
-              value={regConfirm}
-              onChange={e => setRegConfirm(e.target.value)}
-              placeholder="••••••••"
-              style={inputStyle}
-              required
-            />
+            <div style={passwordWrapperStyle}>
+              <input
+                type={showConfirm ? "text" : "password"}
+                value={regConfirm}
+                onChange={e => setRegConfirm(e.target.value)}
+                placeholder="••••••••"
+                style={{ ...inputStyle, paddingRight: 36 }}
+                required
+              />
+              <button type="button" onClick={() => setShowConfirm(v => !v)} style={eyeBtnStyle}>
+                {showConfirm ? "🙈" : "👁"}
+              </button>
+            </div>
           </div>
           {regError && (
             <p style={{ fontSize: "0.82rem", color: "var(--hred)", background: "var(--hred-soft)", padding: "8px 12px", borderRadius: 6, marginBottom: 12 }}>
@@ -263,7 +292,7 @@ export default function JoinClient({ token }: { token: string }) {
           </button>
         </form>
         <p style={{ fontSize: "0.78rem", color: "var(--htext3)", textAlign: "center", marginTop: 12 }}>
-          ¿Ya tenés cuenta? <a href="/login" style={{ color: "var(--haccent)" }}>Iniciá sesión</a>
+          ¿Ya tenés cuenta? <a href={`/login?redirect=/join/${token}`} style={{ color: "var(--haccent)" }}>Iniciá sesión</a>
         </p>
       </div>
     </div>
