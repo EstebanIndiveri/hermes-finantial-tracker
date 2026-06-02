@@ -6,7 +6,8 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") ?? "/dashboard";
-  const [token, setToken] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -18,16 +19,15 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ username, password }),
       });
       if (!res.ok) {
-        setError("Token incorrecto.");
+        setError("Usuario o contraseña incorrectos.");
         setLoading(false);
         return;
       }
       router.push(redirectTo);
-    } catch (err) {
-      console.error("Login error:", err);
+    } catch {
       setError("Error de conexión. Intenta nuevamente.");
       setLoading(false);
     }
@@ -59,46 +59,65 @@ function LoginForm() {
       >
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: "2rem", marginBottom: 8 }}>💰</div>
-          <h1
-            style={{
-              fontSize: "1.4rem",
-              fontWeight: 700,
-              color: "var(--htext1)",
-              margin: 0,
-            }}
-          >
+          <h1 style={{ fontSize: "1.4rem", fontWeight: 700, color: "var(--htext1)", margin: 0 }}>
             Hermes Finance
           </h1>
           <p style={{ fontSize: "0.82rem", color: "var(--htext3)", marginTop: 4 }}>
-            Ingresá tu token de acceso
+            Ingresá con tu usuario y contraseña
           </p>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 16 }}>
             <label
-              htmlFor="token"
-              style={{
-                display: "block",
-                fontSize: "0.82rem",
-                fontWeight: 500,
-                color: "var(--htext2)",
-                marginBottom: 6,
-              }}
+              htmlFor="username"
+              style={{ display: "block", fontSize: "0.82rem", fontWeight: 500, color: "var(--htext2)", marginBottom: 6 }}
             >
-              Token de acceso
+              Usuario
             </label>
             <input
-              id="token"
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
+              id="username"
+              type="text"
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="username"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              placeholder="tu_usuario"
+              required
               style={{
                 width: "100%",
-                padding: "10px 12px",
-                borderRadius: 8,
+                padding: "12px 14px",
+                borderRadius: 10,
+                border: "1px solid var(--hborder)",
+                background: "var(--hsurface2)",
+                color: "var(--htext1)",
+                fontSize: "16px",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 24 }}>
+            <label
+              htmlFor="password"
+              style={{ display: "block", fontSize: "0.82rem", fontWeight: 500, color: "var(--htext2)", marginBottom: 6 }}
+            >
+              Contraseña
+            </label>
+            <input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                borderRadius: 10,
                 border: "1px solid var(--hborder)",
                 background: "var(--hsurface2)",
                 color: "var(--htext1)",
@@ -110,36 +129,27 @@ function LoginForm() {
           </div>
 
           {error && (
-            <p
-              style={{
-                fontSize: "0.82rem",
-                color: "var(--hred)",
-                marginBottom: 12,
-                padding: "8px 12px",
-                background: "var(--hred-soft)",
-                borderRadius: 6,
-              }}
-            >
+            <div style={{ color: "var(--herror)", fontSize: "0.85rem", marginBottom: 16, textAlign: "center" }}>
               {error}
-            </p>
+            </div>
           )}
 
           <button
             type="submit"
-            disabled={loading || !token.trim()}
+            disabled={loading}
             style={{
               width: "100%",
-              padding: "11px",
-              borderRadius: 8,
+              padding: "13px",
+              borderRadius: 10,
               border: "none",
-              background: loading || !token.trim() ? "var(--htext3)" : "var(--haccent)",
-              color: "white",
-              cursor: loading || !token.trim() ? "not-allowed" : "pointer",
-              fontSize: "0.9rem",
+              background: loading ? "var(--htext3)" : "var(--haccent)",
+              color: "#fff",
+              fontSize: "1rem",
               fontWeight: 600,
+              cursor: loading ? "not-allowed" : "pointer",
             }}
           >
-            {loading ? "Entrando..." : "Entrar"}
+            {loading ? "Ingresando..." : "Ingresar"}
           </button>
         </form>
       </div>
@@ -149,22 +159,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div
-          data-hermes=""
-          style={{
-            minHeight: "100vh",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "var(--hbg)",
-          }}
-        >
-          <p style={{ color: "var(--htext2)" }}>Cargando...</p>
-        </div>
-      }
-    >
+    <Suspense>
       <LoginForm />
     </Suspense>
   );
