@@ -5,6 +5,7 @@ import { transactions, budgets, categories } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { generateCSV, generateXLSX } from "@/lib/export/generate";
 import type { ExportTransaction, ExportCategory } from "@/lib/export/generate";
+import { getGroupMembership } from "@/lib/groups/permissions";
 
 const MONTH_REGEX = /^\d{4}-\d{2}$/;
 
@@ -13,6 +14,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const userId = hdrs.get("x-user-id");
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const groupId = hdrs.get("x-group-id");
+  if (!groupId) {
+    return NextResponse.json({ error: "No active group" }, { status: 400 });
+  }
+
+  const membership = await getGroupMembership(userId, groupId);
+  if (!membership) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { searchParams } = req.nextUrl;
@@ -33,7 +44,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const txRows = await db.query.transactions.findMany({
       where: and(
-        eq(transactions.user_id, userId),
+        eq(transactions.group_id, groupId),
         eq(transactions.month, month),
         eq(transactions.status, "active"),
       ),
@@ -51,12 +62,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }));
 
     const allCats = await db.query.categories.findMany({
-      where: eq(categories.is_active, 1),
+      where: and(eq(categories.is_active, 1), eq(categories.group_id, groupId)),
       orderBy: (c, { asc }) => asc(c.sort_order),
     });
 
     const budgetRows = await db.query.budgets.findMany({
-      where: and(eq(budgets.user_id, userId), eq(budgets.month, month)),
+      where: and(eq(budgets.group_id, groupId), eq(budgets.month, month)),
     });
     const budgetMap = Object.fromEntries(budgetRows.map((b) => [b.category_id, b]));
 

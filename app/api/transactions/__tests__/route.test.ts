@@ -33,11 +33,16 @@ jest.mock("@/lib/db/client", () => ({
 
 jest.mock("@/lib/utils/dates");
 jest.mock("@/lib/finance/rules");
+jest.mock("@/lib/groups/permissions", () => ({
+  getGroupMembership: jest.fn(),
+}));
 
 describe("GET /api/transactions", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (datesUtil.getActiveMonthArgentina as jest.Mock).mockReturnValue("2025-05");
+    const { getGroupMembership } = require("@/lib/groups/permissions");
+    getGroupMembership.mockResolvedValue({ group_id: "group-123", user_id: "user-123", role: "member" });
   });
 
   test("returns 401 when x-user-id header is missing", async () => {
@@ -68,7 +73,11 @@ describe("GET /api/transactions", () => {
 
     const req = new NextRequest("http://localhost:3000/api/transactions");
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await GET(req);
@@ -93,7 +102,11 @@ describe("GET /api/transactions", () => {
 
     const req = new NextRequest("http://localhost:3000/api/transactions?month=2025-04");
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await GET(req);
@@ -105,7 +118,11 @@ describe("GET /api/transactions", () => {
 
     const req = new NextRequest("http://localhost:3000/api/transactions");
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await GET(req);
@@ -121,6 +138,8 @@ describe("POST /api/transactions", () => {
     jest.clearAllMocks();
     (datesUtil.getActiveMonthArgentina as jest.Mock).mockReturnValue("2025-05");
     (datesUtil.getArgentinaDate as jest.Mock).mockReturnValue(new Date("2025-05-15T12:00:00Z"));
+    const { getGroupMembership } = require("@/lib/groups/permissions");
+    getGroupMembership.mockResolvedValue({ group_id: "group-123", user_id: "user-123", role: "member" });
     
     // Default category mock - tests can override if needed
     (db.query.categories.findFirst as jest.Mock).mockResolvedValue({
@@ -169,7 +188,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -190,7 +213,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -206,7 +233,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -222,7 +253,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -238,7 +273,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -254,7 +293,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -272,7 +315,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -293,7 +340,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -330,7 +381,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -367,7 +422,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -409,7 +468,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -444,7 +507,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -481,7 +548,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -513,7 +584,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -539,7 +614,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -567,7 +646,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -584,7 +667,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -610,7 +697,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -648,7 +739,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);
@@ -673,7 +768,11 @@ describe("POST /api/transactions", () => {
       }),
     });
     Object.defineProperty(req.headers, "get", {
-      value: jest.fn((key: string) => (key === "x-user-id" ? "user-123" : null)),
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
     });
 
     const response = await POST(req);

@@ -23,15 +23,23 @@ jest.mock("@/lib/db/client", () => ({
   },
 }));
 
+jest.mock("@/lib/groups/permissions", () => ({
+  getGroupMembership: jest.fn(),
+}));
+
 const mockDb = db as jest.Mocked<typeof db>;
 
 function makeReq(url: string, options?: RequestInit) {
   return new NextRequest(url, options);
 }
 
-function withUser(req: NextRequest, userId = "user-123") {
+function withUser(req: NextRequest, userId = "user-123", groupId = "group-123") {
   Object.defineProperty(req.headers, "get", {
-    value: jest.fn((key: string) => (key === "x-user-id" ? userId : null)),
+    value: jest.fn((key: string) => {
+      if (key === "x-user-id") return userId;
+      if (key === "x-group-id") return groupId;
+      return null;
+    }),
   });
   return req;
 }
@@ -44,7 +52,11 @@ function mockInsertResult(created: Record<string, unknown>) {
 }
 
 describe("GET /api/categories", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const { getGroupMembership } = require("@/lib/groups/permissions");
+    getGroupMembership.mockResolvedValue({ group_id: "group-123", user_id: "user-123", role: "member" });
+  });
 
   it("returns 401 when no x-user-id", async () => {
     const req = makeReq("http://localhost/api/categories");
@@ -80,7 +92,7 @@ describe("GET /api/categories", () => {
     expect(mockDb.query.categories.findMany).toHaveBeenCalledTimes(1);
     expect(mockDb.query.categories.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: undefined,
+        where: expect.anything(),
         orderBy: expect.any(Function),
       }),
     );
@@ -88,7 +100,11 @@ describe("GET /api/categories", () => {
 });
 
 describe("POST /api/categories", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const { getGroupMembership } = require("@/lib/groups/permissions");
+    getGroupMembership.mockResolvedValue({ group_id: "group-123", user_id: "user-123", role: "member" });
+  });
 
   it("returns 401 when no x-user-id", async () => {
     const req = makeReq("http://localhost/api/categories", {

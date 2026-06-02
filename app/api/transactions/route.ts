@@ -6,6 +6,7 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { calculateCategoryStatus } from "@/lib/finance/rules";
+import { getGroupMembership } from "@/lib/groups/permissions";
 
 const createSchema = z.object({
   category_id: z.string().uuid(),
@@ -21,12 +22,18 @@ export async function GET(req: NextRequest) {
   const userId = req.headers.get("x-user-id");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const groupId = req.headers.get("x-group-id");
+  if (!groupId) return NextResponse.json({ error: "No active group" }, { status: 400 });
+
+  const membership = await getGroupMembership(userId, groupId);
+  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const month = req.nextUrl.searchParams.get("month") ?? getActiveMonthArgentina();
 
   try {
     const rows = await db.query.transactions.findMany({
       where: and(
-        eq(transactions.user_id, userId),
+        eq(transactions.group_id, groupId),
         eq(transactions.month, month),
         eq(transactions.status, "active"),
       ),
@@ -45,6 +52,12 @@ export async function POST(req: NextRequest) {
   const userId = req.headers.get("x-user-id");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const groupId = req.headers.get("x-group-id");
+  if (!groupId) return NextResponse.json({ error: "No active group" }, { status: 400 });
+
+  const membership = await getGroupMembership(userId, groupId);
+  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
@@ -55,12 +68,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const category = await db.query.categories.findFirst({
-      where: eq(categories.id, category_id),
+      where: and(eq(categories.id, category_id), eq(categories.group_id, groupId)),
     });
     if (!category) return NextResponse.json({ error: "Category not found" }, { status: 404 });
 
     const settings = await db.query.monthly_settings.findFirst({
-      where: and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)),
+      where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
     });
     if (!settings) return NextResponse.json({ error: "No hay configuración para el mes activo." }, { status: 400 });
 
@@ -69,7 +82,7 @@ export async function POST(req: NextRequest) {
     }
 
     const budget = await db.query.budgets.findFirst({
-      where: and(eq(budgets.user_id, userId), eq(budgets.month, month), eq(budgets.category_id, category_id)),
+      where: and(eq(budgets.group_id, groupId), eq(budgets.month, month), eq(budgets.category_id, category_id)),
     });
 
     if (budget && budget.budget_ars > 0) {
@@ -82,7 +95,7 @@ export async function POST(req: NextRequest) {
         .select({ total: sum(transactions.amount_ars) })
         .from(transactions)
         .where(and(
-          eq(transactions.user_id, userId),
+          eq(transactions.group_id, groupId),
           eq(transactions.month, month),
           eq(transactions.category_id, category_id),
           eq(transactions.status, "active")
@@ -125,6 +138,7 @@ export async function POST(req: NextRequest) {
     await db.insert(transactions).values({
       id,
       user_id: userId,
+      group_id: groupId,
       category_id,
       amount_ars,
       amount_usd,
