@@ -62,4 +62,38 @@ describe("PATCH /api/auth/me", () => {
     const res = await PATCH(makeRequest({}, cookie));
     expect(res.status).toBe(400);
   });
+
+  it("updates display name when name is provided", async () => {
+    const mockSet = jest.fn().mockReturnThis();
+    const mockWhere = jest.fn().mockResolvedValue(undefined);
+    mockUpdate.mockReturnValue({ set: mockSet } as any);
+    mockSet.mockReturnValue({ where: mockWhere });
+
+    const mockDb = db as any;
+    mockDb.query.users.findFirst.mockResolvedValueOnce({ id: "user-123" });
+
+    const cookie = await signSession("user-123");
+    const res = await PATCH(makeRequest({ name: "Nuevo Nombre" }, cookie));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+  });
+
+  it("returns 400 when name is empty string", async () => {
+    const mockDb = db as any;
+    mockDb.query.users.findFirst.mockResolvedValueOnce({ id: "user-123" });
+
+    const cookie = await signSession("user-123");
+    const res = await PATCH(makeRequest({ name: "" }, cookie));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when body has neither onboarding_completed nor name", async () => {
+    const mockDb = db as any;
+    mockDb.query.users.findFirst.mockResolvedValueOnce({ id: "user-123" });
+
+    const cookie = await signSession("user-123");
+    const res = await PATCH(makeRequest({}, cookie));
+    expect(res.status).toBe(400);
+  });
 });

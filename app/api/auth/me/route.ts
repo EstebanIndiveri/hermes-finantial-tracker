@@ -27,7 +27,22 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => null);
-  if (!body || body.onboarding_completed !== true) {
+  if (!body) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+
+  const updates: { onboarding_completed_at?: number; name?: string } = {};
+
+  if (body.onboarding_completed === true) {
+    updates.onboarding_completed_at = Date.now();
+  }
+
+  if (body.name !== undefined) {
+    if (typeof body.name !== "string" || body.name.trim().length < 1 || body.name.trim().length > 50) {
+      return NextResponse.json({ error: "El nombre debe tener entre 1 y 50 caracteres" }, { status: 400 });
+    }
+    updates.name = body.name.trim();
+  }
+
+  if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
@@ -35,7 +50,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await db.update(users)
-    .set({ onboarding_completed_at: Date.now() })
+    .set(updates)
     .where(eq(users.id, userId));
 
   return NextResponse.json({ ok: true });
