@@ -4,6 +4,7 @@ import { text, real, integer, sqliteTable, uniqueIndex, index } from "drizzle-or
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  username: text("username").notNull().default(""),
   telegram_user_id: text("telegram_user_id").unique(),
   personal_token_hash: text("personal_token_hash"),
   active_telegram_group_id: text("active_telegram_group_id"), // FK to groups.id — constraint defined in migration
