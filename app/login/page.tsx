@@ -126,15 +126,15 @@ function LoginForm() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !token.trim()}
             style={{
               width: "100%",
               padding: "11px",
               borderRadius: 8,
               border: "none",
-              background: loading ? "var(--htext3)" : "var(--haccent)",
+              background: loading || !token.trim() ? "var(--htext3)" : "var(--haccent)",
               color: "white",
-              cursor: loading ? "not-allowed" : "pointer",
+              cursor: loading || !token.trim() ? "not-allowed" : "pointer",
               fontSize: "0.9rem",
               fontWeight: 600,
             }}
