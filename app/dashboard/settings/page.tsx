@@ -19,6 +19,20 @@ export default function SettingsPage() {
   const [noGroup, setNoGroup] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
 
+  // Raw string states for numeric inputs — avoids the "0 stuck" / leading-zero issue
+  const [incomeRaw, setIncomeRaw] = useState("0");
+  const [exchangeRaw, setExchangeRaw] = useState("1");
+  const [greenRaw, setGreenRaw] = useState("0");
+  const [yellowRaw, setYellowRaw] = useState("0");
+
+  // Track whether monthly config has a non-zero income saved (enables semáforo section)
+  const [savedIncome, setSavedIncome] = useState(0);
+
+  // Inline validation errors for semáforo
+  const [thresholdError, setThresholdError] = useState<string | null>(null);
+
+  const monthlyValid = parseNum(incomeRaw) > 0 && parseNum(exchangeRaw) > 0;
+  const thresholdsValid = parseNum(greenRaw) > 0 && parseNum(yellowRaw) > 0;
   const isReadOnly = userRole === "member";
 
   useEffect(() => {
@@ -28,7 +42,13 @@ export default function SettingsPage() {
       fetch("/api/groups/active").then(r => r.ok ? r.json() : null),
     ]).then(([s, c, activeGroup]) => {
       if (!Array.isArray(c)) { setNoGroup(true); return; }
-      setSettings(s ?? { income_usd: 0, exchange_rate: 1, saving_goal_usd: 0, saving_goal_yellow: 0 });
+      const loaded = s ?? { income_usd: 0, exchange_rate: 1, saving_goal_usd: 0, saving_goal_yellow: 0 };
+      setSettings(loaded);
+      setIncomeRaw(String(loaded.income_usd));
+      setExchangeRaw(String(loaded.exchange_rate));
+      setGreenRaw(String(loaded.saving_goal_usd));
+      setYellowRaw(String(loaded.saving_goal_yellow));
+      setSavedIncome(loaded.income_usd);
       setCats(c);
       if (activeGroup?.role) setUserRole(activeGroup.role);
     }).catch(() => toast.error("Error al cargar configuración"));
@@ -41,30 +61,63 @@ export default function SettingsPage() {
     }).catch(() => {});
   }, []);
 
+  function parseNum(raw: string): number {
+    const n = parseFloat(raw.replace(/,/g, "."));
+    return isNaN(n) || n < 0 ? 0 : n;
+  }
+
+  function normalizeRaw(raw: string): string {
+    const n = parseNum(raw);
+    return String(n);
+  }
+
   async function saveMonthly() {
     if (!settings) return;
+    const income = parseNum(incomeRaw);
+    const exchange = parseNum(exchangeRaw);
+    if (exchange <= 0) { toast.error("El tipo de cambio debe ser mayor a 0"); return; }
     setSaving("monthly");
     try {
       const res = await fetch("/api/settings/monthly", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ income_usd: settings.income_usd, exchange_rate: settings.exchange_rate }),
+        body: JSON.stringify({ income_usd: income, exchange_rate: exchange }),
       });
-      if (res.ok) toast.success("Configuración mensual guardada ✅");
-      else toast.error("Error al guardar");
+      if (res.ok) {
+        setSettings({ ...settings, income_usd: income, exchange_rate: exchange });
+        setIncomeRaw(String(income));
+        setExchangeRaw(String(exchange));
+        setSavedIncome(income);
+        setThresholdError(null);
+        toast.success("Configuración mensual guardada ✅");
+      } else toast.error("Error al guardar");
     } catch { toast.error("Error de conexión"); }
     finally { setSaving(null); }
   }
 
   async function saveThresholds() {
     if (!settings) return;
+    const green = parseNum(greenRaw);
+    const yellow = parseNum(yellowRaw);
+    const income = savedIncome;
+
+    // Validations
+    if (income <= 0) { setThresholdError("Primero guardá la configuración mensual con un ingreso mayor a 0."); return; }
+    if (green > income) { setThresholdError(`Meta verde ($${green}) no puede superar el ingreso mensual ($${income}).`); return; }
+    if (yellow >= green) { setThresholdError("El umbral amarillo debe ser menor a la meta verde."); return; }
+
+    setThresholdError(null);
     setSaving("thresholds");
     try {
       const res = await fetch("/api/settings/thresholds", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ saving_goal_usd: settings.saving_goal_usd, saving_goal_yellow: settings.saving_goal_yellow }),
+        body: JSON.stringify({ saving_goal_usd: green, saving_goal_yellow: yellow }),
       });
-      if (res.ok) toast.success("Umbrales guardados ✅");
-      else toast.error("Error al guardar");
+      if (res.ok) {
+        setSettings({ ...settings, saving_goal_usd: green, saving_goal_yellow: yellow });
+        setGreenRaw(String(green));
+        setYellowRaw(String(yellow));
+        toast.success("Umbrales guardados ✅");
+      } else toast.error("Error al guardar");
     } catch { toast.error("Error de conexión"); }
     finally { setSaving(null); }
   }
@@ -139,11 +192,13 @@ export default function SettingsPage() {
                 <input
                   id="income"
                   className="h-form-control"
-                  type="number"
-                  min="0"
-                  value={settings.income_usd}
+                  type="text"
+                  inputMode="decimal"
+                  value={incomeRaw}
                   readOnly={isReadOnly}
-                  onChange={isReadOnly ? undefined : e => setSettings({ ...settings, income_usd: Number(e.target.value) })}
+                  onChange={isReadOnly ? undefined : e => setIncomeRaw(e.target.value.replace(/[^0-9.]/g, ""))}
+                  onFocus={isReadOnly ? undefined : e => e.target.select()}
+                  onBlur={isReadOnly ? undefined : () => setIncomeRaw(normalizeRaw(incomeRaw))}
                   style={isReadOnly ? { opacity: 0.7, cursor: "default" } : undefined}
                 />
               </div>
@@ -153,11 +208,13 @@ export default function SettingsPage() {
               <input
                 id="exchange"
                 className="h-form-control"
-                type="number"
-                min="0"
-                value={settings.exchange_rate}
+                type="text"
+                inputMode="decimal"
+                value={exchangeRaw}
                 readOnly={isReadOnly}
-                onChange={isReadOnly ? undefined : e => setSettings({ ...settings, exchange_rate: Number(e.target.value) })}
+                onChange={isReadOnly ? undefined : e => setExchangeRaw(e.target.value.replace(/[^0-9.]/g, ""))}
+                onFocus={isReadOnly ? undefined : e => e.target.select()}
+                onBlur={isReadOnly ? undefined : () => setExchangeRaw(normalizeRaw(exchangeRaw))}
                 style={isReadOnly ? { opacity: 0.7, cursor: "default" } : undefined}
               />
             </div>
@@ -165,9 +222,9 @@ export default function SettingsPage() {
           {!isReadOnly && (
             <button
               className="h-btn-submit"
-              style={{ width: "auto", padding: "9px 24px" }}
+              style={{ width: "auto", padding: "9px 24px", opacity: !monthlyValid ? 0.5 : 1 }}
               onClick={() => void saveMonthly()}
-              disabled={saving === "monthly"}
+              disabled={saving === "monthly" || !monthlyValid}
             >
               {saving === "monthly" ? "Guardando…" : "Guardar configuración"}
             </button>
@@ -201,11 +258,13 @@ export default function SettingsPage() {
                 <input
                   id="goal-green"
                   className="h-form-control"
-                  type="number"
-                  min="0"
-                  value={settings.saving_goal_usd}
+                  type="text"
+                  inputMode="decimal"
+                  value={greenRaw}
                   readOnly={isReadOnly}
-                  onChange={isReadOnly ? undefined : e => setSettings({ ...settings, saving_goal_usd: Number(e.target.value) })}
+                  onChange={isReadOnly ? undefined : e => { setGreenRaw(e.target.value.replace(/[^0-9.]/g, "")); setThresholdError(null); }}
+                  onFocus={isReadOnly ? undefined : e => e.target.select()}
+                  onBlur={isReadOnly ? undefined : () => setGreenRaw(normalizeRaw(greenRaw))}
                   style={isReadOnly ? { opacity: 0.7, cursor: "default" } : undefined}
                 />
               </div>
@@ -223,11 +282,13 @@ export default function SettingsPage() {
                 <input
                   id="goal-yellow"
                   className="h-form-control"
-                  type="number"
-                  min="0"
-                  value={settings.saving_goal_yellow}
+                  type="text"
+                  inputMode="decimal"
+                  value={yellowRaw}
                   readOnly={isReadOnly}
-                  onChange={isReadOnly ? undefined : e => setSettings({ ...settings, saving_goal_yellow: Number(e.target.value) })}
+                  onChange={isReadOnly ? undefined : e => { setYellowRaw(e.target.value.replace(/[^0-9.]/g, "")); setThresholdError(null); }}
+                  onFocus={isReadOnly ? undefined : e => e.target.select()}
+                  onBlur={isReadOnly ? undefined : () => setYellowRaw(normalizeRaw(yellowRaw))}
                   style={isReadOnly ? { opacity: 0.7, cursor: "default" } : undefined}
                 />
               </div>
@@ -235,14 +296,26 @@ export default function SettingsPage() {
             </div>
           </div>
           {!isReadOnly && (
-            <button
-              className="h-btn-submit"
-              style={{ width: "auto", padding: "9px 24px" }}
-              onClick={() => void saveThresholds()}
-              disabled={saving === "thresholds"}
-            >
-              {saving === "thresholds" ? "Guardando…" : "Guardar umbrales"}
-            </button>
+            <>
+              {thresholdError && (
+                <p style={{ fontSize: "0.82rem", color: "var(--hred)", background: "var(--hred-soft)", padding: "8px 12px", borderRadius: 6, marginBottom: 12 }}>
+                  ⚠️ {thresholdError}
+                </p>
+              )}
+              {savedIncome <= 0 && !thresholdError && (
+                <p style={{ fontSize: "0.82rem", color: "var(--hyellow)", background: "var(--hyellow-soft)", padding: "8px 12px", borderRadius: 6, marginBottom: 12 }}>
+                  Guardá primero la configuración mensual con un ingreso mayor a 0 para habilitar los umbrales.
+                </p>
+              )}
+              <button
+                className="h-btn-submit"
+                style={{ width: "auto", padding: "9px 24px", opacity: (savedIncome <= 0 || !thresholdsValid) ? 0.5 : 1 }}
+                onClick={() => void saveThresholds()}
+                disabled={saving === "thresholds" || savedIncome <= 0 || !thresholdsValid}
+              >
+                {saving === "thresholds" ? "Guardando…" : "Guardar umbrales"}
+              </button>
+            </>
           )}
         </div>
       </div>
