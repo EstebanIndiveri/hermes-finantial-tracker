@@ -106,6 +106,18 @@ export function HermesSidebar() {
             Ajustes del mes
           </Link>
 
+          <div className="h-nav-label" style={{ marginTop: 16 }}>Cuenta</div>
+          <Link
+            href="/dashboard/account"
+            className={`h-nav-item${pathname === "/dashboard/account" ? " active" : ""}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z"/>
+            </svg>
+            Mi cuenta
+          </Link>
+
           <form action="/api/auth/logout" method="POST" style={{ marginTop: 4 }}>
             <button type="submit" className="h-nav-item" style={{ width:"100%" }}>
               <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">

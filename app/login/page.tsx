@@ -46,6 +46,7 @@ function LoginForm() {
         background: "var(--hbg)",
         padding: "20px",
         width: "100%",
+        boxSizing: "border-box" as const,
       }}
     >
       <div

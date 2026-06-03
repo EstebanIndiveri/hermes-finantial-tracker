@@ -113,6 +113,7 @@
   transition: var(--htransition);
   margin-bottom: 2px;
   border: none; background: none; width: 100%;
+  box-sizing: border-box;
 }
 [data-hermes] .h-nav-item:hover { background: var(--haccent-soft); color: var(--haccent); }
 [data-hermes] .h-nav-item.active { background: var(--haccent-soft); color: var(--haccent); font-weight: 500; }
