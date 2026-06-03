@@ -28,12 +28,15 @@ export default function SettingsPage() {
   // Track whether monthly config has a non-zero income saved (enables semáforo section)
   const [savedIncome, setSavedIncome] = useState(0);
 
+  // Inline validation errors for configuración mensual
+  const [monthlyError, setMonthlyError] = useState<string | null>(null);
+
   // Inline validation errors for semáforo
   const [thresholdError, setThresholdError] = useState<string | null>(null);
-
-  const monthlyValid = parseNum(incomeRaw) > 0 && parseNum(exchangeRaw) > 0;
-  const thresholdsValid = parseNum(greenRaw) > 0 && parseNum(yellowRaw) > 0;
   const isReadOnly = userRole === "member";
+  const monthlyValid = parseNum(incomeRaw) > 0 && parseNum(exchangeRaw) > 0;
+
+  const thresholdsValid = parseNum(greenRaw) > 0 && parseNum(yellowRaw) > 0;
 
   useEffect(() => {
     Promise.all([
@@ -75,7 +78,21 @@ export default function SettingsPage() {
     if (!settings) return;
     const income = parseNum(incomeRaw);
     const exchange = parseNum(exchangeRaw);
-    if (exchange <= 0) { toast.error("El tipo de cambio debe ser mayor a 0"); return; }
+    if (exchange <= 0) { setMonthlyError("El tipo de cambio debe ser mayor a 0."); return; }
+
+    // Cross-validation: income cannot be below already-configured thresholds
+    const green = parseNum(greenRaw);
+    const yellow = parseNum(yellowRaw);
+    if (green > 0 && income < green) {
+      setMonthlyError(`El ingreso ($${income}) no puede ser menor a la meta verde ($${green}). Ajustá los umbrales primero.`);
+      return;
+    }
+    if (yellow > 0 && income < yellow) {
+      setMonthlyError(`El ingreso ($${income}) no puede ser menor al umbral amarillo ($${yellow}). Ajustá los umbrales primero.`);
+      return;
+    }
+
+    setMonthlyError(null);
     setSaving("monthly");
     try {
       const res = await fetch("/api/settings/monthly", {
@@ -87,6 +104,7 @@ export default function SettingsPage() {
         setIncomeRaw(String(income));
         setExchangeRaw(String(exchange));
         setSavedIncome(income);
+        setMonthlyError(null);
         setThresholdError(null);
         toast.success("Configuración mensual guardada ✅");
       } else toast.error("Error al guardar");
@@ -103,6 +121,7 @@ export default function SettingsPage() {
     // Validations
     if (income <= 0) { setThresholdError("Primero guardá la configuración mensual con un ingreso mayor a 0."); return; }
     if (green > income) { setThresholdError(`Meta verde ($${green}) no puede superar el ingreso mensual ($${income}).`); return; }
+    if (yellow >= income) { setThresholdError(`Umbral amarillo ($${yellow}) debe ser menor al ingreso mensual ($${income}).`); return; }
     if (yellow >= green) { setThresholdError("El umbral amarillo debe ser menor a la meta verde."); return; }
 
     setThresholdError(null);
@@ -196,7 +215,7 @@ export default function SettingsPage() {
                   inputMode="decimal"
                   value={incomeRaw}
                   readOnly={isReadOnly}
-                  onChange={isReadOnly ? undefined : e => setIncomeRaw(e.target.value.replace(/[^0-9.]/g, ""))}
+                  onChange={isReadOnly ? undefined : e => { setIncomeRaw(e.target.value.replace(/[^0-9.]/g, "")); setMonthlyError(null); }}
                   onFocus={isReadOnly ? undefined : e => e.target.select()}
                   onBlur={isReadOnly ? undefined : () => setIncomeRaw(normalizeRaw(incomeRaw))}
                   style={isReadOnly ? { opacity: 0.7, cursor: "default" } : undefined}
@@ -220,14 +239,21 @@ export default function SettingsPage() {
             </div>
           </div>
           {!isReadOnly && (
-            <button
-              className="h-btn-submit"
-              style={{ width: "auto", padding: "9px 24px", opacity: !monthlyValid ? 0.5 : 1 }}
-              onClick={() => void saveMonthly()}
-              disabled={saving === "monthly" || !monthlyValid}
-            >
-              {saving === "monthly" ? "Guardando…" : "Guardar configuración"}
-            </button>
+            <>
+              {monthlyError && (
+                <p style={{ fontSize: "0.82rem", color: "var(--hred)", background: "var(--hred-soft)", padding: "8px 12px", borderRadius: 6, marginBottom: 12 }}>
+                  ⚠️ {monthlyError}
+                </p>
+              )}
+              <button
+                className="h-btn-submit"
+                style={{ width: "auto", padding: "9px 24px", opacity: !monthlyValid ? 0.5 : 1 }}
+                onClick={() => void saveMonthly()}
+                disabled={saving === "monthly" || !monthlyValid}
+              >
+                {saving === "monthly" ? "Guardando…" : "Guardar configuración"}
+              </button>
+            </>
           )}
         </div>
       </div>
