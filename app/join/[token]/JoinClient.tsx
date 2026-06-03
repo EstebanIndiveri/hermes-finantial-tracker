@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 
 interface InvitationInfo {
   group: { id: string; name: string };
@@ -113,7 +114,7 @@ export default function JoinClient({ token }: { token: string }) {
 
   const containerStyle: React.CSSProperties = {
     minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-    background: "var(--hbg)", padding: 20, width: "100%",
+    background: "var(--hbg)", padding: 20, width: "100%", boxSizing: "border-box",
   };
   const cardStyle: React.CSSProperties = {
     background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 16,
@@ -258,7 +259,7 @@ export default function JoinClient({ token }: { token: string }) {
                 required
               />
               <button type="button" onClick={() => setShowPassword(v => !v)} style={eyeBtnStyle}>
-                {showPassword ? "🙈" : "👁"}
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
@@ -274,7 +275,7 @@ export default function JoinClient({ token }: { token: string }) {
                 required
               />
               <button type="button" onClick={() => setShowConfirm(v => !v)} style={eyeBtnStyle}>
-                {showConfirm ? "🙈" : "👁"}
+                {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
