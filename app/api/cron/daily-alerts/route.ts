@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
 
       const todayTx = await db.query.transactions.findMany({
         where: and(
-          eq(transactions.user_id, user.id),
+          eq(transactions.group_id, groupId),
           eq(transactions.month, month),
           eq(transactions.status, "active"),
           gte(transactions.created_at, startOfDay),

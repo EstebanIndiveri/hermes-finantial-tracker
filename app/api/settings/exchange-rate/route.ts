@@ -4,6 +4,7 @@ import { monthly_settings } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { getActiveMonthArgentina } from "@/lib/utils/dates";
+import { getGroupMembership } from "@/lib/groups/permissions";
 
 const monthRegex = /^\d{4}-\d{2}$/;
 
@@ -13,14 +14,21 @@ const schema = z.object({
 });
 
 /**
- * Updates the exchange rate for a specific month
- * @param req - NextRequest with x-user-id header and JSON body { exchange_rate, month? }
+ * Updates the exchange rate for the active group (owner/admin only)
+ * @param req - NextRequest with x-user-id and x-group-id headers and JSON body { exchange_rate, month? }
  * @returns JSON response with { ok: true } or error
  */
 export async function PATCH(req: NextRequest) {
   try {
     const userId = req.headers.get("x-user-id");
+    const groupId = req.headers.get("x-group-id");
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!groupId) return NextResponse.json({ error: "No active group" }, { status: 401 });
+
+    const membership = await getGroupMembership(userId, groupId);
+    if (!membership || membership.role === "member") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const body = await req.json().catch(() => null);
     const parsed = schema.safeParse(body);
@@ -29,7 +37,7 @@ export async function PATCH(req: NextRequest) {
     const month = parsed.data.month ?? getActiveMonthArgentina();
     
     const existing = await db.query.monthly_settings.findFirst({
-      where: and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)),
+      where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
     });
 
     if (!existing) {
@@ -38,7 +46,7 @@ export async function PATCH(req: NextRequest) {
 
     await db.update(monthly_settings)
       .set({ exchange_rate: parsed.data.exchange_rate, exchange_rate_source: "manual", exchange_rate_updated_at: Date.now() })
-      .where(and(eq(monthly_settings.user_id, userId), eq(monthly_settings.month, month)));
+      .where(and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)));
 
     return NextResponse.json({ ok: true });
   } catch (err) {
