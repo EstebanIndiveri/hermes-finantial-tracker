@@ -1,5 +1,6 @@
 "use client";
 import { useState, Suspense } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 function LoginForm() {
@@ -144,7 +145,7 @@ function LoginForm() {
                   alignItems: "center",
                 }}
               >
-                {showPassword ? "🙈" : "👁"}
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>

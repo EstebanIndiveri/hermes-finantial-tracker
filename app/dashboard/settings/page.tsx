@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Eye, EyeOff } from "lucide-react";
 
 interface MonthlySettings {
   income_usd: number;
@@ -105,6 +106,9 @@ function MiCuenta() {
   const [confirm, setConfirm] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(setUser);
@@ -169,21 +173,33 @@ function MiCuenta() {
           )}
           <form onSubmit={handleSave} style={{ marginTop: 16 }}>
             <div style={{ display: "grid", gap: 12 }}>
-              {["Contraseña actual", "Nueva contraseña", "Confirmar nueva contraseña"].map((label, i) => {
-                const vals = [current, newTok, confirm];
-                const setters = [setCurrent, setNewTok, setConfirm];
-                return (
-                  <div key={i}>
-                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 500, color: "var(--htext2)", marginBottom: 4 }}>{label}</label>
+              {(
+                [
+                  { label: "Contraseña actual", val: current, setter: setCurrent, show: showCurrent, toggle: () => setShowCurrent(v => !v) },
+                  { label: "Nueva contraseña", val: newTok, setter: setNewTok, show: showNew, toggle: () => setShowNew(v => !v) },
+                  { label: "Confirmar nueva contraseña", val: confirm, setter: setConfirm, show: showConfirm, toggle: () => setShowConfirm(v => !v) },
+                ] as const
+              ).map(({ label, val, setter, show, toggle }) => (
+                <div key={label}>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 500, color: "var(--htext2)", marginBottom: 4 }}>{label}</label>
+                  <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
                     <input
-                      type="password"
-                      value={vals[i]}
-                      onChange={e => setters[i](e.target.value)}
-                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid var(--hborder)", background: "var(--hsurface2)", color: "var(--htext1)", fontSize: "16px", boxSizing: "border-box" as const }}
+                      type={show ? "text" : "password"}
+                      value={val}
+                      onChange={e => setter(e.target.value)}
+                      style={{ width: "100%", padding: "9px 40px 9px 12px", borderRadius: 8, border: "1px solid var(--hborder)", background: "var(--hsurface2)", color: "var(--htext1)", fontSize: "16px", boxSizing: "border-box" as const }}
                     />
+                    <button
+                      type="button"
+                      onClick={toggle}
+                      style={{ position: "absolute", right: 10, background: "none", border: "none", cursor: "pointer", color: "var(--htext3)", padding: 4, display: "flex", alignItems: "center" }}
+                      aria-label={show ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    >
+                      {show ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
             {msg && (
               <p style={{ fontSize: "0.82rem", marginTop: 10, padding: "8px 12px", borderRadius: 6, background: msg.type === "ok" ? "var(--hgreen-soft)" : "var(--hred-soft)", color: msg.type === "ok" ? "var(--hgreen)" : "var(--hred)" }}>
