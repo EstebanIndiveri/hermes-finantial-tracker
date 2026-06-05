@@ -33,8 +33,6 @@ export async function handleGroupPhoto(
   photoArray?: TelegramPhotoSize[],
   documentData?: TelegramDocument
 ): Promise<TelegramResponse | null> {
-  console.log("[OCR] handleGroupPhoto called", { chatId, hasPhoto: !!photoArray?.length, hasDoc: !!documentData });
-
   let session;
   try {
     session = await db.query.split_sessions.findFirst({
@@ -49,17 +47,13 @@ export async function handleGroupPhoto(
     return null;
   }
 
-  console.log("[OCR] session result:", session ? session.id : "null");
-
   if (!session) {
     await sendMsg(chatId, "📷 Foto recibida, pero no hay ninguna sesión activa.\n\nUsá /activar para crear una nueva sesión compartida.");
     return null;
   }
 
   // Send immediate feedback so user knows the bot is working
-  console.log("[OCR] sending procesando...");
   await sendMsg(chatId, "🔄 Procesando imagen...");
-  console.log("[OCR] procesando sent, starting OCR");
 
   // Run OCR
   let ocrResult;

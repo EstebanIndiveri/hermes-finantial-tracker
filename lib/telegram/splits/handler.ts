@@ -135,7 +135,6 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
   // Photos and image documents always take priority over text captions → OCR flow
   const hasPhoto = message.photo && message.photo.length > 0;
   const hasImageDoc = message.document?.mime_type?.startsWith("image/");
-  console.log("[handler] hasPhoto:", hasPhoto, "hasImageDoc:", hasImageDoc, "text:", text.slice(0, 50));
   if (hasPhoto || hasImageDoc) {
     return handleGroupPhoto(chatId, telegramUserId, message.photo, message.document);
   }
