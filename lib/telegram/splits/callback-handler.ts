@@ -34,6 +34,7 @@ interface PagueState {
   creditor_temp_id?: string;
   creditor_name?: string;
   session_id: string;
+  payer_temp_id?: string; // set when the debtor is a temp_user (not a Hermes user)
 }
 
 type HermesDisplayUser = Pick<typeof users.$inferSelect, "username" | "name">;
@@ -380,11 +381,14 @@ async function handlePagueConfirmCallback(
   const hermesUser = await db.query.users.findFirst({
     where: eq(users.telegram_user_id, telegramUserId),
   });
+  const tempUser = !hermesUser
+    ? await db.query.temp_users.findFirst({ where: eq(temp_users.telegram_user_id, telegramUserId) })
+    : null;
 
-  if (!hermesUser) {
+  if (!hermesUser && !tempUser) {
     await clearConversationState(chatId, telegramUserId);
     return {
-      text: "❌ No tenés cuenta en Hermes.",
+      text: "❌ No se encontró tu cuenta.",
       edit: true,
     };
   }
@@ -412,8 +416,8 @@ async function handlePagueConfirmCallback(
   await db.insert(split_payments).values({
     id: randomUUID(),
     session_id: session.id,
-    payer_user_id: hermesUser.id,
-    payer_temp_id: null,
+    payer_user_id: hermesUser?.id ?? null,
+    payer_temp_id: tempUser?.id ?? null,
     payee_user_id: state.creditor_user_id ?? null,
     payee_temp_id: state.creditor_temp_id ?? null,
     amount: state.debt_amount,
