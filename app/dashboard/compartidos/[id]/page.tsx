@@ -1,29 +1,51 @@
 import { headers } from "next/headers";
+import { db } from "@/lib/db/client";
+import { split_sessions, splits, split_session_members, split_payers, split_items, split_payments } from "@/lib/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
+import { calculateSessionBalances } from "@/lib/splits/balances";
+import type { RawPayer, RawItem, RawPayment } from "@/lib/splits/types";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 async function getSessionDetail(id: string) {
   try {
     const hdrs = await headers();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL
-      ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
     const userId = hdrs.get("x-user-id");
     if (!userId) return null;
 
-    const [detailRes, balancesRes] = await Promise.all([
-      fetch(`${appUrl}/api/splits/sessions/${id}`, {
-        headers: { "x-user-id": userId }, cache: "no-store",
-      }),
-      fetch(`${appUrl}/api/splits/sessions/${id}/balances`, {
-        headers: { "x-user-id": userId }, cache: "no-store",
-      }),
+    const session = await db.query.split_sessions.findFirst({
+      where: eq(split_sessions.id, id),
+    });
+    if (!session) return null;
+
+    const isMember = await db.query.split_session_members.findFirst({
+      where: and(eq(split_session_members.session_id, id), eq(split_session_members.user_id, userId)),
+    });
+    if (!isMember) return null;
+
+    const [sessionSplits, members] = await Promise.all([
+      db.query.splits.findMany({ where: eq(splits.session_id, id) }),
+      db.query.split_session_members.findMany({ where: eq(split_session_members.session_id, id) }),
     ]);
 
-    if (!detailRes.ok) return null;
-    const detail = await detailRes.json();
-    const balances = balancesRes.ok ? await balancesRes.json() : { balances: [], debts: [], isSettled: true };
+    // Calculate balances directly
+    const activeSplits = sessionSplits.filter(s => s.status === "active");
+    const splitIds = activeSplits.map(s => s.id);
+    let balanceSummary: ReturnType<typeof calculateSessionBalances> | { balances: never[]; debts: never[]; isSettled: true } = { balances: [], debts: [], isSettled: true };
 
-    return { ...detail, balanceSummary: balances, userId };
+    if (splitIds.length > 0) {
+      const [payerRows, itemRows, paymentRows] = await Promise.all([
+        db.select().from(split_payers).where(inArray(split_payers.split_id, splitIds)),
+        db.select().from(split_items).where(inArray(split_items.split_id, splitIds)),
+        db.select().from(split_payments).where(eq(split_payments.session_id, id)),
+      ]);
+      const rawPayers: RawPayer[] = payerRows.map(r => ({ userId: r.user_id ?? undefined, tempUserId: r.temp_user_id ?? undefined, amountPaid: r.amount_paid }));
+      const rawItems: RawItem[] = itemRows.map(r => ({ userId: r.user_id ?? undefined, tempUserId: r.temp_user_id ?? undefined, amountOwed: r.amount_owed }));
+      const rawPayments: RawPayment[] = paymentRows.map(r => ({ payerUserId: r.payer_user_id ?? undefined, payerTempId: r.payer_temp_id ?? undefined, payeeUserId: r.payee_user_id ?? undefined, payeeTempId: r.payee_temp_id ?? undefined, amount: r.amount }));
+      balanceSummary = calculateSessionBalances(rawPayers, rawItems, rawPayments);
+    }
+
+    return { session, splits: sessionSplits, members, balanceSummary, userId };
   } catch {
     return null;
   }

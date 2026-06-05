@@ -1,4 +1,7 @@
 import { headers } from "next/headers";
+import { db } from "@/lib/db/client";
+import { split_sessions } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import Link from "next/link";
 
 interface Session {
@@ -13,17 +16,13 @@ interface Session {
 async function getSessions(): Promise<Session[]> {
   try {
     const hdrs = await headers();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL
-      ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
     const userId = hdrs.get("x-user-id");
     if (!userId) return [];
 
-    const res = await fetch(`${appUrl}/api/splits/sessions`, {
-      headers: { "x-user-id": userId },
-      cache: "no-store",
-    });
-    if (!res.ok) return [];
-    return res.json();
+    return db.query.split_sessions.findMany({
+      where: eq(split_sessions.owner_user_id, userId),
+      orderBy: (t, { desc }) => desc(t.created_at),
+    }) as Promise<Session[]>;
   } catch {
     return [];
   }
