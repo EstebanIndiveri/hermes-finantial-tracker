@@ -1,10 +1,18 @@
 // lib/telegram/splits/commands/compartido.ts
 import { db } from "@/lib/db/client";
-import { users, split_sessions, split_session_members } from "@/lib/db/schema";
+import { users, temp_users, split_sessions, split_session_members } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { setConversationState } from "../conversation-state";
 import type { TelegramResponse } from "../telegram-api";
 import { buildInlineKeyboard } from "../telegram-api";
+
+const getHermesDisplayName = (user: typeof users.$inferSelect): string => user.username || user.name;
+const getTempDisplayName = (tempUser: typeof temp_users.$inferSelect): string => {
+  if (tempUser.telegram_username) {
+    return tempUser.telegram_username.startsWith("@") ? tempUser.telegram_username : `@${tempUser.telegram_username}`;
+  }
+  return tempUser.first_name;
+};
 
 /**
  * Handles /compartido [monto] [descripción] command.
@@ -47,9 +55,9 @@ export async function handleCompartido(
     };
   }
 
-  const membersRows = await db.query.split_session_members.findMany({
+  let membersRows = await db.query.split_session_members.findMany({
     where: eq(split_session_members.session_id, session.id),
-    with: { user: true },
+    with: { user: true, tempUser: true },
   });
 
   if (!membersRows.some(m => m.user_id === hermesUser.id)) {
@@ -59,30 +67,28 @@ export async function handleCompartido(
       temp_user_id: null,
       joined_at: Date.now(),
     }).onConflictDoNothing();
-    
-    const updatedUser = await db.query.users.findFirst({
-      where: eq(users.id, hermesUser.id),
+
+    membersRows = await db.query.split_session_members.findMany({
+      where: eq(split_session_members.session_id, session.id),
+      with: { user: true, tempUser: true },
     });
-    if (updatedUser) {
-      membersRows.push({
-        session_id: session.id,
-        user_id: hermesUser.id,
-        temp_user_id: null,
-        joined_at: Date.now(),
-        user: updatedUser,
-      } as any);
-    }
   }
 
-  const buttons = membersRows
-    .filter(m => m.user)
-    .map(m => {
-      const isCurrentUser = m.user_id === hermesUser.id;
-      const displayName = isCurrentUser 
-        ? `${m.user!.username || m.user!.name} (vos)` 
-        : (m.user!.username || m.user!.name);
-      return [{ text: displayName, callback_data: `paid_by:${m.user_id}` }];
-    });
+  const buttons = membersRows.flatMap((member) => {
+    if (member.user && member.user_id) {
+      const isCurrentUser = member.user_id === hermesUser.id;
+      const displayName = isCurrentUser
+        ? `${getHermesDisplayName(member.user)} (vos)`
+        : getHermesDisplayName(member.user);
+      return [[{ text: displayName, callback_data: `paid_by:user:${member.user_id}` }]];
+    }
+
+    if (member.tempUser && member.temp_user_id) {
+      return [[{ text: getTempDisplayName(member.tempUser), callback_data: `paid_by:temp:${member.temp_user_id}` }]];
+    }
+
+    return [];
+  });
 
   buttons.push([{ text: "💳 Pagaron varios", callback_data: "paid_by:varios" }]);
 

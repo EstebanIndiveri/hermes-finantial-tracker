@@ -2,6 +2,7 @@
 import { db } from "@/lib/db/client";
 import {
   users,
+  temp_users,
   split_sessions,
   split_session_members,
   splits,
@@ -9,12 +10,11 @@ import {
   split_items,
   split_payments,
 } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getConversationState, setConversationState, clearConversationState } from "./conversation-state";
 import type { TelegramResponse } from "./telegram-api";
 import { buildInlineKeyboard } from "./telegram-api";
-import { calculateSessionBalances } from "@/lib/splits/balances";
 import { handlePagueSelect } from "./commands/pague";
 
 interface CompartidoState {
@@ -23,14 +23,36 @@ interface CompartidoState {
   description: string;
   session_id: string;
   payer_user_id?: string;
+  payer_temp_user_id?: string;
+  payer_name?: string;
 }
 
 interface PagueState {
   step: "pague_confirm";
   debt_amount: number;
-  creditor_user_id: string;
+  creditor_user_id?: string;
+  creditor_temp_id?: string;
+  creditor_name?: string;
   session_id: string;
 }
+
+type HermesDisplayUser = Pick<typeof users.$inferSelect, "username" | "name">;
+type TempDisplayUser = Pick<typeof temp_users.$inferSelect, "telegram_username" | "first_name">;
+
+const getHermesDisplayName = (user: HermesDisplayUser | null | undefined): string => {
+  if (!user) return "Alguien";
+  return user.username || user.name;
+};
+
+const getTempDisplayName = (tempUser: TempDisplayUser | null | undefined): string => {
+  if (!tempUser) return "Alguien";
+  if (tempUser.telegram_username) {
+    return tempUser.telegram_username.startsWith("@")
+      ? tempUser.telegram_username
+      : `@${tempUser.telegram_username}`;
+  }
+  return tempUser.first_name;
+};
 
 export async function handleSplitCallback(
   chatId: string,
@@ -81,20 +103,44 @@ async function handleWhoPaidCallback(
   data: string,
   state: CompartidoState
 ): Promise<TelegramResponse> {
-  const payerUserId = data.replace("paid_by:", "");
+  const rawId = data.replace("paid_by:", "");
 
-  if (payerUserId === "varios") {
+  if (rawId === "varios") {
     return {
       text: "💳 El flujo de múltiples pagadores no está implementado aún. Usá /compartido nuevamente seleccionando un solo pagador.",
       edit: true,
     };
   }
 
-  const hermesUser = await db.query.users.findFirst({
-    where: eq(users.id, payerUserId),
-  });
+  let payerUserId: string | undefined;
+  let payerTempUserId: string | undefined;
+  let payerName: string | undefined;
+  let payerExists = false;
 
-  if (!hermesUser) {
+  if (rawId.startsWith("user:")) {
+    payerUserId = rawId.replace("user:", "");
+    const hermesUser = await db.query.users.findFirst({
+      where: eq(users.id, payerUserId),
+    });
+    payerExists = Boolean(hermesUser);
+    payerName = getHermesDisplayName(hermesUser);
+  } else if (rawId.startsWith("temp:")) {
+    payerTempUserId = rawId.replace("temp:", "");
+    const tempUser = await db.query.temp_users.findFirst({
+      where: eq(temp_users.id, payerTempUserId),
+    });
+    payerExists = Boolean(tempUser);
+    payerName = getTempDisplayName(tempUser);
+  } else {
+    payerUserId = rawId;
+    const hermesUser = await db.query.users.findFirst({
+      where: eq(users.id, payerUserId),
+    });
+    payerExists = Boolean(hermesUser);
+    payerName = getHermesDisplayName(hermesUser);
+  }
+
+  if (!payerExists || !payerName) {
     await clearConversationState(chatId, telegramUserId);
     return {
       text: "❌ Usuario no encontrado.",
@@ -106,12 +152,12 @@ async function handleWhoPaidCallback(
     ...state,
     step: "participants",
     payer_user_id: payerUserId,
+    payer_temp_user_id: payerTempUserId,
+    payer_name: payerName,
   };
   await setConversationState(chatId, telegramUserId, { step: newState.step, data: newState });
 
   const formattedAmount = state.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
-  const payerName = hermesUser.username || hermesUser.name;
-
   const keyboard = buildInlineKeyboard([
     [{ text: "✅ Sí, todos", callback_data: "participants:all" }],
     [{ text: "➖ Quitar alguien", callback_data: "participants:exclude" }],
@@ -148,7 +194,7 @@ async function handleParticipantsCallback(
     };
   }
 
-  if (!state.payer_user_id) {
+  if (!state.payer_user_id && !state.payer_temp_user_id) {
     await clearConversationState(chatId, telegramUserId);
     return {
       text: "❌ Falta información del pagador.",
@@ -172,21 +218,38 @@ async function handleParticipantsCallback(
   const membersRows = await db.query.split_session_members.findMany({
     where: eq(split_session_members.session_id, session.id),
   });
-  const memberUserIds = membersRows.map(m => m.user_id).filter(Boolean) as string[];
+  const userMemberIds = membersRows.filter(m => m.user_id).map(m => m.user_id as string);
+  const tempMemberIds = membersRows.filter(m => m.temp_user_id).map(m => m.temp_user_id as string);
 
-  if (!memberUserIds.includes(state.payer_user_id)) {
+  if (state.payer_user_id && !userMemberIds.includes(state.payer_user_id)) {
     await db.insert(split_session_members).values({
       session_id: session.id,
       user_id: state.payer_user_id,
       temp_user_id: null,
       joined_at: Date.now(),
     }).onConflictDoNothing();
-    memberUserIds.push(state.payer_user_id);
+    userMemberIds.push(state.payer_user_id);
   }
 
-  const memberCount = memberUserIds.length;
-  const sharePerPerson = Math.round((state.amount / memberCount) * 100) / 100;
+  if (state.payer_temp_user_id && !tempMemberIds.includes(state.payer_temp_user_id)) {
+    await db.insert(split_session_members).values({
+      session_id: session.id,
+      user_id: null,
+      temp_user_id: state.payer_temp_user_id,
+      joined_at: Date.now(),
+    }).onConflictDoNothing();
+    tempMemberIds.push(state.payer_temp_user_id);
+  }
 
+  const totalMembers = userMemberIds.length + tempMemberIds.length;
+  if (totalMembers === 0) {
+    return {
+      text: "❌ No hay participantes en esta sesión.",
+      edit: true,
+    };
+  }
+
+  const sharePerPerson = Math.round((state.amount / totalMembers) * 100) / 100;
   const splitId = randomUUID();
   const now = Date.now();
 
@@ -198,34 +261,80 @@ async function handleParticipantsCallback(
       total_amount: state.amount,
       split_type: "equal",
       status: "active",
-      created_by_user_id: state.payer_user_id,
+      created_by_user_id: state.payer_user_id ?? null,
+      created_by_temp_id: state.payer_temp_user_id ?? null,
       created_at: now,
     });
 
     await tx.insert(split_payers).values({
       id: randomUUID(),
       split_id: splitId,
-      user_id: state.payer_user_id,
-      temp_user_id: null,
+      user_id: state.payer_user_id ?? null,
+      temp_user_id: state.payer_temp_user_id ?? null,
       amount_paid: state.amount,
     });
 
-    const itemValues = memberUserIds.map(uid => ({
-      id: randomUUID(),
-      split_id: splitId,
-      user_id: uid,
-      temp_user_id: null,
-      amount_owed: sharePerPerson,
-      percentage: null,
-    }));
-    for (const item of itemValues) {
-      await tx.insert(split_items).values(item);
+    const itemValues = [
+      ...userMemberIds.map((userId) => ({
+        id: randomUUID(),
+        split_id: splitId,
+        user_id: userId,
+        temp_user_id: null,
+        amount_owed: sharePerPerson,
+        percentage: null,
+      })),
+      ...tempMemberIds.map((tempUserId) => ({
+        id: randomUUID(),
+        split_id: splitId,
+        user_id: null,
+        temp_user_id: tempUserId,
+        amount_owed: sharePerPerson,
+        percentage: null,
+      })),
+    ];
+
+    if (itemValues.length > 0) {
+      await tx.insert(split_items).values(itemValues);
     }
   });
 
-  const payer = await db.query.users.findFirst({
-    where: eq(users.id, state.payer_user_id),
-  });
+  const [usersData, tempUsersData] = await Promise.all([
+    userMemberIds.length > 0
+      ? db.select({ id: users.id, name: users.name, username: users.username })
+          .from(users)
+          .where(inArray(users.id, userMemberIds))
+      : Promise.resolve([]),
+    tempMemberIds.length > 0
+      ? db.select({ id: temp_users.id, first_name: temp_users.first_name, telegram_username: temp_users.telegram_username })
+          .from(temp_users)
+          .where(inArray(temp_users.id, tempMemberIds))
+      : Promise.resolve([]),
+  ]);
+
+  const userNameMap = new Map<string, string>();
+  const tempNameMap = new Map<string, string>();
+
+  for (const user of usersData) {
+    userNameMap.set(user.id, user.username || user.name);
+  }
+
+  for (const tempUser of tempUsersData) {
+    tempNameMap.set(tempUser.id, tempUser.telegram_username ? getTempDisplayName(tempUser) : tempUser.first_name);
+  }
+
+  const payerName = state.payer_name
+    ?? (state.payer_user_id ? userNameMap.get(state.payer_user_id) : undefined)
+    ?? (state.payer_temp_user_id ? tempNameMap.get(state.payer_temp_user_id) : undefined)
+    ?? "Alguien";
+
+  const debtLines = [
+    ...userMemberIds
+      .filter((userId) => userId !== state.payer_user_id)
+      .map((userId) => `• ${userNameMap.get(userId) ?? "Alguien"} debe $${sharePerPerson.toLocaleString("es-AR", { minimumFractionDigits: 0 })} a ${payerName}`),
+    ...tempMemberIds
+      .filter((tempUserId) => tempUserId !== state.payer_temp_user_id)
+      .map((tempUserId) => `• ${tempNameMap.get(tempUserId) ?? "Alguien"} debe $${sharePerPerson.toLocaleString("es-AR", { minimumFractionDigits: 0 })} a ${payerName}`),
+  ];
 
   const formattedAmount = state.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
   const formattedShare = sharePerPerson.toLocaleString("es-AR", { minimumFractionDigits: 0 });
@@ -234,8 +343,9 @@ async function handleParticipantsCallback(
     text: [
       `✅ <b>${state.description}</b> — $${formattedAmount}`,
       ``,
-      `💸 Pagó: <b>${payer?.username || payer?.name || "Alguien"}</b>`,
-      `👥 Dividido entre ${memberCount}: <b>$${formattedShare} c/u</b>`,
+      `💸 Pagó: <b>${payerName}</b>`,
+      `👥 Dividido entre ${totalMembers}: <b>$${formattedShare} c/u</b>`,
+      ...(debtLines.length > 0 ? [``, `💰 <b>Deudas:</b>`, ...debtLines] : []),
       ``,
       `Usá /balances para ver el estado.`,
     ].join("\n"),
@@ -290,13 +400,21 @@ async function handlePagueConfirmCallback(
     };
   }
 
+  if (!state.creditor_user_id && !state.creditor_temp_id) {
+    await clearConversationState(chatId, telegramUserId);
+    return {
+      text: "❌ Falta información del acreedor.",
+      edit: true,
+    };
+  }
+
   await db.insert(split_payments).values({
     id: randomUUID(),
     session_id: session.id,
     payer_user_id: hermesUser.id,
     payer_temp_id: null,
-    payee_user_id: state.creditor_user_id,
-    payee_temp_id: null,
+    payee_user_id: state.creditor_user_id ?? null,
+    payee_temp_id: state.creditor_temp_id ?? null,
     amount: state.debt_amount,
     method: "manual",
     receipt_image_url: null,
@@ -307,9 +425,10 @@ async function handlePagueConfirmCallback(
 
   await clearConversationState(chatId, telegramUserId);
 
-  const creditor = await db.query.users.findFirst({
-    where: eq(users.id, state.creditor_user_id),
-  });
+  const creditorName = state.creditor_name
+    ?? (state.creditor_user_id
+      ? getHermesDisplayName(await db.query.users.findFirst({ where: eq(users.id, state.creditor_user_id) }))
+      : getTempDisplayName(await db.query.temp_users.findFirst({ where: eq(temp_users.id, state.creditor_temp_id!) })));
 
   const formattedAmount = state.debt_amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
 
@@ -317,7 +436,7 @@ async function handlePagueConfirmCallback(
     text: [
       `✅ Pago registrado`,
       ``,
-      `💰 <b>$${formattedAmount}</b> a <b>${creditor?.username || creditor?.name || "Alguien"}</b>`,
+      `💰 <b>$${formattedAmount}</b> a <b>${creditorName}</b>`,
       ``,
       `Usá /balances para ver el estado actualizado.`,
     ].join("\n"),

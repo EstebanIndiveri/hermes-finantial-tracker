@@ -1,4 +1,8 @@
 // lib/telegram/splits/handler.ts
+import { db } from "@/lib/db/client";
+import { users, temp_users, split_sessions, split_session_members } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import { handleActivar } from "./commands/activar";
 import { handleCompartido } from "./commands/compartido";
 import { handleBalances } from "./commands/balances";
@@ -8,10 +12,74 @@ import type { TelegramResponse } from "./telegram-api";
 
 interface TelegramGroupMessage {
   chat: { id: number; type: string; title?: string };
-  from: { id: number; username?: string; first_name: string; last_name?: string };
+  from: { id: number; is_bot: boolean; username?: string; first_name: string; last_name?: string };
   text?: string;
   caption?: string;
   new_chat_members?: Array<{ id: number; is_bot: boolean; username?: string }>;
+}
+
+async function autoRegisterMember(chatId: string, from: TelegramGroupMessage["from"]): Promise<void> {
+  const session = await db.query.split_sessions.findFirst({
+    where: and(
+      eq(split_sessions.telegram_chat_id, chatId),
+      eq(split_sessions.status, "open")
+    ),
+  });
+
+  if (!session) {
+    return;
+  }
+
+  const joinedAt = Date.now();
+  const telegramUserId = String(from.id);
+  const hermesUser = await db.query.users.findFirst({
+    where: eq(users.telegram_user_id, telegramUserId),
+  });
+
+  if (hermesUser) {
+    await db.insert(split_session_members).values({
+      session_id: session.id,
+      user_id: hermesUser.id,
+      temp_user_id: null,
+      joined_at: joinedAt,
+    }).onConflictDoNothing();
+    return;
+  }
+
+  let tempUser = await db.query.temp_users.findFirst({
+    where: eq(temp_users.telegram_user_id, telegramUserId),
+  });
+  let tempUserId = tempUser?.id;
+
+  if (!tempUserId) {
+    tempUserId = randomUUID();
+    await db.insert(temp_users).values({
+      id: tempUserId,
+      telegram_user_id: telegramUserId,
+      telegram_username: from.username ?? null,
+      first_name: from.first_name,
+      last_name: from.last_name ?? null,
+      created_at: joinedAt,
+      upgraded_to: null,
+    }).onConflictDoNothing();
+
+    tempUser = await db.query.temp_users.findFirst({
+      where: eq(temp_users.telegram_user_id, telegramUserId),
+    });
+
+    if (!tempUser?.id) {
+      return;
+    }
+
+    tempUserId = tempUser.id;
+  }
+
+  await db.insert(split_session_members).values({
+    session_id: session.id,
+    user_id: null,
+    temp_user_id: tempUserId,
+    joined_at: joinedAt,
+  }).onConflictDoNothing();
 }
 
 /**
@@ -42,6 +110,10 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
         ].join("\n");
       }
     }
+  }
+
+  if (!message.new_chat_members && !from.is_bot) {
+    await autoRegisterMember(chatId, from);
   }
 
   if (text.startsWith("/activar")) {

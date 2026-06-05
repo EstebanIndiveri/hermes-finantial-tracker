@@ -1,11 +1,22 @@
 // lib/telegram/splits/commands/pague.ts
 import { db } from "@/lib/db/client";
-import { users, split_sessions, splits, split_payers, split_items, split_payments } from "@/lib/db/schema";
+import { users, temp_users, split_sessions, splits, split_payers, split_items, split_payments } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { calculateSessionBalances } from "@/lib/splits/balances";
 import { setConversationState } from "../conversation-state";
 import type { TelegramResponse } from "../telegram-api";
 import { buildInlineKeyboard } from "../telegram-api";
+
+type HermesDisplayUser = Pick<typeof users.$inferSelect, "username" | "name">;
+type TempDisplayUser = Pick<typeof temp_users.$inferSelect, "telegram_username" | "first_name">;
+
+const getHermesDisplayName = (user: HermesDisplayUser): string => user.username || user.name;
+const getTempDisplayName = (tempUser: TempDisplayUser): string => {
+  if (tempUser.telegram_username) {
+    return tempUser.telegram_username.startsWith("@") ? tempUser.telegram_username : `@${tempUser.telegram_username}`;
+  }
+  return tempUser.first_name;
+};
 
 /**
  * Handles /pague command.
@@ -74,18 +85,32 @@ export async function handlePague(chatId: string, telegramUserId: string): Promi
     };
   }
 
-  const creditorIds = myDebts.map(d => d.to.userId).filter(Boolean) as string[];
-  const creditorsData = await db.select({ id: users.id, name: users.name, username: users.username })
-    .from(users)
-    .where(inArray(users.id, creditorIds));
+  const creditorIds = [...new Set(myDebts.map(d => d.to.userId).filter(Boolean) as string[])];
+  const tempCreditorIds = [...new Set(myDebts.map(d => d.to.tempUserId).filter(Boolean) as string[])];
+  const [creditorsData, tempCreditorsData] = await Promise.all([
+    creditorIds.length > 0
+      ? db.select({ id: users.id, name: users.name, username: users.username })
+          .from(users)
+          .where(inArray(users.id, creditorIds))
+      : Promise.resolve([]),
+    tempCreditorIds.length > 0
+      ? db.select({ id: temp_users.id, telegram_username: temp_users.telegram_username, first_name: temp_users.first_name })
+          .from(temp_users)
+          .where(inArray(temp_users.id, tempCreditorIds))
+      : Promise.resolve([]),
+  ]);
 
   const nameMap = new Map<string, string>();
-  for (const u of creditorsData) nameMap.set(u.id, u.username || u.name);
+  const tempNameMap = new Map<string, string>();
+  for (const user of creditorsData) nameMap.set(user.id, getHermesDisplayName(user));
+  for (const tempUser of tempCreditorsData) tempNameMap.set(tempUser.id, getTempDisplayName(tempUser));
 
   const lines = [
     "💰 Tus deudas pendientes:",
     ...myDebts.map(d => {
-      const creditorName = nameMap.get(d.to.userId ?? "") ?? "Alguien";
+      const creditorName = d.to.userId
+        ? (nameMap.get(d.to.userId) ?? "Alguien")
+        : (tempNameMap.get(d.to.tempUserId ?? "") ?? "Alguien");
       const amount = d.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
       return `• <b>${creditorName}</b>: $${amount}`;
     }),
@@ -94,9 +119,15 @@ export async function handlePague(chatId: string, telegramUserId: string): Promi
   ];
 
   const buttons = myDebts.map(d => {
-    const creditorName = nameMap.get(d.to.userId ?? "") ?? "Alguien";
+    const isTempCreditor = !d.to.userId && d.to.tempUserId;
+    const creditorName = isTempCreditor
+      ? (tempNameMap.get(d.to.tempUserId!) ?? "Alguien")
+      : (nameMap.get(d.to.userId!) ?? "Alguien");
     const amount = d.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
-    return [{ text: `${creditorName} $${amount}`, callback_data: `pague_select:${d.to.userId}` }];
+    const callbackData = isTempCreditor
+      ? `pague_select:temp:${d.to.tempUserId}`
+      : `pague_select:user:${d.to.userId}`;
+    return [{ text: `${creditorName} $${amount}`, callback_data: callbackData }];
   });
 
   const keyboard = buildInlineKeyboard(buttons);
@@ -117,10 +148,19 @@ export async function handlePagueSelect(
   telegramUserId: string,
   data: string
 ): Promise<TelegramResponse> {
-  const parts = data.replace("pague_select:", "").split(":");
-  const creditorUserId = parts[0];
+  const rawCreditor = data.replace("pague_select:", "");
+  let creditorUserId: string | undefined;
+  let creditorTempId: string | undefined;
 
-  if (!creditorUserId) {
+  if (rawCreditor.startsWith("user:")) {
+    creditorUserId = rawCreditor.replace("user:", "");
+  } else if (rawCreditor.startsWith("temp:")) {
+    creditorTempId = rawCreditor.replace("temp:", "");
+  } else {
+    creditorUserId = rawCreditor;
+  }
+
+  if (!creditorUserId && !creditorTempId) {
     return {
       text: "❌ Datos inválidos.",
       edit: true,
@@ -187,7 +227,9 @@ export async function handlePagueSelect(
   );
 
   const myDebts = summary.debts.filter(d => d.from.userId === hermesUser.id);
-  const debt = myDebts.find(d => d.to.userId === creditorUserId);
+  const debt = myDebts.find(d => creditorUserId
+    ? d.to.userId === creditorUserId
+    : d.to.tempUserId === creditorTempId);
 
   if (!debt) {
     return {
@@ -196,28 +238,40 @@ export async function handlePagueSelect(
     };
   }
 
-  const creditor = await db.query.users.findFirst({
-    where: eq(users.id, creditorUserId),
-  });
+  let creditorName: string;
 
-  if (!creditor) {
-    return {
-      text: "❌ Usuario no encontrado.",
-      edit: true,
-    };
+  if (creditorUserId) {
+    const creditor = await db.query.users.findFirst({ where: eq(users.id, creditorUserId) });
+    if (!creditor) {
+      return {
+        text: "❌ Usuario no encontrado.",
+        edit: true,
+      };
+    }
+    creditorName = getHermesDisplayName(creditor);
+  } else {
+    const creditor = await db.query.temp_users.findFirst({ where: eq(temp_users.id, creditorTempId!) });
+    if (!creditor) {
+      return {
+        text: "❌ Usuario no encontrado.",
+        edit: true,
+      };
+    }
+    creditorName = getTempDisplayName(creditor);
   }
 
   const state = {
     step: "pague_confirm" as const,
     debt_amount: debt.amount,
     creditor_user_id: creditorUserId,
+    creditor_temp_id: creditorTempId,
+    creditor_name: creditorName,
     session_id: session.id,
   };
 
   await setConversationState(chatId, telegramUserId, { step: state.step, data: state });
 
   const formattedAmount = debt.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
-  const creditorName = creditor.username || creditor.name;
 
   const keyboard = buildInlineKeyboard([
     [{ text: "✅ Confirmar", callback_data: "pague_confirm:yes" }],
