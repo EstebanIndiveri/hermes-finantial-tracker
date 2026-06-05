@@ -1,6 +1,6 @@
 // app/dashboard/compartidos/[id]/nuevo/page.tsx
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 
@@ -16,11 +16,19 @@ export default function NuevoGastoPage() {
   const [splitType, setSplitType] = useState<SplitType>("equal");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then(r => r.json())
+      .then(d => setCurrentUserId(d.id ?? null))
+      .catch(() => null);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const amount = parseFloat(totalAmount.replace(/\./g, "").replace(",", "."));
-    if (!description.trim() || isNaN(amount) || amount <= 0) return;
+    if (!description.trim() || isNaN(amount) || amount <= 0 || !currentUserId) return;
 
     setLoading(true);
     setError(null);
@@ -32,8 +40,8 @@ export default function NuevoGastoPage() {
           description: description.trim(),
           totalAmount: amount,
           splitType,
-          payers: [{ userId: "current", amountPaid: amount }],
-          participants: [{ userId: "current", amount }],
+          payers: [{ userId: currentUserId, amountPaid: amount }],
+          participants: [{ userId: currentUserId, amount }],
         }),
       });
       if (!res.ok) throw new Error("Error al registrar el gasto");

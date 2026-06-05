@@ -6,6 +6,7 @@ import { calculateSessionBalances } from "@/lib/splits/balances";
 import type { RawPayer, RawItem, RawPayment } from "@/lib/splits/types";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CloseSessionButton } from "./CloseSessionButton";
 
 async function getSessionDetail(id: string) {
   try {
@@ -173,12 +174,7 @@ export default async function SessionDetailPage({ params }: { params: Promise<{ 
               <p style={{ fontSize: 11, fontWeight: 700, color: "var(--htext3)", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 10 }}>
                 Acciones
               </p>
-              <button style={{
-                width: "100%", padding: 9, fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: "pointer",
-                background: "rgba(245,158,11,0.12)", color: "#F59E0B", border: "1px solid #F59E0B",
-              }}>
-                ⚠️ Cerrar sesión
-              </button>
+              <CloseSessionButton sessionId={id} />
               {!balanceSummary.isSettled && (
                 <p style={{ fontSize: 11, color: "var(--htext3)", textAlign: "center", marginTop: 6 }}>
                   Quedan deudas pendientes
