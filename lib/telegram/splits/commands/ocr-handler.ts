@@ -39,7 +39,10 @@ export async function handleGroupPhoto(
       eq(split_sessions.status, "open")
     ),
   });
-  if (!session) return null; // No active session — ignore photo silently
+  if (!session) {
+    await sendMsg(chatId, "📷 Foto recibida, pero no hay ninguna sesión activa.\n\nUsá /activar para crear una nueva sesión compartida.");
+    return null;
+  }
 
   // Send immediate feedback so user knows the bot is working
   await sendMsg(chatId, "🔄 Procesando imagen...");

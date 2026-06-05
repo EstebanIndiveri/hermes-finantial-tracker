@@ -90,12 +90,16 @@ export async function POST(req: NextRequest) {
     (msg.document ? "[document]" : null) ?? "";
 
   const updateId = String(update.update_id);
-  const existing = await db.query.bot_messages.findFirst({
-    where: eq(bot_messages.telegram_update_id, updateId),
-  });
-  if (existing) return NextResponse.json({ ok: true });
-
   const isGroupMessage = msg?.chat?.type === "group" || msg?.chat?.type === "supergroup";
+
+  // Dedup check only for personal messages (group messages never insert into bot_messages)
+  if (!isGroupMessage) {
+    const existing = await db.query.bot_messages.findFirst({
+      where: eq(bot_messages.telegram_update_id, updateId),
+    });
+    if (existing) return NextResponse.json({ ok: true });
+  }
+
   if (isGroupMessage) {
     if (!msg.from) return NextResponse.json({ ok: true });
     

@@ -47,7 +47,7 @@ export async function handleCerrar(
 
   await db
     .update(split_sessions)
-    .set({ status: "closed", closed_at: Date.now() })
+    .set({ status: "closed", closed_at: Date.now(), telegram_chat_id: null })
     .where(eq(split_sessions.id, session.id));
 
   const formattedTotal = total.toLocaleString("es-AR", { minimumFractionDigits: 0 });

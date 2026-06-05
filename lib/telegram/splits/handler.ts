@@ -125,7 +125,11 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
   }
 
   if (!message.new_chat_members && !from.is_bot) {
-    await autoRegisterMember(chatId, from);
+    try {
+      await autoRegisterMember(chatId, from);
+    } catch (err) {
+      console.error("autoRegisterMember failed (non-fatal):", err instanceof Error ? err.message : err);
+    }
   }
 
   // Photos and image documents always take priority over text captions → OCR flow
