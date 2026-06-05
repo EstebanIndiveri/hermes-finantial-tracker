@@ -6,6 +6,7 @@ import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { handleTelegramMessage } from "@/lib/telegram/handlers";
 import { getPersonalGroup } from "@/lib/groups/permissions";
 import { randomUUID, timingSafeEqual } from "crypto";
+import { handleSplitGroupMessage } from "@/lib/telegram/splits/handler";
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-telegram-bot-api-secret-token");
@@ -37,6 +38,23 @@ export async function POST(req: NextRequest) {
     where: eq(bot_messages.telegram_update_id, updateId),
   });
   if (existing) return NextResponse.json({ ok: true });
+
+  // Route group messages to splits handler
+  const isGroupMessage = msg?.chat?.type === "group" || msg?.chat?.type === "supergroup";
+  if (isGroupMessage) {
+    try {
+      const response = await handleSplitGroupMessage(msg);
+      if (response) {
+        await sendTelegramMessage(String(msg.chat.id), response);
+      }
+    } catch (err) {
+      console.error("Telegram group handler error:", {
+        message: err instanceof Error ? err.message : "Unknown error",
+        updateId,
+      });
+    }
+    return NextResponse.json({ ok: true });
+  }
 
   // Handle /vincular and /start link_CODE before user lookup — these work for unlinked users
   const isVincular = messageText.trim().startsWith("/vincular");
