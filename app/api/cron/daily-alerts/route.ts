@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { users, transactions, bot_messages } from "@/lib/db/schema";
+import { users, transactions, bot_messages, split_sessions } from "@/lib/db/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
@@ -106,6 +106,39 @@ export async function GET(req: NextRequest) {
         results.push({ userId: user.id, sent: true });
       } else {
         results.push({ userId: user.id, sent: false, reason: "nothing_relevant" });
+      }
+    }
+
+    // Split session reminders — alert groups with pending debts after 24h inactivity
+    const SPLIT_ALERT_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const splitAlertCutoff = Date.now() - SPLIT_ALERT_INTERVAL_MS;
+
+    const openGroupSessions = await db.query.split_sessions.findMany({
+      where: and(
+        eq(split_sessions.status, "open"),
+      ),
+    });
+
+    for (const session of openGroupSessions) {
+      // Only alert Telegram group sessions
+      if (!session.telegram_chat_id) continue;
+
+      // Skip if already alerted recently
+      if (session.last_alert_at && session.last_alert_at > splitAlertCutoff) continue;
+
+      try {
+        await sendTelegramMessage(
+          session.telegram_chat_id,
+          `⏰ <b>Recordatorio — ${session.name}</b>\n\nHay deudas pendientes en este grupo. Usá /balances para ver el estado actual.`
+        );
+        await db.update(split_sessions)
+          .set({ last_alert_at: Date.now() })
+          .where(eq(split_sessions.id, session.id));
+      } catch (err) {
+        console.error("Error sending split session alert:", {
+          sessionId: session.id,
+          message: err instanceof Error ? err.message : "Unknown error",
+        });
       }
     }
 
