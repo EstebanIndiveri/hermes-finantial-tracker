@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { split_sessions, splits, split_session_members } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 
 const patchSchema = z.object({
@@ -20,6 +20,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       where: eq(split_sessions.id, id),
     });
     if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Verify requesting user is a member of this session
+    const isMember = await db.query.split_session_members.findFirst({
+      where: and(
+        eq(split_session_members.session_id, id),
+        eq(split_session_members.user_id, userId)
+      ),
+    });
+    if (!isMember) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const [sessionSplits, members] = await Promise.all([
       db.query.splits.findMany({ where: eq(splits.session_id, id) }),
@@ -43,6 +52,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       where: eq(split_sessions.id, id),
     });
     if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Verify requesting user is a member of this session
+    const isMember = await db.query.split_session_members.findFirst({
+      where: and(
+        eq(split_session_members.session_id, id),
+        eq(split_session_members.user_id, userId)
+      ),
+    });
+    if (!isMember) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     if (session.owner_user_id !== userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

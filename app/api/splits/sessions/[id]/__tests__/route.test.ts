@@ -8,7 +8,7 @@ jest.mock("@/lib/db/client", () => ({
     query: {
       split_sessions: { findFirst: jest.fn() },
       splits: { findMany: jest.fn() },
-      split_session_members: { findMany: jest.fn() },
+      split_session_members: { findMany: jest.fn(), findFirst: jest.fn() },
     },
     update: jest.fn(),
   },
@@ -35,8 +35,16 @@ describe("GET /api/splits/sessions/[id]", () => {
     expect(res.status).toBe(404);
   });
 
+  it("returns 403 when user is not a member", async () => {
+    (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue(mockSession);
+    (db.query.split_session_members.findFirst as jest.Mock).mockResolvedValue(null);
+    const res = await GET(makeReq("http://localhost"), { params: Promise.resolve({ id: "s1" }) });
+    expect(res.status).toBe(403);
+  });
+
   it("returns session with splits and members", async () => {
     (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue(mockSession);
+    (db.query.split_session_members.findFirst as jest.Mock).mockResolvedValue({ session_id: "s1", user_id: "user-123" });
     (db.query.splits.findMany as jest.Mock).mockResolvedValue([]);
     (db.query.split_session_members.findMany as jest.Mock).mockResolvedValue([]);
     const res = await GET(makeReq("http://localhost"), { params: Promise.resolve({ id: "s1" }) });
@@ -49,10 +57,23 @@ describe("GET /api/splits/sessions/[id]", () => {
 describe("PATCH /api/splits/sessions/[id]", () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it("returns 403 when user is not a member", async () => {
+    (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue({
+      ...mockSession, owner_user_id: "other-user",
+    });
+    (db.query.split_session_members.findFirst as jest.Mock).mockResolvedValue(null);
+    const req = makeReq("http://localhost", {
+      method: "PATCH", body: JSON.stringify({ status: "closed" }),
+    });
+    const res = await PATCH(req, { params: Promise.resolve({ id: "s1" }) });
+    expect(res.status).toBe(403);
+  });
+
   it("returns 403 when user is not owner", async () => {
     (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue({
       ...mockSession, owner_user_id: "other-user",
     });
+    (db.query.split_session_members.findFirst as jest.Mock).mockResolvedValue({ session_id: "s1", user_id: "user-123" });
     const req = makeReq("http://localhost", {
       method: "PATCH", body: JSON.stringify({ status: "closed" }),
     });
@@ -62,6 +83,7 @@ describe("PATCH /api/splits/sessions/[id]", () => {
 
   it("closes session when owner requests it", async () => {
     (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue(mockSession);
+    (db.query.split_session_members.findFirst as jest.Mock).mockResolvedValue({ session_id: "s1", user_id: "user-123" });
     const updateMock = { set: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(undefined) };
     (db.update as jest.Mock).mockReturnValue(updateMock);
     const req = makeReq("http://localhost", {

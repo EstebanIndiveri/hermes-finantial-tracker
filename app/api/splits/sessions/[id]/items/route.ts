@@ -1,8 +1,8 @@
 // app/api/splits/sessions/[id]/items/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { split_sessions, splits, split_payers, split_items } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { split_sessions, splits, split_payers, split_items, split_session_members } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 
@@ -11,12 +11,16 @@ const participantSchema = z.object({
   tempUserId: z.string().optional(),
   amount: z.number().positive(),
   percentage: z.number().optional(),
+}).refine(p => !!(p.userId || p.tempUserId), {
+  message: "Either userId or tempUserId must be provided",
 });
 
 const payerSchema = z.object({
   userId: z.string().optional(),
   tempUserId: z.string().optional(),
   amountPaid: z.number().positive(),
+}).refine(p => !!(p.userId || p.tempUserId), {
+  message: "Either userId or tempUserId must be provided",
 });
 
 const createSchema = z.object({
@@ -37,6 +41,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: eq(split_sessions.id, sessionId),
     });
     if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Verify requesting user is a member of this session
+    const isMember = await db.query.split_session_members.findFirst({
+      where: and(
+        eq(split_session_members.session_id, sessionId),
+        eq(split_session_members.user_id, userId)
+      ),
+    });
+    if (!isMember) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     if (session.status !== "open") {
       return NextResponse.json({ error: "Session is closed" }, { status: 400 });
     }

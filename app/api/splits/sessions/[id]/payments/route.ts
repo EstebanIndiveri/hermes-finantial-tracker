@@ -1,8 +1,8 @@
 // app/api/splits/sessions/[id]/payments/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { split_sessions, split_payments } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { split_sessions, split_payments, split_session_members } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 
@@ -15,6 +15,10 @@ const createSchema = z.object({
   method: z.enum(["manual", "receipt_ocr"]).default("manual"),
   receiptImageUrl: z.string().url().optional(),
   ocrRawText: z.string().optional(),
+}).refine(p => !!(p.payerUserId || p.payerTempId), {
+  message: "Either payerUserId or payerTempId must be provided",
+}).refine(p => !!(p.payeeUserId || p.payeeTempId), {
+  message: "Either payeeUserId or payeeTempId must be provided",
 });
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -27,6 +31,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: eq(split_sessions.id, sessionId),
     });
     if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Verify requesting user is a member of this session
+    const isMember = await db.query.split_session_members.findFirst({
+      where: and(
+        eq(split_session_members.session_id, sessionId),
+        eq(split_session_members.user_id, userId)
+      ),
+    });
+    if (!isMember) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     if (session.status !== "open") {
       return NextResponse.json({ error: "Session is closed" }, { status: 400 });
     }

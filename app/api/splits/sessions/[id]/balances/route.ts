@@ -1,7 +1,7 @@
 // app/api/splits/sessions/[id]/balances/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { split_sessions, splits, split_payers, split_items, split_payments } from "@/lib/db/schema";
+import { split_sessions, splits, split_payers, split_items, split_payments, split_session_members } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { calculateSessionBalances } from "@/lib/splits/balances";
 import type { RawPayer, RawItem, RawPayment } from "@/lib/splits/types";
@@ -16,6 +16,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       where: eq(split_sessions.id, id),
     });
     if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Verify requesting user is a member of this session
+    const isMember = await db.query.split_session_members.findFirst({
+      where: and(
+        eq(split_session_members.session_id, id),
+        eq(split_session_members.user_id, userId)
+      ),
+    });
+    if (!isMember) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     // Fetch all active splits for session
     const activeSplits = await db.query.splits.findMany({
