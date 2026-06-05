@@ -1,7 +1,7 @@
-// app/dashboard/categories/page.tsx
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import CategoriesLoading from "./loading";
 import { toast } from "sonner";
 
 interface Category {
@@ -139,11 +139,7 @@ export default function CategoriesPage() {
   }
 
   if (loading) {
-    return (
-      <div style={{ padding: 32, textAlign: "center", color: "var(--htext3)" }}>
-        Cargando categorías...
-      </div>
-    );
+    return <CategoriesLoading />;
   }
 
   if (noGroup) return (

@@ -42,7 +42,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   const month = getActiveMonthArgentina();
 
   if (text === "/start") {
-    return "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible [categoria]\n/ultimo\n/borrar_ultimo\n/grupo [nombre] — ver o cambiar tu grupo activo\n\nTambién podés escribirme en lenguaje natural: \"¿Cuánto me queda en salidas pareja?\"";
+    return "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible [categoria]\n/ultimo\n/borrar_ultimo\n/grupos — ver todos tus grupos\n/grupo [nombre] — ver o cambiar tu grupo activo\n\nTambién podés escribirme en lenguaje natural: \"¿Cuánto me queda en salidas pareja?\"";
   }
 
   if (text === "/resumen") {
@@ -608,6 +608,19 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     await db.update(telegram_link_codes).set({ used: 1 }).where(eq(telegram_link_codes.id, code));
 
     return "✅ ¡Cuenta vinculada correctamente! Ya podés usar el bot con tu usuario.";
+  }
+
+  if (text === "/grupos") {
+    const { getUserGroups } = await import("@/lib/groups/permissions");
+    const myGroups = await getUserGroups(userId);
+    if (myGroups.length === 0) return "No pertenecés a ningún grupo.";
+    const currentGroup = await db.query.groups.findFirst({ where: eq(groups.id, groupId) });
+    const lines = myGroups.map(g => {
+      const active = g.group.id === groupId ? " ✓ *activo*" : "";
+      const role = g.role === "owner" ? "owner" : g.role === "admin" ? "admin" : "miembro";
+      return `• ${g.group.name} (${role})${active}`;
+    }).join("\n");
+    return `📋 *Tus grupos:*\n${lines}\n\nPara cambiar: /grupo NombreDelGrupo`;
   }
 
   if (text.startsWith("/grupo")) {

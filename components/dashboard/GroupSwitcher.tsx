@@ -21,6 +21,7 @@ export function GroupSwitcher({ onGroupChange }: GroupSwitcherProps) {
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -55,6 +56,23 @@ export function GroupSwitcher({ onGroupChange }: GroupSwitcherProps) {
 
   return (
     <div ref={ref} style={{ position: "relative", padding: "10px 12px", borderBottom: "1px solid var(--hborder)" }}>
+      {switching && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          background: "var(--hbg)", display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: 16,
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: "50%",
+            border: "3px solid var(--hborder)", borderTopColor: "var(--haccent)",
+            animation: "spin 0.7s linear infinite",
+          }} />
+          <p style={{ fontSize: "0.85rem", color: "var(--htext3)", fontFamily: "DM Sans, sans-serif" }}>
+            Cambiando grupo…
+          </p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
       <button
         onClick={() => setOpen(o => !o)}
         style={{
@@ -82,7 +100,7 @@ export function GroupSwitcher({ onGroupChange }: GroupSwitcherProps) {
           {groups.map(g => (
             <button
               key={g.group_id}
-              onClick={() => { setActiveGroupId(g.group_id); setOpen(false); switchActiveGroup(g.group_id); }}
+              onClick={() => { setActiveGroupId(g.group_id); setOpen(false); setSwitching(true); switchActiveGroup(g.group_id); }}
               style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 10,
                 padding: "9px 12px", background: g.group_id === activeGroupId ? "var(--haccent-bg)" : "transparent",
@@ -117,7 +135,7 @@ export function GroupSwitcher({ onGroupChange }: GroupSwitcherProps) {
         </div>
       )}
 
-      {showCreateModal && <CreateGroupInline onClose={() => setShowCreateModal(false)} onCreated={(id) => { setActiveGroupId(id); switchActiveGroup(id); }} />}
+      {showCreateModal && <CreateGroupInline onClose={() => setShowCreateModal(false)} onCreated={(id) => { setSwitching(true); setActiveGroupId(id); switchActiveGroup(id); }} />}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { InviteModal } from "@/components/dashboard/InviteModal";
+import GroupSettingsLoading from "./loading";
 
 interface Member {
   group_id: string;
@@ -97,7 +98,7 @@ export default function GroupSettingsPage() {
     } catch { setError("Error de red"); }
   }
 
-  if (loading) return <div style={{ padding: 32, color: "var(--htext2)" }}>Cargando...</div>;
+  if (loading) return <GroupSettingsLoading />;
   if (!group) return <div style={{ padding: 32, color: "var(--htext2)" }}>No tenés ningún grupo activo.</div>;
 
   const isOwner = group.role === "owner";

@@ -29,6 +29,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pollInterval, setPollInterval] = useState<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     async function loadUser() {
@@ -99,12 +100,32 @@ export default function OnboardingPage() {
         setCompleting(false);
         return;
       }
-      router.push("/dashboard");
+      window.location.href = "/dashboard";
     } catch {
       setError("Error de conexión. Verificá tu internet.");
       setCompleting(false);
     }
   }
+
+  // Poll /api/auth/me every 3s while on step 3 waiting for Telegram link
+  useEffect(() => {
+    if (step !== 3 || telegramLinked) {
+      if (pollInterval) { clearInterval(pollInterval); setPollInterval(null); }
+      return;
+    }
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.has_telegram) { setTelegramLinked(true); }
+        }
+      } catch { /* ignore */ }
+    }, 3000);
+    setPollInterval(id);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, telegramLinked]);
 
   const containerStyle: React.CSSProperties = {
     minHeight: "100vh",
@@ -112,8 +133,9 @@ export default function OnboardingPage() {
     alignItems: "center",
     justifyContent: "center",
     background: "var(--hbg)",
-    padding: 20,
+    padding: "20px",
     width: "100%",
+    boxSizing: "border-box",
   };
 
   const cardStyle: React.CSSProperties = {

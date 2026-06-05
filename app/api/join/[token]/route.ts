@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { group_invitations, group_members } from "@/lib/db/schema";
+import { group_invitations, group_members, users } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 
 type Params = { params: Promise<{ token: string }> };
 
 export async function GET(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { token } = await params;
+
+  // If the request carries a session, verify the user still exists in DB.
+  // This handles stale JWTs for deleted users — return 401 so the client
+  // renders the registration form instead of "Aceptar invitación".
+  const sessionUserId = req.headers.get("x-user-id");
+  if (sessionUserId) {
+    const userRow = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, sessionUserId))
+      .limit(1)
+      .then(r => r[0] ?? null);
+    if (!userRow) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const invitation = await db.query.group_invitations.findFirst({
     where: eq(group_invitations.token, token),
@@ -28,6 +42,16 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
 export async function POST(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const userId = req.headers.get("x-user-id");
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Verify the authenticated user still exists in DB (handles stale JWTs for deleted users).
+  const userRow = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+    .then(r => r[0] ?? null);
+  if (!userRow) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { token } = await params;
 
   const invitation = await db.query.group_invitations.findFirst({

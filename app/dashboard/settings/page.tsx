@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import SettingsLoading from "./loading";
 
 interface MonthlySettings {
   income_usd: number;
@@ -168,11 +169,7 @@ export default function SettingsPage() {
     </div>
   );
 
-  if (!settings) return (
-    <div style={{ padding: 40, color: "var(--htext3)", fontFamily: "DM Sans, sans-serif" }}>
-      Cargando configuración…
-    </div>
-  );
+  if (!settings) return <SettingsLoading />;
 
   return (
     <div style={{ width: "100%" }}>

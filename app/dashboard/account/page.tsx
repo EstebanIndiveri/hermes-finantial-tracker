@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import { Skel } from "@/components/ui/Skeleton";
 
 // ── Change name ─────────────────────────────────────────────────
 function ChangeNameSection({ initialName, onSaved }: { initialName: string; onSaved: (name: string) => void }) {
@@ -86,6 +87,7 @@ function ChangeNameSection({ initialName, onSaved }: { initialName: string; onSa
 // ── Mi cuenta ────────────────────────────────────────────────────
 function MiCuenta() {
   const [user, setUser] = useState<{ name: string; has_personal_token: boolean } | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState("");
   const [newTok, setNewTok] = useState("");
@@ -97,7 +99,7 @@ function MiCuenta() {
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
-    fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(setUser);
+    fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(data => { setUser(data); setLoadingUser(false); });
   }, []);
 
   async function handleSave(e: React.FormEvent) {
@@ -125,6 +127,14 @@ function MiCuenta() {
     }
   }
 
+  if (loadingUser) return (
+    <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, marginBottom: 20, padding: "16px 24px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div><Skel w={140} h={14} mb={8} /><Skel w={200} h={13} /></div>
+        <Skel w={16} h={16} r={8} />
+      </div>
+    </section>
+  );
   if (!user) return null;
 
   return (
@@ -236,7 +246,12 @@ function ConectarTelegram() {
   const botName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "HermesFinanceAssistBot";
   const deepLink = code ? `https://t.me/${botName}?start=link_${code}` : null;
 
-  if (linked === null) return null;
+  if (linked === null) return (
+    <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
+      <Skel w={160} h={14} mb={10} />
+      <Skel w="100%" h={56} r={8} />
+    </section>
+  );
 
   return (
     <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
