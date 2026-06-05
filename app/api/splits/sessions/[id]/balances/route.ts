@@ -45,10 +45,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       amountOwed: r.amount_owed,
     }));
     const rawPayments: RawPayment[] = paymentRows.map(r => ({
-      payerUserId: r.payer_user_id,
-      payerTempId: r.payer_temp_id,
-      payeeUserId: r.payee_user_id,
-      payeeTempId: r.payee_temp_id,
+      payerUserId: r.payer_user_id ?? undefined,
+      payerTempId: r.payer_temp_id ?? undefined,
+      payeeUserId: r.payee_user_id ?? undefined,
+      payeeTempId: r.payee_temp_id ?? undefined,
       amount: r.amount,
     }));
 
