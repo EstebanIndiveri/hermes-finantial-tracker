@@ -92,6 +92,14 @@ export async function handleSplitCallback(
     return handlePagueConfirmCallback(chatId, telegramUserId, data, state.data as PagueState);
   }
 
+  if (data.startsWith("ocr_expense:")) {
+    return handleOcrExpenseCallback(chatId, telegramUserId, data, state.data);
+  }
+
+  if (data.startsWith("ocr_payment:")) {
+    return handleOcrPaymentCallback(chatId, telegramUserId, data);
+  }
+
   return {
     text: "❌ Acción no reconocida.",
     edit: false,
@@ -447,4 +455,147 @@ async function handlePagueConfirmCallback(
     ].join("\n"),
     edit: true,
   };
+}
+
+// ---------------------------------------------------------------------------
+// OCR callback handlers
+// ---------------------------------------------------------------------------
+
+interface OcrExpenseState {
+  step: string;
+  amount: number;
+  description: string;
+  session_id: string;
+}
+
+async function handleOcrExpenseCallback(
+  chatId: string,
+  telegramUserId: string,
+  data: string,
+  stateData: unknown
+): Promise<TelegramResponse> {
+  const action = data.replace("ocr_expense:", "");
+
+  if (action === "cancel") {
+    await clearConversationState(chatId, telegramUserId);
+    return { text: "❌ Cancelado.", edit: true };
+  }
+
+  if (action === "edit") {
+    await clearConversationState(chatId, telegramUserId);
+    return {
+      text: "✏️ Usá el comando manual:\n<code>/compartido [monto] [descripción]</code>",
+      edit: true,
+    };
+  }
+
+  if (action !== "confirm") {
+    return { text: "❌ Acción no reconocida.", edit: true };
+  }
+
+  const state = stateData as OcrExpenseState;
+  if (!state?.amount || !state?.session_id) {
+    await clearConversationState(chatId, telegramUserId);
+    return { text: "❌ Datos del ticket no disponibles. Usá /compartido manualmente.", edit: true };
+  }
+
+  const session = await db.query.split_sessions.findFirst({
+    where: eq(split_sessions.id, state.session_id),
+  });
+  if (!session) {
+    await clearConversationState(chatId, telegramUserId);
+    return { text: "❌ Sesión no encontrada.", edit: true };
+  }
+
+  const hermesUser = await db.query.users.findFirst({
+    where: eq(users.telegram_user_id, telegramUserId),
+  });
+  if (!hermesUser) {
+    await clearConversationState(chatId, telegramUserId);
+    return { text: "❌ No tenés cuenta en Hermes.", edit: true };
+  }
+
+  await db.insert(split_session_members).values({
+    session_id: session.id,
+    user_id: hermesUser.id,
+    temp_user_id: null,
+    joined_at: Date.now(),
+  }).onConflictDoNothing();
+
+  const membersRows = await db.query.split_session_members.findMany({
+    where: eq(split_session_members.session_id, session.id),
+    with: { user: true, tempUser: true },
+  });
+
+  const seenUserIds = new Set<string>();
+  const seenTempIds = new Set<string>();
+  const uniqueMembers = membersRows.filter(m => {
+    if (m.user_id) {
+      if (seenUserIds.has(m.user_id)) return false;
+      seenUserIds.add(m.user_id);
+      return true;
+    }
+    if (m.temp_user_id) {
+      if (seenTempIds.has(m.temp_user_id)) return false;
+      seenTempIds.add(m.temp_user_id);
+      return true;
+    }
+    return false;
+  });
+
+  const buttons = uniqueMembers.flatMap(m => {
+    if (m.user && m.user_id) {
+      const label = m.user_id === hermesUser.id
+        ? `${m.user.username || m.user.name} (vos)`
+        : (m.user.username || m.user.name);
+      return [[{ text: label, callback_data: `paid_by:user:${m.user_id}` }]];
+    }
+    if (m.tempUser && m.temp_user_id) {
+      const name = m.tempUser.telegram_username
+        ? (m.tempUser.telegram_username.startsWith("@") ? m.tempUser.telegram_username : `@${m.tempUser.telegram_username}`)
+        : m.tempUser.first_name;
+      return [[{ text: name, callback_data: `paid_by:temp:${m.temp_user_id}` }]];
+    }
+    return [];
+  });
+  buttons.push([{ text: "💳 Pagaron varios", callback_data: "paid_by:varios" }]);
+
+  const newState: CompartidoState = {
+    step: "who_paid",
+    amount: state.amount,
+    description: state.description,
+    session_id: state.session_id,
+  };
+  await setConversationState(chatId, telegramUserId, { step: "who_paid", data: newState });
+
+  const formattedAmount = state.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
+  return {
+    text: [`💳 ¿Quién pagó?`, `${state.description} — $${formattedAmount}`].join("\n"),
+    replyMarkup: buildInlineKeyboard(buttons),
+    edit: true,
+  };
+}
+
+async function handleOcrPaymentCallback(
+  chatId: string,
+  telegramUserId: string,
+  data: string,
+): Promise<TelegramResponse> {
+  const action = data.replace("ocr_payment:", "");
+
+  if (action === "cancel") {
+    await clearConversationState(chatId, telegramUserId);
+    return { text: "❌ Cancelado.", edit: true };
+  }
+
+  if (action !== "confirm") {
+    return { text: "❌ Acción no reconocida.", edit: true };
+  }
+
+  await clearConversationState(chatId, telegramUserId);
+
+  // Delegate to the standard /pague flow
+  const { handlePague } = await import("./commands/pague");
+  const response = await handlePague(chatId, telegramUserId);
+  return { ...response, edit: false };
 }

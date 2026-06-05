@@ -8,6 +8,7 @@ import { handleCompartido } from "./commands/compartido";
 import { handleBalances } from "./commands/balances";
 import { handleCerrar } from "./commands/cerrar";
 import { handlePague } from "./commands/pague";
+import { handleGroupPhoto } from "./commands/ocr-handler";
 import type { TelegramResponse } from "./telegram-api";
 
 interface TelegramGroupMessage {
@@ -16,6 +17,8 @@ interface TelegramGroupMessage {
   text?: string;
   caption?: string;
   new_chat_members?: Array<{ id: number; is_bot: boolean; username?: string }>;
+  photo?: Array<{ file_id: string; file_size?: number; width: number; height: number }>;
+  document?: { file_id: string; mime_type?: string };
 }
 
 async function autoRegisterMember(chatId: string, from: TelegramGroupMessage["from"]): Promise<void> {
@@ -107,6 +110,15 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
           "🤖 ¡Hola! Soy Hermes.",
           "Para activar los gastos compartidos,",
           "un usuario registrado debe usar /activar",
+          "",
+          "<b>Comandos disponibles una vez activado:</b>",
+          "/compartido [monto] [descripción] — registrar gasto",
+          "/pague — confirmar que pagaste una deuda",
+          "/balances — ver deudas actuales",
+          "/cerrar — finalizar sesión",
+          "",
+          "También podés <b>enviar una foto de un ticket</b> para registrar el gasto automáticamente,",
+          "o un <b>comprobante de transferencia</b> para confirmar un pago. 📷",
         ].join("\n");
       }
     }
@@ -145,7 +157,18 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
       "/pague — confirmar que pagaste una deuda",
       "/balances — ver balances actuales del grupo",
       "/cerrar — cerrar la sesión actual",
+      "",
+      "📷 <b>También podés:</b>",
+      "• Enviar una <b>foto de ticket/factura</b> para registrar el gasto automáticamente",
+      "• Enviar un <b>comprobante de transferencia</b> para confirmar un pago",
     ].join("\n");
+  }
+
+  // Handle photos and image documents (OCR flow)
+  const hasPhoto = message.photo && message.photo.length > 0;
+  const hasImageDoc = message.document?.mime_type?.startsWith("image/");
+  if (hasPhoto || hasImageDoc) {
+    return handleGroupPhoto(chatId, telegramUserId, message.photo, message.document);
   }
 
   return null;
