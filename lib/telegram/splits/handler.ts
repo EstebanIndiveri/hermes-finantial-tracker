@@ -2,6 +2,7 @@
 import { handleActivar } from "./commands/activar";
 import { handleCompartido } from "./commands/compartido";
 import { handleBalances } from "./commands/balances";
+import { handleCerrar } from "./commands/cerrar";
 
 interface TelegramGroupMessage {
   chat: { id: number; type: string; title?: string };
@@ -32,6 +33,10 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
 
   if (text === "/balances") {
     return handleBalances(chatId);
+  }
+
+  if (text === "/cerrar") {
+    return handleCerrar(chatId, telegramUserId);
   }
 
   if (text === "/ayuda" || text === "/help") {
