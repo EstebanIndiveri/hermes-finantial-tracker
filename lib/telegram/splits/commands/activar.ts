@@ -179,8 +179,11 @@ export async function handleActivar(
     ``,
     `<b>Comandos disponibles:</b>`,
     `/compartido [monto] [descripción] — nuevo gasto`,
+    `/pague — confirmar que pagaste una deuda`,
     `/balances — ver deudas actuales`,
     `/cerrar — finalizar sesión`,
     `/ayuda — ver todos los comandos`,
+    ``,
+    `📷 También podés enviar una <b>foto de ticket</b> o un <b>comprobante de transferencia</b>.`,
   ].join("\n");
 }

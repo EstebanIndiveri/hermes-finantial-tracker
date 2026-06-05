@@ -128,6 +128,13 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
     await autoRegisterMember(chatId, from);
   }
 
+  // Photos and image documents always take priority over text captions → OCR flow
+  const hasPhoto = message.photo && message.photo.length > 0;
+  const hasImageDoc = message.document?.mime_type?.startsWith("image/");
+  if (hasPhoto || hasImageDoc) {
+    return handleGroupPhoto(chatId, telegramUserId, message.photo, message.document);
+  }
+
   if (text.startsWith("/activar")) {
     return handleActivar(chatId, chatTitle, telegramUserId, from.username, from.first_name, from.last_name);
   }
@@ -162,13 +169,6 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
       "• Enviar una <b>foto de ticket/factura</b> para registrar el gasto automáticamente",
       "• Enviar un <b>comprobante de transferencia</b> para confirmar un pago",
     ].join("\n");
-  }
-
-  // Handle photos and image documents (OCR flow)
-  const hasPhoto = message.photo && message.photo.length > 0;
-  const hasImageDoc = message.document?.mime_type?.startsWith("image/");
-  if (hasPhoto || hasImageDoc) {
-    return handleGroupPhoto(chatId, telegramUserId, message.photo, message.document);
   }
 
   return null;
