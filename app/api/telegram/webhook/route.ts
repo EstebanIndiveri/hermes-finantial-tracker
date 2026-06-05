@@ -30,7 +30,15 @@ export async function POST(req: NextRequest) {
 
   if (update?.callback_query) {
     const cq = update.callback_query;
-    await answerCallbackQuery(cq.id);
+    
+    try {
+      await answerCallbackQuery(cq.id);
+    } catch (err) {
+      console.error("Failed to answer callback query (non-fatal):", {
+        message: err instanceof Error ? err.message : "Unknown error",
+        callback_query_id: cq.id,
+      });
+    }
 
     const chatId = String(cq.message?.chat?.id);
     const telegramUserId = String(cq.from.id);

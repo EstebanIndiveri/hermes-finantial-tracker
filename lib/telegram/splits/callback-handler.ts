@@ -38,11 +38,17 @@ export async function handleSplitCallback(
   data: string,
   messageId?: number
 ): Promise<TelegramResponse | null> {
+  const state = await getConversationState(chatId, telegramUserId);
+
   if (data.startsWith("pague_select:")) {
+    if (!state || state.step !== "pague_select") {
+      return {
+        text: "⏱️ Esta conversación expiró o no es tuya. Usá /pague para comenzar.",
+        edit: false,
+      };
+    }
     return handlePagueSelect(chatId, telegramUserId, data);
   }
-
-  const state = await getConversationState(chatId, telegramUserId);
 
   if (!state) {
     return {
@@ -150,12 +156,13 @@ async function handleParticipantsCallback(
     };
   }
 
+  await clearConversationState(chatId, telegramUserId);
+
   const session = await db.query.split_sessions.findFirst({
     where: eq(split_sessions.id, state.session_id),
   });
 
   if (!session) {
-    await clearConversationState(chatId, telegramUserId);
     return {
       text: "❌ Sesión no encontrada.",
       edit: true,
@@ -183,38 +190,38 @@ async function handleParticipantsCallback(
   const splitId = randomUUID();
   const now = Date.now();
 
-  await db.insert(splits).values({
-    id: splitId,
-    session_id: session.id,
-    description: state.description,
-    total_amount: state.amount,
-    split_type: "equal",
-    status: "active",
-    created_by_user_id: state.payer_user_id,
-    created_at: now,
+  await db.transaction(async (tx) => {
+    await tx.insert(splits).values({
+      id: splitId,
+      session_id: session.id,
+      description: state.description,
+      total_amount: state.amount,
+      split_type: "equal",
+      status: "active",
+      created_by_user_id: state.payer_user_id,
+      created_at: now,
+    });
+
+    await tx.insert(split_payers).values({
+      id: randomUUID(),
+      split_id: splitId,
+      user_id: state.payer_user_id,
+      temp_user_id: null,
+      amount_paid: state.amount,
+    });
+
+    const itemValues = memberUserIds.map(uid => ({
+      id: randomUUID(),
+      split_id: splitId,
+      user_id: uid,
+      temp_user_id: null,
+      amount_owed: sharePerPerson,
+      percentage: null,
+    }));
+    for (const item of itemValues) {
+      await tx.insert(split_items).values(item);
+    }
   });
-
-  await db.insert(split_payers).values({
-    id: randomUUID(),
-    split_id: splitId,
-    user_id: state.payer_user_id,
-    temp_user_id: null,
-    amount_paid: state.amount,
-  });
-
-  const itemValues = memberUserIds.map(uid => ({
-    id: randomUUID(),
-    split_id: splitId,
-    user_id: uid,
-    temp_user_id: null,
-    amount_owed: sharePerPerson,
-    percentage: null,
-  }));
-  for (const item of itemValues) {
-    await db.insert(split_items).values(item);
-  }
-
-  await clearConversationState(chatId, telegramUserId);
 
   const payer = await db.query.users.findFirst({
     where: eq(users.id, state.payer_user_id),
