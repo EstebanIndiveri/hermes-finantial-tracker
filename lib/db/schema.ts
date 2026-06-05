@@ -144,6 +144,90 @@ export const telegram_link_codes = sqliteTable("telegram_link_codes", {
   used: integer("used").notNull().default(0),
 });
 
+export const temp_users = sqliteTable("temp_users", {
+  id: text("id").primaryKey(),
+  telegram_user_id: text("telegram_user_id").notNull().unique(),
+  telegram_username: text("telegram_username"),
+  first_name: text("first_name").notNull(),
+  last_name: text("last_name"),
+  created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  upgraded_to: text("upgraded_to").references(() => users.id),
+});
+
+export const bot_conversation_state = sqliteTable("bot_conversation_state", {
+  chat_id: text("chat_id").notNull(),
+  user_id: text("user_id").notNull(),
+  state: text("state").notNull(),
+  expires_at: integer("expires_at").notNull(),
+}, (t) => ({
+  pk: uniqueIndex("bcs_pk").on(t.chat_id, t.user_id),
+}));
+
+export const split_sessions = sqliteTable("split_sessions", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  owner_user_id: text("owner_user_id").notNull().references(() => users.id),
+  telegram_chat_id: text("telegram_chat_id").unique(),
+  status: text("status", { enum: ["open", "closed"] }).notNull().default("open"),
+  last_alert_at: integer("last_alert_at"),
+  created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  closed_at: integer("closed_at"),
+  closing_note: text("closing_note"),
+});
+
+export const split_session_members = sqliteTable("split_session_members", {
+  session_id: text("session_id").notNull().references(() => split_sessions.id),
+  user_id: text("user_id").references(() => users.id),
+  temp_user_id: text("temp_user_id").references(() => temp_users.id),
+  joined_at: integer("joined_at").notNull().default(sql`(unixepoch() * 1000)`),
+});
+
+export const splits = sqliteTable("splits", {
+  id: text("id").primaryKey(),
+  session_id: text("session_id").notNull().references(() => split_sessions.id),
+  description: text("description").notNull(),
+  total_amount: real("total_amount").notNull(),
+  split_type: text("split_type", { enum: ["equal", "percentage", "fixed"] }).notNull().default("equal"),
+  status: text("status", { enum: ["active", "cancelled"] }).notNull().default("active"),
+  created_by_user_id: text("created_by_user_id").references(() => users.id),
+  created_by_temp_id: text("created_by_temp_id").references(() => temp_users.id),
+  created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  cancelled_at: integer("cancelled_at"),
+  telegram_message_id: text("telegram_message_id"),
+});
+
+export const split_payers = sqliteTable("split_payers", {
+  id: text("id").primaryKey(),
+  split_id: text("split_id").notNull().references(() => splits.id),
+  user_id: text("user_id").references(() => users.id),
+  temp_user_id: text("temp_user_id").references(() => temp_users.id),
+  amount_paid: real("amount_paid").notNull(),
+});
+
+export const split_items = sqliteTable("split_items", {
+  id: text("id").primaryKey(),
+  split_id: text("split_id").notNull().references(() => splits.id),
+  user_id: text("user_id").references(() => users.id),
+  temp_user_id: text("temp_user_id").references(() => temp_users.id),
+  amount_owed: real("amount_owed").notNull(),
+  percentage: real("percentage"),
+});
+
+export const split_payments = sqliteTable("split_payments", {
+  id: text("id").primaryKey(),
+  session_id: text("session_id").notNull().references(() => split_sessions.id),
+  payer_user_id: text("payer_user_id").references(() => users.id),
+  payer_temp_id: text("payer_temp_id").references(() => temp_users.id),
+  payee_user_id: text("payee_user_id").references(() => users.id),
+  payee_temp_id: text("payee_temp_id").references(() => temp_users.id),
+  amount: real("amount").notNull(),
+  method: text("method", { enum: ["manual", "receipt_ocr"] }).notNull().default("manual"),
+  receipt_image_url: text("receipt_image_url"),
+  ocr_raw_text: text("ocr_raw_text"),
+  confirmed_at: integer("confirmed_at").notNull().default(sql`(unixepoch() * 1000)`),
+  telegram_update_id: text("telegram_update_id"),
+});
+
 // Relations for query builder with `with` syntax
 
 export const usersRelations = relations(users, ({ many }) => ({
