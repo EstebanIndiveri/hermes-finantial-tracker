@@ -1,28 +1,39 @@
 import { headers } from "next/headers";
 import { db } from "@/lib/db/client";
-import { split_sessions } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import Link from "next/link";
+import { split_sessions, splits, split_session_members } from "@/lib/db/schema";
+import { eq, inArray } from "drizzle-orm";
+import { CompartidosClient } from "./CompartidosClient";
 
-interface Session {
-  id: string;
-  name: string;
-  owner_user_id: string;
-  status: "open" | "closed";
-  created_at: number;
-  telegram_chat_id?: string | null;
-}
-
-async function getSessions(): Promise<Session[]> {
+async function getSessions() {
   try {
     const hdrs = await headers();
     const userId = hdrs.get("x-user-id");
     if (!userId) return [];
 
-    return db.query.split_sessions.findMany({
+    const sessionRows = await db.query.split_sessions.findMany({
       where: eq(split_sessions.owner_user_id, userId),
       orderBy: (t, { desc }) => desc(t.created_at),
-    }) as Promise<Session[]>;
+    });
+
+    if (sessionRows.length === 0) return [];
+
+    const ids = sessionRows.map(s => s.id);
+
+    const [splitsRows, membersRows] = await Promise.all([
+      db.select({ session_id: splits.session_id }).from(splits).where(inArray(splits.session_id, ids)),
+      db.select({ session_id: split_session_members.session_id }).from(split_session_members).where(inArray(split_session_members.session_id, ids)),
+    ]);
+
+    const splitsCount: Record<string, number> = {};
+    const membersCount: Record<string, number> = {};
+    for (const r of splitsRows) splitsCount[r.session_id] = (splitsCount[r.session_id] ?? 0) + 1;
+    for (const r of membersRows) membersCount[r.session_id] = (membersCount[r.session_id] ?? 0) + 1;
+
+    return sessionRows.map(s => ({
+      ...s,
+      splits_count: splitsCount[s.id] ?? 0,
+      members_count: membersCount[s.id] ?? 1,
+    }));
   } catch {
     return [];
   }
@@ -30,100 +41,5 @@ async function getSessions(): Promise<Session[]> {
 
 export default async function CompartidosPage() {
   const sessions = await getSessions();
-  const open = sessions.filter(s => s.status === "open");
-  const closed = sessions.filter(s => s.status === "closed");
-
-  return (
-    <div style={{ width: "100%", fontFamily: "DM Sans, sans-serif" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--htext1)", margin: 0 }}>
-            🤝 Compartidos
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--htext2)", marginTop: 4 }}>
-            Gastos compartidos con otras personas
-          </p>
-        </div>
-        <Link
-          href="/dashboard/compartidos/nueva"
-          style={{ display: "flex", alignItems: "center", gap: 6, textDecoration: "none", padding: "9px 16px", borderRadius: 8, background: "var(--haccent)", color: "#fff", fontSize: 13, fontWeight: 600 }}
-        >
-          ＋ Nueva sesión
-        </Link>
-      </div>
-
-      {sessions.length === 0 ? (
-        <div className="h-card" style={{ padding: 40, textAlign: "center" }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🤝</div>
-          <p style={{ fontSize: 15, fontWeight: 600, color: "var(--htext1)", marginBottom: 8 }}>
-            No tenés sesiones aún
-          </p>
-          <p style={{ fontSize: 13, color: "var(--htext2)" }}>
-            Creá una sesión para empezar a dividir gastos con otras personas.
-          </p>
-        </div>
-      ) : (
-        <>
-          {open.length > 0 && (
-            <>
-              <p style={{ fontSize: 11, fontWeight: 700, color: "var(--htext3)", textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 12 }}>
-                Sesiones activas
-              </p>
-              {open.map(s => <SessionCard key={s.id} session={s} />)}
-            </>
-          )}
-          {closed.length > 0 && (
-            <>
-              <p style={{ fontSize: 11, fontWeight: 700, color: "var(--htext3)", textTransform: "uppercase" as const, letterSpacing: "0.08em", margin: "24px 0 12px" }}>
-                Sesiones cerradas
-              </p>
-              {closed.map(s => <SessionCard key={s.id} session={s} />)}
-            </>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function SessionCard({ session }: { session: Session }) {
-  const date = new Date(session.created_at).toLocaleDateString("es-AR", { day: "numeric", month: "short" });
-  const isOpen = session.status === "open";
-
-  return (
-    <Link
-      href={`/dashboard/compartidos/${session.id}`}
-      style={{ textDecoration: "none", display: "block" }}
-    >
-      <div
-        className="h-card"
-        style={{
-          padding: "18px 20px",
-          marginBottom: 12,
-          borderLeft: `3px solid ${isOpen ? "var(--haccent)" : "var(--hborder)"}`,
-          cursor: "pointer",
-          opacity: isOpen ? 1 : 0.75,
-          transition: "border-color 0.15s",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--htext1)" }}>{session.name}</span>
-          <span style={{
-            fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 20,
-            textTransform: "uppercase" as const, letterSpacing: "0.05em",
-            background: isOpen ? "rgba(34,197,94,0.12)" : "var(--hborder)",
-            color: isOpen ? "#22C55E" : "var(--htext3)",
-          }}>
-            {isOpen ? "Abierta" : "Cerrada"}
-          </span>
-        </div>
-        <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--htext2)" }}>
-          <span>📅 {date}</span>
-          {session.telegram_chat_id && <span>🤖 Grupo Telegram</span>}
-          {!session.telegram_chat_id && <span>🌐 Solo web</span>}
-        </div>
-      </div>
-    </Link>
-  );
+  return <CompartidosClient sessions={sessions} />;
 }
