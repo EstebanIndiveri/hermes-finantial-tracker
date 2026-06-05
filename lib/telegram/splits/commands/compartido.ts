@@ -74,7 +74,24 @@ export async function handleCompartido(
     });
   }
 
-  const buttons = membersRows.flatMap((member) => {
+  // Deduplicate members defensively (guards against missing DB unique constraints)
+  const seenUserIds = new Set<string>();
+  const seenTempIds = new Set<string>();
+  const uniqueMembers = membersRows.filter(m => {
+    if (m.user_id) {
+      if (seenUserIds.has(m.user_id)) return false;
+      seenUserIds.add(m.user_id);
+      return true;
+    }
+    if (m.temp_user_id) {
+      if (seenTempIds.has(m.temp_user_id)) return false;
+      seenTempIds.add(m.temp_user_id);
+      return true;
+    }
+    return false;
+  });
+
+  const buttons = uniqueMembers.flatMap((member) => {
     if (member.user && member.user_id) {
       const isCurrentUser = member.user_id === hermesUser.id;
       const displayName = isCurrentUser

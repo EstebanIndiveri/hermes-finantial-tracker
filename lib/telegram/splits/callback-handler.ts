@@ -218,8 +218,9 @@ async function handleParticipantsCallback(
   const membersRows = await db.query.split_session_members.findMany({
     where: eq(split_session_members.session_id, session.id),
   });
-  const userMemberIds = membersRows.filter(m => m.user_id).map(m => m.user_id as string);
-  const tempMemberIds = membersRows.filter(m => m.temp_user_id).map(m => m.temp_user_id as string);
+  // Deduplicate — guards against missing DB unique constraints
+  const userMemberIds = [...new Set(membersRows.filter(m => m.user_id).map(m => m.user_id as string))];
+  const tempMemberIds = [...new Set(membersRows.filter(m => m.temp_user_id).map(m => m.temp_user_id as string))];
 
   if (state.payer_user_id && !userMemberIds.includes(state.payer_user_id)) {
     await db.insert(split_session_members).values({
