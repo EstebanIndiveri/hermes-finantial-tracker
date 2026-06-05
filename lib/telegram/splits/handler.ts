@@ -1,6 +1,5 @@
 // lib/telegram/splits/handler.ts
 import { handleActivar } from "./commands/activar";
-import { getConversationState, clearConversationState } from "./conversation-state";
 
 interface TelegramGroupMessage {
   chat: { id: number; type: string };
@@ -37,12 +36,6 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
       "/balances — ver balances actuales del grupo",
       "/cerrar — cerrar la sesión actual",
     ].join("\n");
-  }
-
-  // Check for active conversation state (multi-step flows)
-  const state = await getConversationState(chatId, telegramUserId);
-  if (state) {
-    await clearConversationState(chatId, telegramUserId);
   }
 
   return null; // not handled

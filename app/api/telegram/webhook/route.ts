@@ -42,6 +42,9 @@ export async function POST(req: NextRequest) {
   // Route group messages to splits handler
   const isGroupMessage = msg?.chat?.type === "group" || msg?.chat?.type === "supergroup";
   if (isGroupMessage) {
+    // Telegram channels or anonymous admins have no `from` field
+    if (!msg.from) return NextResponse.json({ ok: true });
+    
     try {
       const response = await handleSplitGroupMessage(msg);
       if (response) {
@@ -52,6 +55,11 @@ export async function POST(req: NextRequest) {
         message: err instanceof Error ? err.message : "Unknown error",
         updateId,
       });
+      try {
+        await sendTelegramMessage(String(msg.chat.id), "Ocurrió un error procesando el comando. Intentá nuevamente.");
+      } catch {
+        // Best-effort: ignore if this send also fails
+      }
     }
     return NextResponse.json({ ok: true });
   }

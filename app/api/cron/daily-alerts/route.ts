@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { users, transactions, bot_messages, split_sessions } from "@/lib/db/schema";
+import { users, transactions, bot_messages, split_sessions, splits } from "@/lib/db/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
@@ -125,6 +125,15 @@ export async function GET(req: NextRequest) {
 
       // Skip if already alerted recently
       if (session.last_alert_at && session.last_alert_at > splitAlertCutoff) continue;
+
+      // Check if there are any unsettled items in this session
+      const unpaidItems = await db.query.splits.findFirst({
+        where: and(
+          eq(splits.session_id, session.id),
+          eq(splits.status, "active")
+        ),
+      });
+      if (!unpaidItems) continue; // No active items, skip alert
 
       try {
         await sendTelegramMessage(
