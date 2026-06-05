@@ -81,6 +81,16 @@ export function HermesSidebar() {
             </svg>
             Categorías
           </Link>
+          <Link
+            href="/dashboard/compartidos"
+            className={`h-nav-item${pathname.startsWith("/dashboard/compartidos") ? " active" : ""}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m9-4.13a4 4 0 11-8 0 4 4 0 018 0zM3 8a4 4 0 108 0A4 4 0 003 8z"/>
+            </svg>
+            Compartidos
+          </Link>
 
           <div className="h-nav-label" style={{ marginTop: 16 }}>Grupo</div>
           <Link

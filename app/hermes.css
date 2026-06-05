@@ -549,6 +549,19 @@
 /* ── Empty state ───────────────────────────────────────────── */
 [data-hermes] .h-empty { text-align: center; padding: 32px; font-size: 13px; color: var(--htext3); }
 
+/* ── Skeleton ───────────────────────────────────────────────── */
+@keyframes h-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+[data-hermes] .h-skel {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--hborder) 25%, var(--hsurface2) 50%, var(--hborder) 75%);
+  background-size: 800px 100%;
+  animation: h-shimmer 1.4s infinite linear;
+  display: block;
+}
+
 /* ── Animations ────────────────────────────────────────────── */
 @keyframes h-fade-up {
   from { opacity: 0; transform: translateY(10px); }
@@ -888,6 +901,60 @@
   .h-cat-edit-limit-cell,
   .h-cat-edit-status-cell { display: none; }
   .h-cat-edit-row.editing {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Skeleton category responsive ──────────────────────── */
+.h-skel-cat-header {
+  display: grid;
+  grid-template-columns: 1fr 80px 140px 100px 80px;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--hborder);
+}
+.h-skel-cat-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 140px 100px 80px;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--hborder);
+  align-items: center;
+}
+.h-skel-cat-row:last-child { border-bottom: none; }
+@media (max-width: 640px) {
+  .h-skel-cat-header { display: none; }
+  .h-skel-cat-row { grid-template-columns: 1fr auto; }
+  .h-skel-cat-col-hide { display: none; }
+}
+
+/* ── Splits / Compartidos skeletons ── */
+[data-hermes] .h-skel-session-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+@media (max-width: 640px) {
+  [data-hermes] .h-skel-session-strip {
+    grid-template-columns: 1fr;
+  }
+}
+[data-hermes] .h-skel-session-card {
+  background: var(--hsurface);
+  border: 1px solid var(--hborder);
+  border-radius: var(--hradius);
+  padding: 18px 20px;
+  margin-bottom: 12px;
+}
+[data-hermes] .h-splits-detail-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  [data-hermes] .h-splits-detail-layout {
     grid-template-columns: 1fr;
   }
 }
