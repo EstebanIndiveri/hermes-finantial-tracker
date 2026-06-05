@@ -9,6 +9,9 @@ import { handleBalances } from "./commands/balances";
 import { handleCerrar } from "./commands/cerrar";
 import { handlePague } from "./commands/pague";
 import { handleGroupPhoto } from "./commands/ocr-handler";
+import { handleOcrEditInput } from "./callback-handler";
+import type { OcrExpenseState } from "./callback-handler";
+import { getConversationState } from "./conversation-state";
 import type { TelegramResponse } from "./telegram-api";
 
 interface TelegramGroupMessage {
@@ -137,6 +140,27 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
   const hasImageDoc = message.document?.mime_type?.startsWith("image/");
   if (hasPhoto || hasImageDoc) {
     return handleGroupPhoto(chatId, telegramUserId, message.photo, message.document);
+  }
+
+  // Check for pending OCR edit state (user typing new amount or description)
+  if (!text.startsWith("/")) {
+    try {
+      const convState = await getConversationState(chatId, telegramUserId);
+      if (
+        convState?.step === "ocr_expense_edit_amount" ||
+        convState?.step === "ocr_expense_edit_desc"
+      ) {
+        return handleOcrEditInput(
+          chatId,
+          telegramUserId,
+          text,
+          convState.step as "ocr_expense_edit_amount" | "ocr_expense_edit_desc",
+          convState.data as OcrExpenseState
+        );
+      }
+    } catch {
+      // Non-fatal: if state lookup fails, fall through to normal routing
+    }
   }
 
   if (text.startsWith("/activar")) {

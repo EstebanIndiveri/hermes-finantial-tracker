@@ -468,6 +468,73 @@ interface OcrExpenseState {
   session_id: string;
 }
 
+export type { OcrExpenseState };
+
+/** Builds the OCR expense confirmation message with inline buttons */
+export function buildOcrConfirmation(merchant: string, amount: number): TelegramResponse {
+  const formatted = amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
+  return {
+    text: [
+      "🧾 <b>Ticket detectado</b>",
+      "",
+      `🏪 Comercio: <b>${merchant}</b>`,
+      `💰 Total: <b>$${formatted}</b>`,
+      "",
+      "¿Registramos este gasto compartido?",
+    ].join("\n"),
+    replyMarkup: buildInlineKeyboard([
+      [{ text: "✅ Sí, registrar gasto", callback_data: "ocr_expense:confirm" }],
+      [{ text: "✏️ Cambiar monto/descripción", callback_data: "ocr_expense:edit" }],
+      [{ text: "❌ No", callback_data: "ocr_expense:cancel" }],
+    ]),
+  };
+}
+
+/** Parses an Argentine-formatted number from user input (e.g., "2.500", "2500", "2,500.50") */
+function parseArgentineNumber(input: string): number {
+  const cleaned = input.replace(/^\$\s*/, "").replace(/\s/g, "");
+  if (cleaned.includes(",")) {
+    // Comma = decimal separator (Argentine style), dots = thousands separators
+    return parseFloat(cleaned.replace(/\./g, "").replace(",", "."));
+  }
+  // If matches thousands pattern like 2.500 or 25.000
+  if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) {
+    return parseInt(cleaned.replace(/\./g, ""), 10);
+  }
+  return parseFloat(cleaned);
+}
+
+/**
+ * Handles the user's text reply when they're editing the amount or description from OCR.
+ * Called from handler.ts when conversation state is ocr_expense_edit_amount / ocr_expense_edit_desc.
+ */
+export async function handleOcrEditInput(
+  chatId: string,
+  telegramUserId: string,
+  text: string,
+  step: "ocr_expense_edit_amount" | "ocr_expense_edit_desc",
+  stateData: OcrExpenseState
+): Promise<TelegramResponse | string> {
+  if (step === "ocr_expense_edit_amount") {
+    const amount = parseArgentineNumber(text.trim());
+    if (isNaN(amount) || amount <= 0) {
+      return "❌ Monto inválido. Enviá solo el número, ej: <code>2500</code>";
+    }
+    const newData = { ...stateData, amount, step: "ocr_expense_confirm" };
+    await setConversationState(chatId, telegramUserId, { step: "ocr_expense_confirm", data: newData });
+    return buildOcrConfirmation(newData.description, amount);
+  }
+
+  // edit_desc
+  const description = text.trim().slice(0, 100);
+  if (!description) {
+    return "❌ Descripción vacía. Enviá el nombre del comercio.";
+  }
+  const newData = { ...stateData, description, step: "ocr_expense_confirm" };
+  await setConversationState(chatId, telegramUserId, { step: "ocr_expense_confirm", data: newData });
+  return buildOcrConfirmation(description, newData.amount);
+}
+
 async function handleOcrExpenseCallback(
   chatId: string,
   telegramUserId: string,
@@ -482,11 +549,39 @@ async function handleOcrExpenseCallback(
   }
 
   if (action === "edit") {
-    await clearConversationState(chatId, telegramUserId);
+    const state = stateData as OcrExpenseState;
+    const formatted = (state?.amount || 0).toLocaleString("es-AR", { minimumFractionDigits: 0 });
     return {
-      text: "✏️ Usá el comando manual:\n<code>/compartido [monto] [descripción]</code>",
+      text: [
+        "✏️ <b>¿Qué querés editar?</b>",
+        "",
+        `🏪 Descripción actual: ${state?.description || "Sin descripción"}`,
+        `💰 Monto actual: $${formatted}`,
+      ].join("\n"),
       edit: true,
+      replyMarkup: buildInlineKeyboard([
+        [{ text: "💰 Editar monto", callback_data: "ocr_expense:edit_amount" }],
+        [{ text: "🏪 Editar descripción", callback_data: "ocr_expense:edit_desc" }],
+        [{ text: "↩️ Volver", callback_data: "ocr_expense:back" }],
+      ]),
     };
+  }
+
+  if (action === "back") {
+    const state = stateData as OcrExpenseState;
+    return { ...buildOcrConfirmation(state?.description || "Gasto compartido", state?.amount || 0), edit: true };
+  }
+
+  if (action === "edit_amount") {
+    const state = stateData as OcrExpenseState;
+    await setConversationState(chatId, telegramUserId, { step: "ocr_expense_edit_amount", data: state });
+    return { text: "✏️ Enviá el nuevo monto (ej: <code>2500</code>):", edit: true };
+  }
+
+  if (action === "edit_desc") {
+    const state = stateData as OcrExpenseState;
+    await setConversationState(chatId, telegramUserId, { step: "ocr_expense_edit_desc", data: state });
+    return { text: "✏️ Enviá la nueva descripción (ej: <code>Sushi</code>):", edit: true };
   }
 
   if (action !== "confirm") {
