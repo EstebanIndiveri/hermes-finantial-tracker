@@ -1,8 +1,90 @@
 // lib/telegram/splits/commands/activar.ts
 import { db } from "@/lib/db/client";
 import { users, temp_users, split_sessions, split_session_members } from "@/lib/db/schema";
-import { eq, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
+
+interface TelegramChatMember {
+  user: {
+    id: number;
+    is_bot: boolean;
+    username?: string;
+    first_name: string;
+    last_name?: string;
+  };
+  status: string;
+}
+
+/**
+ * Calls getChatAdministrators and registers all non-bot admins as session members.
+ * This covers the case where all group members are admins (common in small friend groups).
+ */
+async function registerAdminsAsMembers(chatId: string, sessionId: string, nowMs: number): Promise<number> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) return 0;
+
+  let admins: TelegramChatMember[] = [];
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/getChatAdministrators?chat_id=${chatId}`);
+    if (!res.ok) return 0;
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.result)) return 0;
+    admins = data.result;
+  } catch {
+    return 0;
+  }
+
+  let registered = 0;
+  for (const admin of admins) {
+    if (admin.user.is_bot) continue;
+
+    const telegramUserId = String(admin.user.id);
+
+    const hermesUser = await db.query.users.findFirst({
+      where: eq(users.telegram_user_id, telegramUserId),
+    });
+
+    if (hermesUser) {
+      await db.insert(split_session_members).values({
+        session_id: sessionId,
+        user_id: hermesUser.id,
+        temp_user_id: null,
+        joined_at: nowMs,
+      }).onConflictDoNothing();
+    } else {
+      let tempUser = await db.query.temp_users.findFirst({
+        where: eq(temp_users.telegram_user_id, telegramUserId),
+      });
+
+      if (!tempUser) {
+        const tempId = randomUUID();
+        await db.insert(temp_users).values({
+          id: tempId,
+          telegram_user_id: telegramUserId,
+          telegram_username: admin.user.username ?? null,
+          first_name: admin.user.first_name,
+          last_name: admin.user.last_name ?? null,
+          created_at: nowMs,
+          upgraded_to: null,
+        }).onConflictDoNothing();
+        tempUser = await db.query.temp_users.findFirst({
+          where: eq(temp_users.telegram_user_id, telegramUserId),
+        });
+      }
+
+      if (tempUser) {
+        await db.insert(split_session_members).values({
+          session_id: sessionId,
+          user_id: null,
+          temp_user_id: tempUser.id,
+          joined_at: nowMs,
+        }).onConflictDoNothing();
+      }
+    }
+    registered++;
+  }
+  return registered;
+}
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://hermes-finantial-tracker.vercel.app";
 
@@ -83,5 +165,22 @@ export async function handleActivar(
     joined_at: nowMs,
   });
 
-  return `✅ <b>¡Hermes activado!</b>\n\nSesión "<b>${sessionName}</b>" creada.\n\n<b>Comandos disponibles:</b>\n/compartido [monto] [descripción] — nuevo gasto\n/balances — ver deudas actuales\n/cerrar — finalizar sesión\n/ayuda — ver todos los comandos`;
+  // Register all group admins (covers the case where everyone is admin)
+  const adminCount = await registerAdminsAsMembers(chatId, sessionId, nowMs);
+  const membersNote = adminCount > 1
+    ? `👥 ${adminCount} participantes detectados (admins del grupo).`
+    : `👥 1 participante registrado. Los demás se suman al enviar cualquier mensaje.`;
+
+  return [
+    `✅ <b>¡Hermes activado!</b>`,
+    ``,
+    `Sesión "<b>${sessionName}</b>" creada.`,
+    `${membersNote}`,
+    ``,
+    `<b>Comandos disponibles:</b>`,
+    `/compartido [monto] [descripción] — nuevo gasto`,
+    `/balances — ver deudas actuales`,
+    `/cerrar — finalizar sesión`,
+    `/ayuda — ver todos los comandos`,
+  ].join("\n");
 }
