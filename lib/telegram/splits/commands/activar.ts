@@ -13,6 +13,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://hermes-finantial-tra
  */
 export async function handleActivar(
   chatId: string,
+  chatTitle: string | undefined,
   telegramUserId: string,
   telegramUsername: string | undefined,
   firstName: string,
@@ -52,8 +53,11 @@ export async function handleActivar(
 
   // Create session with registered user as owner
   const sessionId = randomUUID();
-  const sessionName = `Sesión ${new Date().toLocaleDateString("es-AR", { day: "numeric", month: "long" })}`;
-  const now = Date.now();
+  const nowDate = new Date();
+  const nowMs = nowDate.getTime();
+  const dateStr = `${nowDate.getDate()}/${nowDate.getMonth() + 1}/${String(nowDate.getFullYear()).slice(-2)}`;
+  const groupLabel = chatTitle ?? "Compartidos";
+  const sessionName = `${groupLabel} ${dateStr}`;
 
   await db.insert(split_sessions).values({
     id: sessionId,
@@ -61,14 +65,14 @@ export async function handleActivar(
     owner_user_id: hermesUser.id,
     telegram_chat_id: chatId,
     status: "open",
-    created_at: now,
+    created_at: nowMs,
   });
 
   await db.insert(split_session_members).values({
     session_id: sessionId,
     user_id: hermesUser.id,
     temp_user_id: null,
-    joined_at: now,
+    joined_at: nowMs,
   });
 
   return `✅ <b>¡Hermes activado!</b>\n\nSesión "<b>${sessionName}</b>" creada.\n\n<b>Comandos disponibles:</b>\n/compartido [monto] [descripción] — nuevo gasto\n/balances — ver deudas actuales\n/cerrar — finalizar sesión\n/ayuda — ver todos los comandos`;

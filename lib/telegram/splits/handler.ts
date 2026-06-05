@@ -1,8 +1,10 @@
 // lib/telegram/splits/handler.ts
 import { handleActivar } from "./commands/activar";
+import { handleCompartido } from "./commands/compartido";
+import { handleBalances } from "./commands/balances";
 
 interface TelegramGroupMessage {
-  chat: { id: number; type: string };
+  chat: { id: number; type: string; title?: string };
   from: { id: number; username?: string; first_name: string; last_name?: string };
   text?: string;
   caption?: string;
@@ -14,16 +16,22 @@ interface TelegramGroupMessage {
  */
 export async function handleSplitGroupMessage(message: TelegramGroupMessage): Promise<string | null> {
   const chatId = String(message.chat.id);
+  const chatTitle = message.chat.title;
   const from = message.from;
   const telegramUserId = String(from.id);
-  const text = (message.text ?? message.caption ?? "").trim().toLowerCase();
+  const rawText = (message.text ?? message.caption ?? "").trim();
+  const text = rawText.toLowerCase();
 
   if (text.startsWith("/activar")) {
-    return handleActivar(chatId, telegramUserId, from.username, from.first_name, from.last_name);
+    return handleActivar(chatId, chatTitle, telegramUserId, from.username, from.first_name, from.last_name);
+  }
+
+  if (text.startsWith("/compartido")) {
+    return handleCompartido(chatId, telegramUserId, rawText);
   }
 
   if (text === "/balances") {
-    return "📊 <b>Balances</b>\n\nFuncionalidad disponible próximamente. Visitá el dashboard para ver los balances actuales.";
+    return handleBalances(chatId);
   }
 
   if (text === "/ayuda" || text === "/help") {
