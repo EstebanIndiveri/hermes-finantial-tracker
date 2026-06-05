@@ -7,7 +7,7 @@ const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export interface ConversationState {
   step: string;
-  data: Record<string, unknown>;
+  data: any;
 }
 
 /** Retrieves active conversation state for a chat+user pair. Returns null if expired or missing. */

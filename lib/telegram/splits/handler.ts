@@ -3,25 +3,46 @@ import { handleActivar } from "./commands/activar";
 import { handleCompartido } from "./commands/compartido";
 import { handleBalances } from "./commands/balances";
 import { handleCerrar } from "./commands/cerrar";
+import { handlePague } from "./commands/pague";
+import type { TelegramResponse } from "./telegram-api";
 
 interface TelegramGroupMessage {
   chat: { id: number; type: string; title?: string };
   from: { id: number; username?: string; first_name: string; last_name?: string };
   text?: string;
   caption?: string;
+  new_chat_members?: Array<{ id: number; is_bot: boolean; username?: string }>;
 }
 
 /**
  * Routes group messages to the appropriate split command handler.
  * Returns the response text if a command was handled, or null if not.
  */
-export async function handleSplitGroupMessage(message: TelegramGroupMessage): Promise<string | null> {
+export async function handleSplitGroupMessage(message: TelegramGroupMessage): Promise<TelegramResponse | string | null> {
   const chatId = String(message.chat.id);
   const chatTitle = message.chat.title;
   const from = message.from;
   const telegramUserId = String(from.id);
   const rawText = (message.text ?? message.caption ?? "").trim();
   const text = rawText.toLowerCase();
+
+  if (message.new_chat_members) {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) return null;
+
+    const botInfoRes = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+    if (botInfoRes.ok) {
+      const botInfo = await botInfoRes.json();
+      const botId = botInfo.result?.id;
+      if (botId && message.new_chat_members.some(m => m.id === botId)) {
+        return [
+          "🤖 ¡Hola! Soy Hermes.",
+          "Para activar los gastos compartidos,",
+          "un usuario registrado debe usar /activar",
+        ].join("\n");
+      }
+    }
+  }
 
   if (text.startsWith("/activar")) {
     return handleActivar(chatId, chatTitle, telegramUserId, from.username, from.first_name, from.last_name);
@@ -39,17 +60,23 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
     return handleCerrar(chatId, telegramUserId);
   }
 
+  if (text === "/pague") {
+    return handlePague(chatId, telegramUserId);
+  }
+
   if (text === "/ayuda" || text === "/help") {
     return [
       "🤖 <b>Comandos de Hermes Compartidos</b>",
       "",
       "/activar — activar Hermes en este grupo",
       "/compartido [monto] [descripción] — registrar gasto compartido",
-      "/pague @usuario — confirmar que pagaste una deuda",
+      "/pague — confirmar que pagaste una deuda",
       "/balances — ver balances actuales del grupo",
       "/cerrar — cerrar la sesión actual",
     ].join("\n");
   }
 
-  return null; // not handled
+  return null;
 }
+
+export { handleSplitCallback } from "./callback-handler";

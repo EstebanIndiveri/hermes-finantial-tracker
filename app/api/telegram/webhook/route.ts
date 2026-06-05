@@ -6,7 +6,13 @@ import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { handleTelegramMessage } from "@/lib/telegram/handlers";
 import { getPersonalGroup } from "@/lib/groups/permissions";
 import { randomUUID, timingSafeEqual } from "crypto";
-import { handleSplitGroupMessage } from "@/lib/telegram/splits/handler";
+import { handleSplitGroupMessage, handleSplitCallback } from "@/lib/telegram/splits/handler";
+import {
+  sendTelegramMessage as sendSplitMessage,
+  editTelegramMessage,
+  answerCallbackQuery,
+} from "@/lib/telegram/splits/telegram-api";
+import type { TelegramResponse } from "@/lib/telegram/splits/telegram-api";
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-telegram-bot-api-secret-token");
@@ -21,6 +27,45 @@ export async function POST(req: NextRequest) {
   }
 
   const update = await req.json().catch(() => null);
+
+  if (update?.callback_query) {
+    const cq = update.callback_query;
+    await answerCallbackQuery(cq.id);
+
+    const chatId = String(cq.message?.chat?.id);
+    const telegramUserId = String(cq.from.id);
+    const data = cq.data ?? "";
+    const messageId = cq.message?.message_id;
+
+    const isGroupChat = cq.message?.chat?.type === "group" || cq.message?.chat?.type === "supergroup";
+
+    if (isGroupChat) {
+      try {
+        const response = await handleSplitCallback(chatId, telegramUserId, data, messageId);
+        if (response) {
+          if (response.edit && messageId) {
+            await editTelegramMessage(chatId, messageId, response.text, response.replyMarkup);
+          } else {
+            await sendSplitMessage(chatId, response.text, response.replyMarkup);
+          }
+        }
+      } catch (err) {
+        console.error("Telegram callback error:", {
+          message: err instanceof Error ? err.message : "Unknown error",
+          data,
+        });
+        try {
+          await sendSplitMessage(chatId, "Ocurrió un error procesando tu acción. Intentá nuevamente.");
+        } catch {
+          // Best-effort: ignore if send fails
+        }
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
   if (!update?.message?.chat?.id || !update?.message?.from?.id) {
     return NextResponse.json({ ok: true });
   }
@@ -39,16 +84,19 @@ export async function POST(req: NextRequest) {
   });
   if (existing) return NextResponse.json({ ok: true });
 
-  // Route group messages to splits handler
   const isGroupMessage = msg?.chat?.type === "group" || msg?.chat?.type === "supergroup";
   if (isGroupMessage) {
-    // Telegram channels or anonymous admins have no `from` field
     if (!msg.from) return NextResponse.json({ ok: true });
     
     try {
       const response = await handleSplitGroupMessage(msg);
       if (response) {
-        await sendTelegramMessage(String(msg.chat.id), response);
+        if (typeof response === "string") {
+          await sendTelegramMessage(String(msg.chat.id), response);
+        } else {
+          const typedResponse = response as TelegramResponse;
+          await sendSplitMessage(String(msg.chat.id), typedResponse.text, typedResponse.replyMarkup);
+        }
       }
     } catch (err) {
       console.error("Telegram group handler error:", {
@@ -64,7 +112,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Handle /vincular and /start link_CODE before user lookup — these work for unlinked users
   const isVincular = messageText.trim().startsWith("/vincular");
   const isStartLink = messageText.trim().startsWith("/start link_");
   if (isVincular || isStartLink) {
@@ -82,7 +129,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Find user by telegram_user_id
   const user = await db.query.users.findFirst({
     where: eq(users.telegram_user_id, telegramUserId),
   });
@@ -93,7 +139,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Resolve active group: user's active_telegram_group_id or personal group
   let groupId: string | null = user.active_telegram_group_id;
   if (!groupId) {
     try {
