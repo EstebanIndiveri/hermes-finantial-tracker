@@ -14,6 +14,9 @@ import {
 } from "@/lib/telegram/splits/telegram-api";
 import type { TelegramResponse } from "@/lib/telegram/splits/telegram-api";
 
+// Allow up to 60 seconds for OCR + AI processing
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-telegram-bot-api-secret-token");
   const expectedSecret = process.env.TELEGRAM_SECRET_TOKEN;

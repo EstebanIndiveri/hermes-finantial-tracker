@@ -6,7 +6,7 @@ import { split_sessions } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { setConversationState } from "../conversation-state";
 import type { TelegramResponse } from "../telegram-api";
-import { buildInlineKeyboard } from "../telegram-api";
+import { buildInlineKeyboard, sendTelegramMessage as sendMsg } from "../telegram-api";
 
 type TelegramPhotoSize = { file_id: string; file_size?: number; width: number; height: number };
 type TelegramDocument = { file_id: string; mime_type?: string };
@@ -23,10 +23,9 @@ function isTransferReceipt(text: string): boolean {
 }
 
 /**
- * Handles a photo or image document sent in a group.
- * If there's an active session, runs OCR and detects:
- *  - merchant ticket → ask to register as compartido
- *  - transfer receipt → ask to register as /pague payment
+ * Handles a photo or image document sent in a group with an active session.
+ * Sends "🔄 Procesando..." immediately, then runs OCR + AI parsing.
+ * Always sends the result directly via sendMsg — returns null (already handled).
  */
 export async function handleGroupPhoto(
   chatId: string,
@@ -40,9 +39,12 @@ export async function handleGroupPhoto(
       eq(split_sessions.status, "open")
     ),
   });
-  if (!session) return null;
+  if (!session) return null; // No active session — ignore photo silently
 
-  // Run OCR on the image
+  // Send immediate feedback so user knows the bot is working
+  await sendMsg(chatId, "🔄 Procesando imagen...");
+
+  // Run OCR
   let ocrResult;
   try {
     ocrResult = documentData
@@ -52,21 +54,23 @@ export async function handleGroupPhoto(
         : null;
   } catch (err) {
     console.error("OCR error in group photo:", err instanceof Error ? err.message : err);
+    await sendMsg(chatId, "❌ No pude leer la imagen. Usá /compartido [monto] [descripción] para registrar el gasto manualmente.");
     return null;
   }
 
-  if (!ocrResult?.text) return null;
+  if (!ocrResult?.text) {
+    await sendMsg(chatId, "❌ No pude extraer texto de la imagen. Usá /compartido [monto] [descripción] para registrar el gasto manualmente.");
+    return null;
+  }
 
   const rawText = ocrResult.text;
   const isTransfer = isTransferReceipt(rawText);
-
   const parsed = await parseReceiptText(rawText).catch(() => null);
 
   if (isTransfer) {
     if (!parsed?.amount_ars) {
-      return {
-        text: "💳 Comprobante de transferencia detectado, pero no pude leer el monto.\nUsá /pague para registrar el pago manualmente.",
-      };
+      await sendMsg(chatId, "💳 Comprobante de transferencia detectado, pero no pude leer el monto.\nUsá /pague para registrar el pago manualmente.");
+      return null;
     }
 
     const formattedAmount = parsed.amount_ars.toLocaleString("es-AR", { minimumFractionDigits: 0 });
@@ -81,26 +85,29 @@ export async function handleGroupPhoto(
       },
     });
 
-    return {
-      text: [
-        "💳 <b>Comprobante de transferencia detectado</b>",
-        "",
-        `💰 Monto: <b>$${formattedAmount}</b>`,
-        "",
-        "¿Registramos este pago?",
-      ].join("\n"),
-      replyMarkup: buildInlineKeyboard([
-        [{ text: "✅ Sí, registrar pago", callback_data: "ocr_payment:confirm" }],
-        [{ text: "❌ No", callback_data: "ocr_payment:cancel" }],
-      ]),
-    };
+    await sendMsg(chatId, [
+      "💳 <b>Comprobante de transferencia detectado</b>",
+      "",
+      `💰 Monto: <b>$${formattedAmount}</b>`,
+      "",
+      "¿Registramos este pago?",
+    ].join("\n"), buildInlineKeyboard([
+      [{ text: "✅ Sí, registrar pago", callback_data: "ocr_payment:confirm" }],
+      [{ text: "❌ No", callback_data: "ocr_payment:cancel" }],
+    ]));
+    return null;
   }
 
   // Merchant ticket
   if (!parsed?.amount_ars) {
-    return {
-      text: "🧾 Imagen recibida pero no pude leer el monto.\nUsá /compartido [monto] [descripción] para registrar el gasto.",
-    };
+    await sendMsg(chatId, [
+      "🧾 Ticket recibido pero no pude leer el monto total.",
+      "",
+      `Texto detectado: <code>${rawText.slice(0, 150)}</code>`,
+      "",
+      "Usá /compartido [monto] [descripción] para registrarlo manualmente.",
+    ].join("\n"));
+    return null;
   }
 
   const merchant = parsed.merchant || "Gasto compartido";
@@ -117,19 +124,17 @@ export async function handleGroupPhoto(
     },
   });
 
-  return {
-    text: [
-      "🧾 <b>Ticket detectado</b>",
-      "",
-      `🏪 Comercio: <b>${merchant}</b>`,
-      `💰 Total: <b>$${formattedAmount}</b>`,
-      "",
-      "¿Registramos este gasto compartido?",
-    ].join("\n"),
-    replyMarkup: buildInlineKeyboard([
-      [{ text: "✅ Sí, registrar gasto", callback_data: "ocr_expense:confirm" }],
-      [{ text: "✏️ Cambiar monto/descripción", callback_data: "ocr_expense:edit" }],
-      [{ text: "❌ No", callback_data: "ocr_expense:cancel" }],
-    ]),
-  };
+  await sendMsg(chatId, [
+    "🧾 <b>Ticket detectado</b>",
+    "",
+    `🏪 Comercio: <b>${merchant}</b>`,
+    `💰 Total: <b>$${formattedAmount}</b>`,
+    "",
+    "¿Registramos este gasto compartido?",
+  ].join("\n"), buildInlineKeyboard([
+    [{ text: "✅ Sí, registrar gasto", callback_data: "ocr_expense:confirm" }],
+    [{ text: "✏️ Cambiar monto/descripción", callback_data: "ocr_expense:edit" }],
+    [{ text: "❌ No", callback_data: "ocr_expense:cancel" }],
+  ]));
+  return null;
 }
