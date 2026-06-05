@@ -1,7 +1,7 @@
 // lib/telegram/splits/commands/activar.ts
 import { db } from "@/lib/db/client";
 import { users, temp_users, split_sessions, split_session_members } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://hermes-finantial-tracker.vercel.app";
@@ -58,6 +58,14 @@ export async function handleActivar(
   const dateStr = `${nowDate.getDate()}/${nowDate.getMonth() + 1}/${String(nowDate.getFullYear()).slice(-2)}`;
   const groupLabel = chatTitle ?? "Compartidos";
   const sessionName = `${groupLabel} ${dateStr}`;
+
+  // Clear telegram_chat_id from any previous closed session to avoid unique constraint violation
+  if (existing) {
+    await db
+      .update(split_sessions)
+      .set({ telegram_chat_id: null })
+      .where(eq(split_sessions.id, existing.id));
+  }
 
   await db.insert(split_sessions).values({
     id: sessionId,
