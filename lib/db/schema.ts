@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { text, real, integer, sqliteTable, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+import { text, real, integer, sqliteTable, uniqueIndex, index, primaryKey } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -160,7 +160,7 @@ export const bot_conversation_state = sqliteTable("bot_conversation_state", {
   state: text("state").notNull(),
   expires_at: integer("expires_at").notNull(),
 }, (t) => ({
-  pk: uniqueIndex("bcs_pk").on(t.chat_id, t.user_id),
+  pk: primaryKey({ columns: [t.chat_id, t.user_id] }),
 }));
 
 export const split_sessions = sqliteTable("split_sessions", {
@@ -180,7 +180,10 @@ export const split_session_members = sqliteTable("split_session_members", {
   user_id: text("user_id").references(() => users.id),
   temp_user_id: text("temp_user_id").references(() => temp_users.id),
   joined_at: integer("joined_at").notNull().default(sql`(unixepoch() * 1000)`),
-});
+}, (t) => ({
+  uniq_user: uniqueIndex("ssm_user_uniq").on(t.session_id, t.user_id),
+  uniq_temp: uniqueIndex("ssm_temp_uniq").on(t.session_id, t.temp_user_id),
+}));
 
 export const splits = sqliteTable("splits", {
   id: text("id").primaryKey(),
@@ -224,9 +227,55 @@ export const split_payments = sqliteTable("split_payments", {
   method: text("method", { enum: ["manual", "receipt_ocr"] }).notNull().default("manual"),
   receipt_image_url: text("receipt_image_url"),
   ocr_raw_text: text("ocr_raw_text"),
-  confirmed_at: integer("confirmed_at").notNull().default(sql`(unixepoch() * 1000)`),
+  confirmed_at: integer("confirmed_at"),
   telegram_update_id: text("telegram_update_id"),
 });
+
+// ── Splits / Compartidos relations ──────────────────────────
+export const tempUsersRelations = relations(temp_users, ({ one, many }) => ({
+  upgradedTo: one(users, { fields: [temp_users.upgraded_to], references: [users.id] }),
+}));
+
+export const splitSessionsRelations = relations(split_sessions, ({ one, many }) => ({
+  owner: one(users, { fields: [split_sessions.owner_user_id], references: [users.id] }),
+  members: many(split_session_members),
+  splits: many(splits),
+  payments: many(split_payments),
+}));
+
+export const splitSessionMembersRelations = relations(split_session_members, ({ one }) => ({
+  session: one(split_sessions, { fields: [split_session_members.session_id], references: [split_sessions.id] }),
+  user: one(users, { fields: [split_session_members.user_id], references: [users.id] }),
+  tempUser: one(temp_users, { fields: [split_session_members.temp_user_id], references: [temp_users.id] }),
+}));
+
+export const splitsRelations = relations(splits, ({ one, many }) => ({
+  session: one(split_sessions, { fields: [splits.session_id], references: [split_sessions.id] }),
+  payers: many(split_payers),
+  items: many(split_items),
+  createdByUser: one(users, { fields: [splits.created_by_user_id], references: [users.id] }),
+  createdByTemp: one(temp_users, { fields: [splits.created_by_temp_id], references: [temp_users.id] }),
+}));
+
+export const splitPayersRelations = relations(split_payers, ({ one }) => ({
+  split: one(splits, { fields: [split_payers.split_id], references: [splits.id] }),
+  user: one(users, { fields: [split_payers.user_id], references: [users.id] }),
+  tempUser: one(temp_users, { fields: [split_payers.temp_user_id], references: [temp_users.id] }),
+}));
+
+export const splitItemsRelations = relations(split_items, ({ one }) => ({
+  split: one(splits, { fields: [split_items.split_id], references: [splits.id] }),
+  user: one(users, { fields: [split_items.user_id], references: [users.id] }),
+  tempUser: one(temp_users, { fields: [split_items.temp_user_id], references: [temp_users.id] }),
+}));
+
+export const splitPaymentsRelations = relations(split_payments, ({ one }) => ({
+  session: one(split_sessions, { fields: [split_payments.session_id], references: [split_sessions.id] }),
+  payerUser: one(users, { fields: [split_payments.payer_user_id], references: [users.id] }),
+  payerTemp: one(temp_users, { fields: [split_payments.payer_temp_id], references: [temp_users.id] }),
+  payeeUser: one(users, { fields: [split_payments.payee_user_id], references: [users.id] }),
+  payeeTemp: one(temp_users, { fields: [split_payments.payee_temp_id], references: [temp_users.id] }),
+}));
 
 // Relations for query builder with `with` syntax
 
