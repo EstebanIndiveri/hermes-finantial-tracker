@@ -1,13 +1,13 @@
-import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 async function getSessionDetail(id: string) {
   try {
-    const cookieStore = await cookies();
+    const hdrs = await headers();
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-    const userId = cookieStore.get("user_id")?.value;
+    const userId = hdrs.get("x-user-id");
     if (!userId) return null;
 
     const [detailRes, balancesRes] = await Promise.all([

@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import Link from "next/link";
 
 interface Session {
@@ -12,10 +12,10 @@ interface Session {
 
 async function getSessions(): Promise<Session[]> {
   try {
-    const cookieStore = await cookies();
+    const hdrs = await headers();
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-    const userId = cookieStore.get("user_id")?.value;
+    const userId = hdrs.get("x-user-id");
     if (!userId) return [];
 
     const res = await fetch(`${appUrl}/api/splits/sessions`, {
