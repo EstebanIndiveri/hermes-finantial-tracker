@@ -21,6 +21,31 @@ function escapeHtml(text: string): string {
   return text.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
 }
 
+function buildExpenseConfirmationMessage(
+  amount_ars: number,
+  categoryName: string,
+  categoryEmoji: string,
+  merchant?: string
+): PersonalBotMessage {
+  const formatted = amount_ars.toLocaleString("es-AR", { minimumFractionDigits: 0 });
+  const lines = [
+    `💳 <b>¿Registramos este gasto?</b>`,
+    ``,
+    `${categoryEmoji} <b>${categoryName}</b>: $${formatted} ARS`,
+    merchant ? `🏪 ${escapeHtml(merchant)}` : "",
+  ].filter(Boolean);
+
+  return {
+    text: lines.join("\n"),
+    replyMarkup: buildPersonalKeyboard([
+      [
+        { text: "✅ Confirmar", callback_data: "expense:confirm" },
+        { text: "❌ Cancelar", callback_data: "expense:cancel" },
+      ],
+    ]),
+  };
+}
+
 interface TelegramUpdate {
   update_id: number;
   message?: {
@@ -32,12 +57,6 @@ interface TelegramUpdate {
     document?: { file_id: string; mime_type?: string; file_name?: string };
   };
 }
-
-/**
- * KNOWN LIMITATION: These in-memory Maps are wiped on serverless cold starts.
- * TODO: persist in DB with TTL for production multi-instance use.
- */
-const pendingExceptions = new Map<string, { category_id: string; amount_ars: number; merchant?: string }>();
 
 /** Receipt proposals are persisted in receipt_imports table (status="pending") — no in-memory state needed */
 
@@ -145,17 +164,6 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       .set({ status: "deleted", deleted_at: Date.now() })
       .where(and(eq(transactions.id, last.id), eq(transactions.group_id, groupId)));
     return { text: `✅ Eliminado: $${last.amount_ars.toLocaleString("es-AR")} del ${last.date}` };
-  }
-
-  if (text === "/confirmar" && pendingExceptions.has(chatId)) {
-    const pending = pendingExceptions.get(chatId)!;
-    pendingExceptions.delete(chatId);
-    return { text: (await registerTransaction(userId, groupId, pending.category_id, pending.amount_ars, pending.merchant, month, true)).message };
-  }
-
-  if (text === "/cancelar") {
-    pendingExceptions.delete(chatId);
-    return { text: "Cancelado." };
   }
 
   // ── Intercept text replies for pending receipt edit states ─────────
@@ -289,22 +297,62 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
           eq(transactions.status, "active")
         ));
       const gastado = Number(spentRows[0]?.total ?? 0);
-      const status = calculateCategoryStatus({ gastado_ars: gastado, budget_ars: budget.budget_ars });
+      const catStatus = calculateCategoryStatus({ gastado_ars: gastado, budget_ars: budget.budget_ars });
 
-      if (status === "CLOSED") {
-        if (budget.hard_limit) {
-          return { text: `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.` };
-        }
-        pendingExceptions.set(chatId, { category_id: cat.id, amount_ars, merchant });
-        return { text: `⚠️ ${cat.name} está CERRADA (sin límite duro).\nGastado: $${gastado.toLocaleString("es-AR")} / $${budget.budget_ars.toLocaleString("es-AR")}\nRespondé /confirmar para registrar como excepción o /cancelar para cancelar.` };
+      if (catStatus === "CLOSED" && budget.hard_limit) {
+        return { text: `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.` };
       }
 
       if (gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
         return { text: `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.` };
       }
+
+      if (catStatus === "CLOSED" && !budget.hard_limit) {
+        // Save as pending exception
+        const { setConversationState: setState } = await import("./splits/conversation-state");
+        await setState(chatId, String(msg.from.id), {
+          step: "expense_confirm",
+          data: {
+            step: "expense_confirm",
+            category_id: cat.id,
+            category_name: cat.name,
+            category_emoji: cat.emoji ?? "📦",
+            amount_ars,
+            merchant,
+            group_id: groupId,
+            user_id: userId,
+            is_exception: true,
+          },
+        });
+        return {
+          text: `⚠️ <b>${cat.name}</b> está CERRADA (sin límite duro).\nGastado: $${gastado.toLocaleString("es-AR")} / $${budget.budget_ars.toLocaleString("es-AR")}\n\n¿Registrar como excepción?`,
+          replyMarkup: buildPersonalKeyboard([
+            [
+              { text: "⚠️ Sí, registrar igual", callback_data: "exception:confirm" },
+              { text: "❌ Cancelar", callback_data: "exception:cancel" },
+            ],
+          ]),
+        };
+      }
     }
 
-    return { text: (await registerTransaction(userId, groupId, cat.id, amount_ars, merchant, month, false)).message };
+    // Normal case — show confirmation keyboard
+    const { setConversationState: setState } = await import("./splits/conversation-state");
+    await setState(chatId, String(msg.from.id), {
+      step: "expense_confirm",
+      data: {
+        step: "expense_confirm",
+        category_id: cat.id,
+        category_name: cat.name,
+        category_emoji: cat.emoji ?? "📦",
+        amount_ars,
+        merchant,
+        group_id: groupId,
+        user_id: userId,
+        is_exception: false,
+      },
+    });
+    return buildExpenseConfirmationMessage(amount_ars, cat.name, cat.emoji ?? "📦", merchant);
   }
 
   // ── /puedo monto categoria ──
@@ -812,22 +860,35 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
           eq(transactions.status, "active")
         ));
       const gastado = Number(spentRows[0]?.total ?? 0);
-      const status = calculateCategoryStatus({ gastado_ars: gastado, budget_ars: budget.budget_ars });
+      const nlStatus = calculateCategoryStatus({ gastado_ars: gastado, budget_ars: budget.budget_ars });
 
-      if (status === "CLOSED") {
-        if (budget.hard_limit) {
-          return { text: `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.` };
-        }
-        pendingExceptions.set(chatId, { category_id: cat.id, amount_ars, merchant });
-        return { text: `⚠️ ${cat.name} está CERRADA (sin límite duro).\nGastado: $${gastado.toLocaleString("es-AR")} / $${budget.budget_ars.toLocaleString("es-AR")}\nRespondé /confirmar para registrar como excepción o /cancelar para cancelar.` };
+      if (nlStatus === "CLOSED" && budget.hard_limit) {
+        return { text: `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.` };
       }
-
       if (gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
         return { text: `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.` };
       }
+      if (nlStatus === "CLOSED" && !budget.hard_limit) {
+        const { setConversationState: setState } = await import("./splits/conversation-state");
+        await setState(chatId, String(msg.from.id), {
+          step: "expense_confirm",
+          data: { step: "expense_confirm", category_id: cat.id, category_name: cat.name, category_emoji: cat.emoji ?? "📦", amount_ars, merchant, group_id: groupId, user_id: userId, is_exception: true },
+        });
+        return {
+          text: `⚠️ <b>${cat.name}</b> está CERRADA. ¿Registrar como excepción?`,
+          replyMarkup: buildPersonalKeyboard([
+            [{ text: "⚠️ Sí, registrar igual", callback_data: "exception:confirm" }, { text: "❌ Cancelar", callback_data: "exception:cancel" }],
+          ]),
+        };
+      }
     }
 
-    return { text: (await registerTransaction(userId, groupId, cat.id, amount_ars, merchant, month, false)).message };
+    const { setConversationState: setState } = await import("./splits/conversation-state");
+    await setState(chatId, String(msg.from.id), {
+      step: "expense_confirm",
+      data: { step: "expense_confirm", category_id: cat.id, category_name: cat.name, category_emoji: cat.emoji ?? "📦", amount_ars, merchant, group_id: groupId, user_id: userId, is_exception: false },
+    });
+    return buildExpenseConfirmationMessage(amount_ars, cat.name, cat.emoji ?? "📦", merchant);
   }
 
   return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]" };
