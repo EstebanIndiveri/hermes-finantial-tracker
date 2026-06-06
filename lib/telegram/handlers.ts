@@ -175,11 +175,17 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     } catch { /* ignore */ }
     
     if (editState?.step === "receipt_edit_amount") {
-      const { data: ed } = editState as { step: string; data: { import_id: string } };
+      const ed = editState.data as { import_id?: string };
+      if (!ed?.import_id) return { text: "❌ Sesión inválida. Enviá la foto nuevamente." };
       const newAmount = parseFloat(text.replace(/[$\s.]/g, "").replace(",", ".").trim());
       if (isNaN(newAmount) || newAmount <= 0) return { text: "❌ Monto inválido. Enviá solo el número, ej: <code>47000</code>" };
 
-      await db.update(receipt_imports).set({ parsed_amount_ars: newAmount }).where(eq(receipt_imports.id, ed.import_id));
+      try {
+        await db.update(receipt_imports).set({ parsed_amount_ars: newAmount }).where(eq(receipt_imports.id, ed.import_id));
+      } catch (err) {
+        console.error("Failed to update receipt:", err);
+        return { text: "❌ Error al guardar. Intentá nuevamente." };
+      }
       try {
         const { clearConversationState } = await import("./splits/conversation-state");
         await clearConversationState(chatId, String(msg.from.id));
@@ -202,12 +208,19 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     }
 
     if (editState?.step === "receipt_edit_category") {
-      const { data: ed } = editState as { step: string; data: { import_id: string } };
+      const ed = editState.data as { import_id?: string };
+      if (!ed?.import_id) return { text: "❌ Sesión inválida. Enviá la foto nuevamente." };
       const slug = text.trim().toLowerCase().replace(/\s+/g, "_");
       const catRows = await db.select().from(categories).where(and(eq(categories.slug, slug), eq(categories.group_id, groupId))).limit(1);
-      if (!catRows[0]) return { text: `❌ Categoría "<b>${slug}</b>" no encontrada. Intentá con otro nombre.` };
+      const cat = catRows[0];
+      if (!cat) return { text: `❌ Categoría "<b>${slug}</b>" no encontrada. Intentá con otro nombre.` };
 
-      await db.update(receipt_imports).set({ parsed_category_slug: slug }).where(eq(receipt_imports.id, ed.import_id));
+      try {
+        await db.update(receipt_imports).set({ parsed_category_slug: slug }).where(eq(receipt_imports.id, ed.import_id));
+      } catch (err) {
+        console.error("Failed to update receipt:", err);
+        return { text: "❌ Error al guardar. Intentá nuevamente." };
+      }
       try {
         const { clearConversationState } = await import("./splits/conversation-state");
         await clearConversationState(chatId, String(msg.from.id));
@@ -218,8 +231,8 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       if (!r?.parsed_amount_ars) return { text: "❌ Ticket no encontrado." };
       return buildReceiptProposalMessage({
         amount_ars: r.parsed_amount_ars,
-        categoryName: catRows[0].name,
-        categoryEmoji: catRows[0].emoji ?? "📦",
+        categoryName: cat.name,
+        categoryEmoji: cat.emoji ?? "📦",
         merchant: r.parsed_merchant ?? undefined,
         date: r.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
         source: "edit",
@@ -227,9 +240,15 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     }
 
     if (editState?.step === "receipt_edit_merchant") {
-      const { data: ed } = editState as { step: string; data: { import_id: string } };
+      const ed = editState.data as { import_id?: string };
+      if (!ed?.import_id) return { text: "❌ Sesión inválida. Enviá la foto nuevamente." };
       const newMerchant = text.trim().slice(0, 100);
-      await db.update(receipt_imports).set({ parsed_merchant: newMerchant }).where(eq(receipt_imports.id, ed.import_id));
+      try {
+        await db.update(receipt_imports).set({ parsed_merchant: newMerchant }).where(eq(receipt_imports.id, ed.import_id));
+      } catch (err) {
+        console.error("Failed to update receipt:", err);
+        return { text: "❌ Error al guardar. Intentá nuevamente." };
+      }
       try {
         const { clearConversationState } = await import("./splits/conversation-state");
         await clearConversationState(chatId, String(msg.from.id));
