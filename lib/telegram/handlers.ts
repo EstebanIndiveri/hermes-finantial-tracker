@@ -10,6 +10,7 @@ import { parseReceiptText } from "@/lib/ai/parse-receipt";
 import { randomUUID } from "crypto";
 import type { InlineKeyboardMarkup } from "./send-message";
 import { buildPersonalKeyboard } from "./send-message";
+import { setConversationState } from "./splits/conversation-state";
 
 export interface PersonalBotMessage {
   text: string;
@@ -44,6 +45,114 @@ function buildExpenseConfirmationMessage(
       ],
     ]),
   };
+}
+
+/**
+ * Shared budget check logic for both /gasto and NL register_expense.
+ * Checks budget constraints, calculates category status, and returns appropriate message.
+ * Includes error handling for state persistence and database queries.
+ */
+async function buildExpenseOrExceptionMessage(
+  chatId: string,
+  telegramUserId: string,
+  userId: string,
+  groupId: string,
+  month: string,
+  cat: { id: string; name: string; emoji: string | null },
+  amount_ars: number,
+  merchant: string | undefined
+): Promise<PersonalBotMessage> {
+  const budget = await db.query.budgets.findFirst({
+    where: and(
+      eq(budgets.group_id, groupId),
+      eq(budgets.month, month),
+      eq(budgets.category_id, cat.id)
+    ),
+  });
+
+  if (budget && budget.budget_ars > 0) {
+    let gastado = 0;
+    try {
+      const spentRows = await db
+        .select({ total: sum(transactions.amount_ars) })
+        .from(transactions)
+        .where(and(
+          eq(transactions.group_id, groupId),
+          eq(transactions.month, month),
+          eq(transactions.category_id, cat.id),
+          eq(transactions.status, "active")
+        ));
+      gastado = Number(spentRows[0]?.total ?? 0);
+    } catch (err) {
+      console.error("Failed to query spent amount:", err);
+      return { text: "❌ Error consultando presupuesto. Intentá nuevamente." };
+    }
+
+    const catStatus = calculateCategoryStatus({ gastado_ars: gastado, budget_ars: budget.budget_ars });
+
+    if (catStatus === "CLOSED" && budget.hard_limit) {
+      return { text: `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.` };
+    }
+
+    if (gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
+      return { text: `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.` };
+    }
+
+    if (catStatus === "CLOSED" && !budget.hard_limit) {
+      try {
+        await setConversationState(chatId, telegramUserId, {
+          step: "expense_confirm",
+          data: {
+            step: "expense_confirm",
+            category_id: cat.id,
+            category_name: cat.name,
+            category_emoji: cat.emoji ?? "📦",
+            amount_ars,
+            merchant,
+            group_id: groupId,
+            user_id: userId,
+            is_exception: true,
+          },
+        });
+      } catch (err) {
+        console.error("Failed to save conversation state:", err);
+        return { text: "❌ Error al guardar. Intentá nuevamente." };
+      }
+      
+      return {
+        text: `⚠️ <b>${cat.name}</b> está CERRADA (sin límite duro).\nGastado: $${gastado.toLocaleString("es-AR")} / $${budget.budget_ars.toLocaleString("es-AR")}\n\n¿Registrar como excepción?`,
+        replyMarkup: buildPersonalKeyboard([
+          [
+            { text: "⚠️ Sí, registrar igual", callback_data: "exception:confirm" },
+            { text: "❌ Cancelar", callback_data: "exception:cancel" },
+          ],
+        ]),
+      };
+    }
+  }
+
+  // Normal case — show confirmation keyboard
+  try {
+    await setConversationState(chatId, telegramUserId, {
+      step: "expense_confirm",
+      data: {
+        step: "expense_confirm",
+        category_id: cat.id,
+        category_name: cat.name,
+        category_emoji: cat.emoji ?? "📦",
+        amount_ars,
+        merchant,
+        group_id: groupId,
+        user_id: userId,
+        is_exception: false,
+      },
+    });
+  } catch (err) {
+    console.error("Failed to save conversation state:", err);
+    return { text: "❌ Error al guardar. Intentá nuevamente." };
+  }
+
+  return buildExpenseConfirmationMessage(amount_ars, cat.name, cat.emoji ?? "📦", merchant);
 }
 
 interface TelegramUpdate {
@@ -297,81 +406,16 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     });
     if (!settings) return { text: "Sin configuración mensual. Configurá desde la web." };
 
-    const budget = await db.query.budgets.findFirst({
-      where: and(
-        eq(budgets.group_id, groupId),
-        eq(budgets.month, month),
-        eq(budgets.category_id, cat.id)
-      ),
-    });
-
-    if (budget && budget.budget_ars > 0) {
-      const spentRows = await db
-        .select({ total: sum(transactions.amount_ars) })
-        .from(transactions)
-        .where(and(
-          eq(transactions.group_id, groupId),
-          eq(transactions.month, month),
-          eq(transactions.category_id, cat.id),
-          eq(transactions.status, "active")
-        ));
-      const gastado = Number(spentRows[0]?.total ?? 0);
-      const catStatus = calculateCategoryStatus({ gastado_ars: gastado, budget_ars: budget.budget_ars });
-
-      if (catStatus === "CLOSED" && budget.hard_limit) {
-        return { text: `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.` };
-      }
-
-      if (gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
-        return { text: `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.` };
-      }
-
-      if (catStatus === "CLOSED" && !budget.hard_limit) {
-        // Save as pending exception
-        const { setConversationState: setState } = await import("./splits/conversation-state");
-        await setState(chatId, String(msg.from.id), {
-          step: "expense_confirm",
-          data: {
-            step: "expense_confirm",
-            category_id: cat.id,
-            category_name: cat.name,
-            category_emoji: cat.emoji ?? "📦",
-            amount_ars,
-            merchant,
-            group_id: groupId,
-            user_id: userId,
-            is_exception: true,
-          },
-        });
-        return {
-          text: `⚠️ <b>${cat.name}</b> está CERRADA (sin límite duro).\nGastado: $${gastado.toLocaleString("es-AR")} / $${budget.budget_ars.toLocaleString("es-AR")}\n\n¿Registrar como excepción?`,
-          replyMarkup: buildPersonalKeyboard([
-            [
-              { text: "⚠️ Sí, registrar igual", callback_data: "exception:confirm" },
-              { text: "❌ Cancelar", callback_data: "exception:cancel" },
-            ],
-          ]),
-        };
-      }
-    }
-
-    // Normal case — show confirmation keyboard
-    const { setConversationState: setState } = await import("./splits/conversation-state");
-    await setState(chatId, String(msg.from.id), {
-      step: "expense_confirm",
-      data: {
-        step: "expense_confirm",
-        category_id: cat.id,
-        category_name: cat.name,
-        category_emoji: cat.emoji ?? "📦",
-        amount_ars,
-        merchant,
-        group_id: groupId,
-        user_id: userId,
-        is_exception: false,
-      },
-    });
-    return buildExpenseConfirmationMessage(amount_ars, cat.name, cat.emoji ?? "📦", merchant);
+    return buildExpenseOrExceptionMessage(
+      chatId,
+      String(msg.from.id),
+      userId,
+      groupId,
+      month,
+      cat,
+      amount_ars,
+      merchant
+    );
   }
 
   // ── /puedo monto categoria ──
@@ -864,50 +908,16 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
     const merchant = parsed.merchant ?? parsed.description ?? undefined;
 
-    const budget = await db.query.budgets.findFirst({
-      where: and(eq(budgets.group_id, groupId), eq(budgets.month, month), eq(budgets.category_id, cat.id)),
-    });
-
-    if (budget && budget.budget_ars > 0) {
-      const spentRows = await db
-        .select({ total: sum(transactions.amount_ars) })
-        .from(transactions)
-        .where(and(
-          eq(transactions.group_id, groupId),
-          eq(transactions.month, month),
-          eq(transactions.category_id, cat.id),
-          eq(transactions.status, "active")
-        ));
-      const gastado = Number(spentRows[0]?.total ?? 0);
-      const nlStatus = calculateCategoryStatus({ gastado_ars: gastado, budget_ars: budget.budget_ars });
-
-      if (nlStatus === "CLOSED" && budget.hard_limit) {
-        return { text: `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.` };
-      }
-      if (gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
-        return { text: `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.` };
-      }
-      if (nlStatus === "CLOSED" && !budget.hard_limit) {
-        const { setConversationState: setState } = await import("./splits/conversation-state");
-        await setState(chatId, String(msg.from.id), {
-          step: "expense_confirm",
-          data: { step: "expense_confirm", category_id: cat.id, category_name: cat.name, category_emoji: cat.emoji ?? "📦", amount_ars, merchant, group_id: groupId, user_id: userId, is_exception: true },
-        });
-        return {
-          text: `⚠️ <b>${cat.name}</b> está CERRADA. ¿Registrar como excepción?`,
-          replyMarkup: buildPersonalKeyboard([
-            [{ text: "⚠️ Sí, registrar igual", callback_data: "exception:confirm" }, { text: "❌ Cancelar", callback_data: "exception:cancel" }],
-          ]),
-        };
-      }
-    }
-
-    const { setConversationState: setState } = await import("./splits/conversation-state");
-    await setState(chatId, String(msg.from.id), {
-      step: "expense_confirm",
-      data: { step: "expense_confirm", category_id: cat.id, category_name: cat.name, category_emoji: cat.emoji ?? "📦", amount_ars, merchant, group_id: groupId, user_id: userId, is_exception: false },
-    });
-    return buildExpenseConfirmationMessage(amount_ars, cat.name, cat.emoji ?? "📦", merchant);
+    return buildExpenseOrExceptionMessage(
+      chatId,
+      String(msg.from.id),
+      userId,
+      groupId,
+      month,
+      cat,
+      amount_ars,
+      merchant
+    );
   }
 
   return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]" };
