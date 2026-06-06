@@ -8,6 +8,13 @@ import { formatTransactionConfirm, formatResumen, formatDisponible, formatPuedo 
 import { ocrTelegramPhoto, ocrTelegramDocument } from "./ocr";
 import { parseReceiptText } from "@/lib/ai/parse-receipt";
 import { randomUUID } from "crypto";
+import type { InlineKeyboardMarkup } from "./send-message";
+
+export interface PersonalBotMessage {
+  text: string;
+  replyMarkup?: InlineKeyboardMarkup;
+}
+
 
 function escapeHtml(text: string): string {
   return text.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
@@ -33,22 +40,22 @@ const pendingExceptions = new Map<string, { category_id: string; amount_ars: num
 
 /** Receipt proposals are persisted in receipt_imports table (status="pending") — no in-memory state needed */
 
-export async function handleTelegramMessage(update: TelegramUpdate, userId: string, groupId: string): Promise<string> {
+export async function handleTelegramMessage(update: TelegramUpdate, userId: string, groupId: string): Promise<PersonalBotMessage> {
   const msg = update.message;
-  if (!msg) return "Mensaje no reconocido.";
+  if (!msg) return { text: "Mensaje no reconocido." };
   
   const text = (msg.text ?? "").trim();
   const chatId = String(msg.chat.id);
   const month = getActiveMonthArgentina();
 
   if (text === "/start") {
-    return "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible [categoria]\n/ultimo\n/borrar_ultimo\n/grupos — ver todos tus grupos\n/grupo [nombre] — ver o cambiar tu grupo activo\n\nTambién podés escribirme en lenguaje natural: \"¿Cuánto me queda en salidas pareja?\"";
+    return { text: "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible [categoria]\n/ultimo\n/borrar_ultimo\n/grupos — ver todos tus grupos\n/grupo [nombre] — ver o cambiar tu grupo activo\n\nTambién podés escribirme en lenguaje natural: \"¿Cuánto me queda en salidas pareja?\"" };
   }
 
   if (text === "/resumen") {
     const summary = await getMonthSummary(groupId, month);
-    if (!summary) return "No hay configuración para este mes. Configurá desde la web.";
-    return formatResumen({ month, ...summary });
+    if (!summary) return { text: "No hay configuración para este mes. Configurá desde la web." };
+    return { text: formatResumen({ month, ...summary }) };
   }
 
   if (text.startsWith("/disponible")) {
@@ -64,9 +71,11 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
           const disp = c.disponible_ars !== null ? `$${c.disponible_ars.toLocaleString("es-AR")} disponible` : "sin límite";
           return `${icon} ${c.emoji} ${c.name}: ${disp}`;
         });
-      return lines.length > 0
-        ? `<b>💰 Disponible este mes:</b>\n\n${lines.join("\n")}`
-        : "Sin presupuestos configurados para este mes.";
+      return {
+        text: lines.length > 0
+          ? `<b>💰 Disponible este mes:</b>\n\n${lines.join("\n")}`
+          : "Sin presupuestos configurados para este mes.",
+      };
     }
 
     // Try exact slug match first (e.g. "salidas_pareja")
@@ -87,20 +96,22 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       ) ?? undefined;
     }
 
-    if (!cat) return `No encontré la categoría "${rawArg}".\n\nUsá /disponible para ver todas las categorías.`;
+    if (!cat) return { text: `No encontré la categoría "${rawArg}".\n\nUsá /disponible para ver todas las categorías.` };
 
     const breakdown = await getCategoryBreakdown(groupId, month);
     const catData = breakdown.find(c => c.id === cat!.id);
-    if (!catData) return `Sin datos para ${cat.name} este mes.`;
+    if (!catData) return { text: `Sin datos para ${cat.name} este mes.` };
 
-    return formatDisponible({
-      category: catData.name,
-      emoji: catData.emoji,
-      budget_ars: catData.budget_ars,
-      gastado_ars: catData.gastado_ars,
-      disponible_ars: catData.disponible_ars,
-      status: catData.status,
-    });
+    return {
+      text: formatDisponible({
+        category: catData.name,
+        emoji: catData.emoji,
+        budget_ars: catData.budget_ars,
+        gastado_ars: catData.gastado_ars,
+        disponible_ars: catData.disponible_ars,
+        status: catData.status,
+      }),
+    };
   }
 
   if (text === "/ultimo") {
@@ -113,10 +124,10 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       orderBy: (t, { desc }) => desc(t.created_at),
       with: { category: true },
     });
-    if (!last) return "No hay transacciones activas este mes.";
+    if (!last) return { text: "No hay transacciones activas este mes." };
     const lastWithCat = last as typeof last & { category?: { emoji: string; name: string } };
     const catStr = `${lastWithCat.category?.emoji ?? ""} ${lastWithCat.category?.name ?? ""}`.trim();
-    return `Último: ${catStr} — $${last.amount_ars.toLocaleString("es-AR")}${last.merchant ? ` (${escapeHtml(last.merchant)})` : ""} — ${last.date}`;
+    return { text: `Último: ${catStr} — $${last.amount_ars.toLocaleString("es-AR")}${last.merchant ? ` (${escapeHtml(last.merchant)})` : ""} — ${last.date}` };
   }
 
   if (text === "/borrar_ultimo") {
@@ -128,22 +139,22 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       ),
       orderBy: (t, { desc }) => desc(t.created_at),
     });
-    if (!last) return "No hay transacciones activas para borrar.";
+    if (!last) return { text: "No hay transacciones activas para borrar." };
     await db.update(transactions)
       .set({ status: "deleted", deleted_at: Date.now() })
       .where(and(eq(transactions.id, last.id), eq(transactions.group_id, groupId)));
-    return `✅ Eliminado: $${last.amount_ars.toLocaleString("es-AR")} del ${last.date}`;
+    return { text: `✅ Eliminado: $${last.amount_ars.toLocaleString("es-AR")} del ${last.date}` };
   }
 
   if (text === "/confirmar" && pendingExceptions.has(chatId)) {
     const pending = pendingExceptions.get(chatId)!;
     pendingExceptions.delete(chatId);
-    return (await registerTransaction(userId, groupId, pending.category_id, pending.amount_ars, pending.merchant, month, true)).message;
+    return { text: (await registerTransaction(userId, groupId, pending.category_id, pending.amount_ars, pending.merchant, month, true)).message };
   }
 
   if (text === "/cancelar") {
     pendingExceptions.delete(chatId);
-    return "Cancelado.";
+    return { text: "Cancelado." };
   }
 
   // ── /confirmar_ticket ─────────────────────────────────────────
@@ -161,18 +172,18 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     const pendingImport = rows[0] ?? null;
 
     if (!pendingImport || !pendingImport.parsed_amount_ars) {
-      return "No hay ticket pendiente de confirmar. Enviá una foto primero.";
+      return { text: "No hay ticket pendiente de confirmar. Enviá una foto primero." };
     }
 
     const slug = pendingImport.parsed_category_slug ?? null;
     if (!slug) {
-      return `⚠️ Falta la categoría. Escribila primero (ej: <code>servicios</code>) y luego /confirmar_ticket.`;
+      return { text: `⚠️ Falta la categoría. Escribila primero (ej: <code>servicios</code>) y luego /confirmar_ticket.` };
     }
 
     const catRows = await db.select().from(categories).where(and(eq(categories.slug, slug), eq(categories.group_id, groupId))).limit(1);
     const cat = catRows[0] ?? null;
     if (!cat) {
-      return `⚠️ Categoría "${slug}" no encontrada. Escribí la categoría correcta para continuar.`;
+      return { text: `⚠️ Categoría "${slug}" no encontrada. Escribí la categoría correcta para continuar.` };
     }
 
     const result = await registerTransaction(
@@ -188,7 +199,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       console.error("receipt_imports confirm error:", err instanceof Error ? err.message : String(err));
     }
 
-    return result.message;
+    return { text: result.message };
   }
 
   // ── /cancelar_ticket ──────────────────────────────────────────
@@ -204,7 +215,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         );
     } catch { /* swallow */ }
 
-    return "❌ Importación cancelada.";
+    return { text: "❌ Importación cancelada." };
   }
 
   // ── EDIT LOOP: free text while a receipt is pending in DB ─────
@@ -264,25 +275,27 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       : [];
     const cat = catDispRows[0] ?? null;
 
-    return buildReceiptProposalMessage({
-      amount_ars: newAmount,
-      categoryName: cat?.name ?? "sin categoría",
-      categoryEmoji: cat?.emoji ?? "📦",
-      merchant: newMerchant ?? undefined,
-      date: pendingImport.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
-      source: "edit",
-    });
+    return {
+      text: buildReceiptProposalMessage({
+        amount_ars: newAmount,
+        categoryName: cat?.name ?? "sin categoría",
+        categoryEmoji: cat?.emoji ?? "📦",
+        merchant: newMerchant ?? undefined,
+        date: pendingImport.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
+        source: "edit",
+      }),
+    };
   }
 
   if (text.startsWith("/gasto")) {
     const parts = text.split(" ");
     if (parts.length < 3) {
-      return "Uso: /gasto monto categoria descripcion\nEjemplo: /gasto 47000 supermercado Cordiez";
+      return { text: "Uso: /gasto monto categoria descripcion\nEjemplo: /gasto 47000 supermercado Cordiez" };
     }
 
     const amount_ars = parseFloat(parts[1].replace(",", "."));
     if (isNaN(amount_ars) || amount_ars <= 0) {
-      return "Monto inválido. Usá un número positivo, ej: /gasto 47000 supermercado";
+      return { text: "Monto inválido. Usá un número positivo, ej: /gasto 47000 supermercado" };
     }
 
     const slug = parts[2].toLowerCase();
@@ -292,13 +305,13 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
     });
     if (!cat) {
-      return `Categoría "${slug}" no encontrada.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos`;
+      return { text: `Categoría "${slug}" no encontrada.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos` };
     }
 
     const settings = await db.query.monthly_settings.findFirst({
       where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
     });
-    if (!settings) return "Sin configuración mensual. Configurá desde la web.";
+    if (!settings) return { text: "Sin configuración mensual. Configurá desde la web." };
 
     const budget = await db.query.budgets.findFirst({
       where: and(
@@ -323,30 +336,30 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
       if (status === "CLOSED") {
         if (budget.hard_limit) {
-          return `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.`;
+          return { text: `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.` };
         }
         pendingExceptions.set(chatId, { category_id: cat.id, amount_ars, merchant });
-        return `⚠️ ${cat.name} está CERRADA (sin límite duro).\nGastado: $${gastado.toLocaleString("es-AR")} / $${budget.budget_ars.toLocaleString("es-AR")}\nRespondé /confirmar para registrar como excepción o /cancelar para cancelar.`;
+        return { text: `⚠️ ${cat.name} está CERRADA (sin límite duro).\nGastado: $${gastado.toLocaleString("es-AR")} / $${budget.budget_ars.toLocaleString("es-AR")}\nRespondé /confirmar para registrar como excepción o /cancelar para cancelar.` };
       }
 
       if (gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
-        return `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.`;
+        return { text: `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.` };
       }
     }
 
-    return (await registerTransaction(userId, groupId, cat.id, amount_ars, merchant, month, false)).message;
+    return { text: (await registerTransaction(userId, groupId, cat.id, amount_ars, merchant, month, false)).message };
   }
 
   // ── /puedo monto categoria ──
   if (text.startsWith("/puedo")) {
     const parts = text.split(" ");
     if (parts.length < 2) {
-      return "Uso: /puedo monto [categoria]\nEjemplo: /puedo 35000 salidas_pareja";
+      return { text: "Uso: /puedo monto [categoria]\nEjemplo: /puedo 35000 salidas_pareja" };
     }
 
     const amount_ars = parseFloat(parts[1].replace(",", "."));
     if (isNaN(amount_ars) || amount_ars <= 0) {
-      return "Monto inválido. Ej: /puedo 35000 salidas_pareja";
+      return { text: "Monto inválido. Ej: /puedo 35000 salidas_pareja" };
     }
 
     const slug = parts[2]?.toLowerCase() ?? null;
@@ -356,7 +369,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       getCategoryBreakdown(groupId, month),
     ]);
 
-    if (!summary) return "Sin configuración mensual. Configurá desde la web.";
+    if (!summary) return { text: "Sin configuración mensual. Configurá desde la web." };
 
     const exchangeRate = summary.exchange_rate || 1;
     const ahorro_usd_before = summary.ahorro_proyectado_usd;
@@ -375,7 +388,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       const catData = breakdown.find(c => c.slug === slug || c.name.toLowerCase() === slug.replace(/_/g, " "));
       if (!catData) {
         const list = breakdown.map(c => c.slug).join(", ");
-        return `No encontré la categoría "${slug}".\nDisponibles: ${list}`;
+        return { text: `No encontré la categoría "${slug}".\nDisponibles: ${list}` };
       }
 
       const newGastado = catData.gastado_ars + amount_ars;
@@ -385,19 +398,21 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       });
       const disponible_after = catData.budget_ars > 0 ? catData.budget_ars - newGastado : null;
 
-      return formatPuedo({
-        amount_ars,
-        category: catData.name,
-        emoji: catData.emoji,
-        gastado_ars: catData.gastado_ars,
-        budget_ars: catData.budget_ars,
-        newCategoryStatus,
-        disponible_after,
-        ahorro_usd_before,
-        ahorro_usd_after,
-        newMonthStatus,
-        saving_goal_usd: summary.saving_goal_usd,
-      });
+      return {
+        text: formatPuedo({
+          amount_ars,
+          category: catData.name,
+          emoji: catData.emoji,
+          gastado_ars: catData.gastado_ars,
+          budget_ars: catData.budget_ars,
+          newCategoryStatus,
+          disponible_after,
+          ahorro_usd_before,
+          ahorro_usd_after,
+          newMonthStatus,
+          saving_goal_usd: summary.saving_goal_usd,
+        }),
+      };
     }
 
     // No category — show only savings impact
@@ -408,19 +423,21 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         ? "🟡 <b>Podés, pero con cuidado</b> — estarías ajustado."
         : "🟢 <b>Sí podés</b> — sin comprometer tus metas.";
 
-    return [
-      `💭 <b>¿Podés gastar ${amount_ars.toLocaleString("es-AR")} ARS?</b>`,
-      ``,
-      decision,
-      ``,
-      `<b>💰 Impacto en ahorro:</b>`,
-      `Antes: USD ${ahorro_usd_before.toFixed(0)} → Después: USD ${ahorro_usd_after.toFixed(0)} ${monthIcon}`,
-      summary.saving_goal_usd > 0
-        ? `Meta: USD ${summary.saving_goal_usd.toFixed(0)} (${Math.round((ahorro_usd_after / summary.saving_goal_usd) * 100)}% alcanzado)`
-        : "",
-      ``,
-      `Tip: /puedo ${parts[1]} [categoria] para ver también el impacto en tu presupuesto.`,
-    ].filter(l => l !== "").join("\n");
+    return {
+      text: [
+        `💭 <b>¿Podés gastar ${amount_ars.toLocaleString("es-AR")} ARS?</b>`,
+        ``,
+        decision,
+        ``,
+        `<b>💰 Impacto en ahorro:</b>`,
+        `Antes: USD ${ahorro_usd_before.toFixed(0)} → Después: USD ${ahorro_usd_after.toFixed(0)} ${monthIcon}`,
+        summary.saving_goal_usd > 0
+          ? `Meta: USD ${summary.saving_goal_usd.toFixed(0)} (${Math.round((ahorro_usd_after / summary.saving_goal_usd) * 100)}% alcanzado)`
+          : "",
+        ``,
+        `Tip: /puedo ${parts[1]} [categoria] para ver también el impacto en tu presupuesto.`,
+      ].filter(l => l !== "").join("\n"),
+    };
   }
 
   // ── Photo / Document → OCR ticket import ────────────────────
@@ -465,21 +482,25 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         });
 
         if (!cat) {
-          return [
-            `🧾 Detecté en el caption: <b>$${parsed.amount_ars.toLocaleString("es-AR")}</b>`,
-            `⚠️ No reconocí la categoría "${slug ?? "(ninguna)"}".`,
-            `Usá: /gasto ${parsed.amount_ars} [categoria] ${parsed.merchant ?? ""}`,
-          ].join("\n");
+          return {
+            text: [
+              `🧾 Detecté en el caption: <b>$${parsed.amount_ars.toLocaleString("es-AR")}</b>`,
+              `⚠️ No reconocí la categoría "${slug ?? "(ninguna)"}".`,
+              `Usá: /gasto ${parsed.amount_ars} [categoria] ${parsed.merchant ?? ""}`,
+            ].join("\n"),
+          };
         }
 
         // State already persisted in receipt_imports (status=pending) — no in-memory set needed
-        return buildReceiptProposalMessage({
-          amount_ars: parsed.amount_ars,
-          categoryName: cat.name, categoryEmoji: cat.emoji,
-          merchant: parsed.merchant ?? undefined,
-          date: getArgentinaDate().toISOString().slice(0, 10),
-          source: "caption",
-        });
+        return {
+          text: buildReceiptProposalMessage({
+            amount_ars: parsed.amount_ars,
+            categoryName: cat.name, categoryEmoji: cat.emoji,
+            merchant: parsed.merchant ?? undefined,
+            date: getArgentinaDate().toISOString().slice(0, 10),
+            source: "caption",
+          }),
+        };
       }
     }
 
@@ -503,7 +524,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         groq_raw_response: null, status: "failed",
         fail_reason: "OCR returned no text",
       });
-      return "📷 No pude leer el ticket. Usá /gasto monto categoria descripción.";
+      return { text: "📷 No pude leer el ticket. Usá /gasto monto categoria descripción." };
     }
 
     // Parse OCR text with Groq
@@ -542,45 +563,51 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     });
 
     if (!amount_ars) {
-      return [
-        `📷 <b>Texto del ticket (OCR):</b>`,
-        `<code>${escapeHtml(ocrText.slice(0, 400))}</code>`,
-        ``,
-        `No pude detectar el monto. Usá /gasto monto categoria descripción.`,
-      ].join("\n");
+      return {
+        text: [
+          `📷 <b>Texto del ticket (OCR):</b>`,
+          `<code>${escapeHtml(ocrText.slice(0, 400))}</code>`,
+          ``,
+          `No pude detectar el monto. Usá /gasto monto categoria descripción.`,
+        ].join("\n"),
+      };
     }
 
     if (!cat) {
       // No category detected — state already in DB (status=pending), user must type it
-      return [
-        `🧾 <b>Ticket detectado</b> (🔍 OCR)`,
-        ``,
-        `💰 <b>Monto:</b> $${amount_ars.toLocaleString("es-AR")} ARS`,
-        merchant ? `🏪 <b>Comercio:</b> ${escapeHtml(merchant)}` : "",
-        `📅 <b>Fecha:</b> ${parsedDate}`,
-        ``,
-        `⚠️ No detecté la categoría. Respondé con la categoría para continuar:`,
-        `supermercado · verduleria · salidas_pareja · restaurante · servicios · tarjeta · movilidad · viaje · pareja · compras_personales · imprevistos`,
-        ``,
-        `O usá: /gasto ${amount_ars} [categoria]${merchant ? ` ${merchant}` : ""}`,
-        `/cancelar_ticket → descartar`,
-      ].filter(Boolean).join("\n");
+      return {
+        text: [
+          `🧾 <b>Ticket detectado</b> (🔍 OCR)`,
+          ``,
+          `💰 <b>Monto:</b> $${amount_ars.toLocaleString("es-AR")} ARS`,
+          merchant ? `🏪 <b>Comercio:</b> ${escapeHtml(merchant)}` : "",
+          `📅 <b>Fecha:</b> ${parsedDate}`,
+          ``,
+          `⚠️ No detecté la categoría. Respondé con la categoría para continuar:`,
+          `supermercado · verduleria · salidas_pareja · restaurante · servicios · tarjeta · movilidad · viaje · pareja · compras_personales · imprevistos`,
+          ``,
+          `O usá: /gasto ${amount_ars} [categoria]${merchant ? ` ${merchant}` : ""}`,
+          `/cancelar_ticket → descartar`,
+        ].filter(Boolean).join("\n"),
+      };
     }
 
     // State already persisted in receipt_imports (status=pending)
-    return buildReceiptProposalMessage({
-      amount_ars,
-      categoryName: cat.name, categoryEmoji: cat.emoji,
-      merchant: merchant ?? undefined,
-      date: parsedDate,
-      source: "ocr",
-    });
+    return {
+      text: buildReceiptProposalMessage({
+        amount_ars,
+        categoryName: cat.name, categoryEmoji: cat.emoji,
+        merchant: merchant ?? undefined,
+        date: parsedDate,
+        source: "ocr",
+      }),
+    };
   }
 
   if (text.startsWith("/vincular")) {
     const parts = text.split(" ");
     const code = parts[1]?.trim();
-    if (!code) return "Uso: /vincular XXXXXX\nGenerá tu código en el dashboard → Configuración.";
+    if (!code) return { text: "Uso: /vincular XXXXXX\nGenerá tu código en el dashboard → Configuración." };
 
     const telegramUserId = String(msg.from.id);
 
@@ -593,7 +620,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     });
 
     if (!linkCode) {
-      return "❌ Código inválido o expirado. Generá uno nuevo desde el dashboard → Configuración → Conectar Telegram.";
+      return { text: "❌ Código inválido o expirado. Generá uno nuevo desde el dashboard → Configuración → Conectar Telegram." };
     }
 
     // Check if this Telegram account is already linked to another user
@@ -601,26 +628,26 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       where: eq(users.telegram_user_id, telegramUserId),
     });
     if (existingLink && existingLink.id !== linkCode.user_id) {
-      return "⚠️ Este Telegram ya está vinculado a otra cuenta. Desvinculá desde la web primero.";
+      return { text: "⚠️ Este Telegram ya está vinculado a otra cuenta. Desvinculá desde la web primero." };
     }
 
     await db.update(users).set({ telegram_user_id: telegramUserId }).where(eq(users.id, linkCode.user_id));
     await db.update(telegram_link_codes).set({ used: 1 }).where(eq(telegram_link_codes.id, code));
 
-    return "✅ ¡Cuenta vinculada correctamente! Ya podés usar el bot con tu usuario.";
+    return { text: "✅ ¡Cuenta vinculada correctamente! Ya podés usar el bot con tu usuario." };
   }
 
   if (text === "/grupos") {
     const { getUserGroups } = await import("@/lib/groups/permissions");
     const myGroups = await getUserGroups(userId);
-    if (myGroups.length === 0) return "No pertenecés a ningún grupo.";
+    if (myGroups.length === 0) return { text: "No pertenecés a ningún grupo." };
     const currentGroup = await db.query.groups.findFirst({ where: eq(groups.id, groupId) });
     const lines = myGroups.map(g => {
       const active = g.group.id === groupId ? " ✓ *activo*" : "";
       const role = g.role === "owner" ? "owner" : g.role === "admin" ? "admin" : "miembro";
       return `• ${g.group.name} (${role})${active}`;
     }).join("\n");
-    return `📋 *Tus grupos:*\n${lines}\n\nPara cambiar: /grupo NombreDelGrupo`;
+    return { text: `📋 *Tus grupos:*\n${lines}\n\nPara cambiar: /grupo NombreDelGrupo` };
   }
 
   if (text.startsWith("/grupo")) {
@@ -631,7 +658,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       const currentGroup = await db.query.groups.findFirst({
         where: eq(groups.id, groupId),
       });
-      return `📁 Grupo activo: *${currentGroup?.name ?? "desconocido"}*\n\nPara cambiar: /grupo NombreDelGrupo`;
+      return { text: `📁 Grupo activo: *${currentGroup?.name ?? "desconocido"}*\n\nPara cambiar: /grupo NombreDelGrupo` };
     }
 
     // Find group by name among user's groups
@@ -641,30 +668,30 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
     if (!target) {
       const names = myGroups.map(g => `• ${g.group.name}`).join("\n");
-      return `❌ No encontré un grupo con ese nombre.\n\nTus grupos:\n${names}`;
+      return { text: `❌ No encontré un grupo con ese nombre.\n\nTus grupos:\n${names}` };
     }
 
     await db.update(users).set({ active_telegram_group_id: target.group.id }).where(eq(users.id, userId));
-    return `✅ Grupo activo cambiado a *${target.group.name}*`;
+    return { text: `✅ Grupo activo cambiado a *${target.group.name}*` };
   }
 
   const groqKey = process.env.GROQ_API_KEY;
   if (!groqKey) {
-    return "Por ahora usá el formato: /gasto monto categoria descripción";
+    return { text: "Por ahora usá el formato: /gasto monto categoria descripción" };
   }
 
   const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
   const parsed = await parseFinancialMessage(text);
 
   if (parsed.intent === "unknown" || parsed.confidence < 0.4) {
-    return "No entendí el mensaje. Podés usar:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible categoria\n/borrar_ultimo";
+    return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible categoria\n/borrar_ultimo" };
   }
 
   // ── query_summary → /resumen ──
   if (parsed.intent === "query_summary") {
     const summary = await getMonthSummary(groupId, month);
-    if (!summary) return "No hay configuración para este mes. Configurá desde la web.";
-    return formatResumen({ month, ...summary });
+    if (!summary) return { text: "No hay configuración para este mes. Configurá desde la web." };
+    return { text: formatResumen({ month, ...summary }) };
   }
 
   // ── delete_last → /borrar_ultimo ──
@@ -677,11 +704,11 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       ),
       orderBy: (t, { desc }) => desc(t.created_at),
     });
-    if (!last) return "No hay transacciones activas para borrar.";
+    if (!last) return { text: "No hay transacciones activas para borrar." };
     await db.update(transactions)
       .set({ status: "deleted", deleted_at: Date.now() })
       .where(and(eq(transactions.id, last.id), eq(transactions.group_id, groupId)));
-    return `✅ Eliminado: $${last.amount_ars.toLocaleString("es-AR")} del ${last.date}`;
+    return { text: `✅ Eliminado: $${last.amount_ars.toLocaleString("es-AR")} del ${last.date}` };
   }
 
   // ── query_available → /disponible ──
@@ -697,9 +724,11 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
           const disp = c.disponible_ars !== null ? `$${c.disponible_ars.toLocaleString("es-AR")} disponible` : "sin límite";
           return `${icon} ${c.emoji} ${c.name}: ${disp}`;
         });
-      return lines.length > 0
-        ? `<b>💰 Disponible este mes:</b>\n\n${lines.join("\n")}`
-        : "Sin presupuestos configurados.";
+      return {
+        text: lines.length > 0
+          ? `<b>💰 Disponible este mes:</b>\n\n${lines.join("\n")}`
+          : "Sin presupuestos configurados.",
+      };
     }
 
     // Exact slug match first
@@ -717,32 +746,34 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       ) ?? undefined;
     }
 
-    if (!cat) return `No encontré la categoría "${slug}".\n\nUsá /disponible para ver todas las categorías disponibles.`;
+    if (!cat) return { text: `No encontré la categoría "${slug}".\n\nUsá /disponible para ver todas las categorías disponibles.` };
     const breakdown = await getCategoryBreakdown(groupId, month);
     const catData = breakdown.find(c => c.id === cat!.id);
-    if (!catData) return `Sin datos para ${cat.name} este mes.`;
-    return formatDisponible({
-      category: catData.name,
-      emoji: catData.emoji,
-      budget_ars: catData.budget_ars,
-      gastado_ars: catData.gastado_ars,
-      disponible_ars: catData.disponible_ars,
-      status: catData.status,
-    });
+    if (!catData) return { text: `Sin datos para ${cat.name} este mes.` };
+    return {
+      text: formatDisponible({
+        category: catData.name,
+        emoji: catData.emoji,
+        budget_ars: catData.budget_ars,
+        gastado_ars: catData.gastado_ars,
+        disponible_ars: catData.disponible_ars,
+        status: catData.status,
+      }),
+    };
   }
 
   // ── simulate_expense → lógica de /puedo ──
   if (parsed.intent === "simulate_expense") {
     const amount_ars = parsed.amount_ars ?? null;
     if (!amount_ars || amount_ars <= 0) {
-      return "Entendí que querés saber si podés gastar algo, pero no detecté el monto. Ej: \"puedo gastar 36000 en restaurante\"";
+      return { text: "Entendí que querés saber si podés gastar algo, pero no detecté el monto. Ej: \"puedo gastar 36000 en restaurante\"" };
     }
     const slug = parsed.category?.toLowerCase() ?? null;
     const [summary, breakdown] = await Promise.all([
       getMonthSummary(groupId, month),
       getCategoryBreakdown(groupId, month),
     ]);
-    if (!summary) return "Sin configuración mensual. Configurá desde la web.";
+    if (!summary) return { text: "Sin configuración mensual. Configurá desde la web." };
     const exchangeRate = summary.exchange_rate || 1;
     const ahorro_usd_before = summary.ahorro_proyectado_usd;
     const total_spent_usd_after = summary.total_spent_usd + (amount_ars / exchangeRate);
@@ -757,18 +788,20 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       const catData = breakdown.find(c => c.slug === slug || c.name.toLowerCase() === slug.replace(/_/g, " "));
       if (!catData) {
         const list = breakdown.map(c => c.slug).join(", ");
-        return `No encontré la categoría "${slug}".\nDisponibles: ${list}`;
+        return { text: `No encontré la categoría "${slug}".\nDisponibles: ${list}` };
       }
       const newGastado = catData.gastado_ars + amount_ars;
       const newCategoryStatus = calculateCategoryStatus({ gastado_ars: newGastado, budget_ars: catData.budget_ars });
       const disponible_after = catData.budget_ars > 0 ? catData.budget_ars - newGastado : null;
-      return formatPuedo({
-        amount_ars, category: catData.name, emoji: catData.emoji,
-        gastado_ars: catData.gastado_ars, budget_ars: catData.budget_ars,
-        newCategoryStatus, disponible_after,
-        ahorro_usd_before, ahorro_usd_after, newMonthStatus,
-        saving_goal_usd: summary.saving_goal_usd,
-      });
+      return {
+        text: formatPuedo({
+          amount_ars, category: catData.name, emoji: catData.emoji,
+          gastado_ars: catData.gastado_ars, budget_ars: catData.budget_ars,
+          newCategoryStatus, disponible_after,
+          ahorro_usd_before, ahorro_usd_after, newMonthStatus,
+          saving_goal_usd: summary.saving_goal_usd,
+        }),
+      };
     }
     const monthIcon = newMonthStatus === "GREEN" ? "🟢" : newMonthStatus === "YELLOW" ? "🟡" : "🔴";
     const decision = newMonthStatus === "RED"
@@ -776,17 +809,19 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       : newMonthStatus === "YELLOW"
         ? "🟡 <b>Podés, pero con cuidado</b> — estarías ajustado."
         : "🟢 <b>Sí podés</b> — sin comprometer tus metas.";
-    return [
-      `💭 <b>¿Podés gastar ${amount_ars.toLocaleString("es-AR")} ARS?</b>`,
-      ``,
-      decision,
-      ``,
-      `<b>💰 Impacto en ahorro:</b>`,
-      `Antes: USD ${ahorro_usd_before.toFixed(0)} → Después: USD ${ahorro_usd_after.toFixed(0)} ${monthIcon}`,
-      summary.saving_goal_usd > 0
-        ? `Meta: USD ${summary.saving_goal_usd.toFixed(0)} (${Math.round((ahorro_usd_after / summary.saving_goal_usd) * 100)}% alcanzado)`
-        : "",
-    ].filter(l => l !== "").join("\n");
+    return {
+      text: [
+        `💭 <b>¿Podés gastar ${amount_ars.toLocaleString("es-AR")} ARS?</b>`,
+        ``,
+        decision,
+        ``,
+        `<b>💰 Impacto en ahorro:</b>`,
+        `Antes: USD ${ahorro_usd_before.toFixed(0)} → Después: USD ${ahorro_usd_after.toFixed(0)} ${monthIcon}`,
+        summary.saving_goal_usd > 0
+          ? `Meta: USD ${summary.saving_goal_usd.toFixed(0)} (${Math.round((ahorro_usd_after / summary.saving_goal_usd) * 100)}% alcanzado)`
+          : "",
+      ].filter(l => l !== "").join("\n"),
+    };
   }
 
   // ── register_expense → lógica de /gasto ──
@@ -795,17 +830,17 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     const slug = parsed.category?.toLowerCase() ?? null;
 
     if (!amount_ars || amount_ars <= 0) {
-      return "Entendí que querés registrar un gasto pero no detecté el monto. Ej: \"gasté 47000 en supermercado\"";
+      return { text: "Entendí que querés registrar un gasto pero no detecté el monto. Ej: \"gasté 47000 en supermercado\"" };
     }
     if (!slug) {
-      return `Entendí $${amount_ars.toLocaleString("es-AR")} pero no detecté la categoría.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos`;
+      return { text: `Entendí $${amount_ars.toLocaleString("es-AR")} pero no detecté la categoría.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos` };
     }
 
     const cat = await db.query.categories.findFirst({
       where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
     });
     if (!cat) {
-      return `No encontré la categoría "${slug}".\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos`;
+      return { text: `No encontré la categoría "${slug}".\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos` };
     }
 
     const merchant = parsed.merchant ?? parsed.description ?? undefined;
@@ -829,21 +864,21 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
       if (status === "CLOSED") {
         if (budget.hard_limit) {
-          return `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.`;
+          return { text: `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.` };
         }
         pendingExceptions.set(chatId, { category_id: cat.id, amount_ars, merchant });
-        return `⚠️ ${cat.name} está CERRADA (sin límite duro).\nGastado: $${gastado.toLocaleString("es-AR")} / $${budget.budget_ars.toLocaleString("es-AR")}\nRespondé /confirmar para registrar como excepción o /cancelar para cancelar.`;
+        return { text: `⚠️ ${cat.name} está CERRADA (sin límite duro).\nGastado: $${gastado.toLocaleString("es-AR")} / $${budget.budget_ars.toLocaleString("es-AR")}\nRespondé /confirmar para registrar como excepción o /cancelar para cancelar.` };
       }
 
       if (gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
-        return `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.`;
+        return { text: `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.` };
       }
     }
 
-    return (await registerTransaction(userId, groupId, cat.id, amount_ars, merchant, month, false)).message;
+    return { text: (await registerTransaction(userId, groupId, cat.id, amount_ars, merchant, month, false)).message };
   }
 
-  return "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]";
+  return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]" };
 }
 
 async function registerTransaction(

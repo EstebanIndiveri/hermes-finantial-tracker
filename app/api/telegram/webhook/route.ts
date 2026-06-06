@@ -3,7 +3,7 @@ import { db } from "@/lib/db/client";
 import { bot_messages, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
-import { handleTelegramMessage } from "@/lib/telegram/handlers";
+import { handleTelegramMessage, PersonalBotMessage } from "@/lib/telegram/handlers";
 import { getPersonalGroup } from "@/lib/groups/permissions";
 import { randomUUID, timingSafeEqual } from "crypto";
 import { handleSplitGroupMessage, handleSplitCallback } from "@/lib/telegram/splits/handler";
@@ -134,13 +134,13 @@ export async function POST(req: NextRequest) {
       ? messageText.trim().replace("/start link_", "/vincular ")
       : messageText.trim();
     const fakeUpdate = { ...update, message: { ...msg, text: handlerText } };
-    let response = "Error procesando el comando.";
+    let botResponse: PersonalBotMessage = { text: "Error procesando el comando." };
     try {
-      response = await handleTelegramMessage(fakeUpdate, "_", "_");
+      botResponse = await handleTelegramMessage(fakeUpdate, "_", "_");
     } catch (err) {
       console.error("Telegram vincular error:", err instanceof Error ? err.message : err);
     }
-    await sendTelegramMessage(chatId, response);
+    await sendTelegramMessage(chatId, botResponse.text, botResponse.replyMarkup);
     return NextResponse.json({ ok: true });
   }
 
@@ -169,15 +169,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  let response_text = "Error interno.";
+  let botResponse: PersonalBotMessage = { text: "Error interno." };
   try {
-    response_text = await handleTelegramMessage(update, user.id, groupId);
+    botResponse = await handleTelegramMessage(update, user.id, groupId);
   } catch (err) {
     console.error("Telegram handler error:", {
       message: err instanceof Error ? err.message : "Unknown error",
       updateId,
     });
-    response_text = "Error procesando el mensaje.";
+    botResponse = { text: "Error procesando el mensaje." };
   }
 
   try {
@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
       telegram_update_id: updateId,
       raw_text: messageText,
       parsed_intent: null,
-      response_text,
+      response_text: botResponse.text,
     }).onConflictDoNothing();
   } catch (err) {
     console.error("Database insert error for bot_messages:", {
@@ -198,6 +198,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  await sendTelegramMessage(chatId, response_text);
+  await sendTelegramMessage(chatId, botResponse.text, botResponse.replyMarkup);
   return NextResponse.json({ ok: true });
 }
