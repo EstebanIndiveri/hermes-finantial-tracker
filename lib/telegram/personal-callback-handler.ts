@@ -49,7 +49,7 @@ async function registerPersonalTransaction(
   const settings = await db.query.monthly_settings.findFirst({
     where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
   });
-  if (!settings) return "Sin configuración mensual.";
+  if (!settings || settings.exchange_rate <= 0) return "❌ Sin configuración mensual válida.";
 
   const amountUsd = parseFloat((amountArs / settings.exchange_rate).toFixed(2));
   const date = getArgentinaDate().toISOString().slice(0, 10);
@@ -112,131 +112,136 @@ export async function handlePersonalCallback(
   data: string,
   messageId?: number
 ): Promise<PersonalCallbackResponse> {
-  // ── receipt:* — OCR ticket callbacks ──────────────────────────────
-  if (data === "receipt:confirm") {
-    const rows = await db
-      .select()
-      .from(receipt_imports)
-      .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
-      .orderBy(desc(receipt_imports.created_at))
-      .limit(1);
-    const pending = rows[0] ?? null;
+  try {
+    // ── receipt:* — OCR ticket callbacks ──────────────────────────────
+    if (data === "receipt:confirm") {
+      const rows = await db
+        .select()
+        .from(receipt_imports)
+        .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
+        .orderBy(desc(receipt_imports.created_at))
+        .limit(1);
+      const pending = rows[0] ?? null;
 
-    if (!pending?.parsed_amount_ars || !pending.parsed_category_slug) {
-      return { text: "❌ No hay ticket pendiente o faltan datos. Enviá la foto nuevamente.", edit: true };
+      if (!pending?.parsed_amount_ars || !pending.parsed_category_slug) {
+        return { text: "❌ No hay ticket pendiente o faltan datos. Enviá la foto nuevamente.", edit: true };
+      }
+
+      const cat = await db.query.categories.findFirst({
+        where: and(eq(categories.slug, pending.parsed_category_slug), eq(categories.group_id, groupId)),
+      });
+      if (!cat) {
+        return {
+          text: `⚠️ Categoría <b>${pending.parsed_category_slug}</b> no encontrada en tu grupo.\nEscribí la categoría correcta para continuar.`,
+          edit: true,
+        };
+      }
+
+      const resultText = await registerPersonalTransaction(
+        userId, groupId, cat.id, pending.parsed_amount_ars, pending.parsed_merchant ?? undefined, false
+      );
+
+      await db.update(receipt_imports)
+        .set({ status: "confirmed" })
+        .where(eq(receipt_imports.id, pending.id))
+        .catch((err) => console.error("Failed to mark receipt as confirmed:", err));
+
+      return { text: resultText, edit: true };
     }
 
-    const cat = await db.query.categories.findFirst({
-      where: and(eq(categories.slug, pending.parsed_category_slug), eq(categories.group_id, groupId)),
-    });
-    if (!cat) {
-      return {
-        text: `⚠️ Categoría <b>${pending.parsed_category_slug}</b> no encontrada en tu grupo.\nEscribí la categoría correcta para continuar.`,
-        edit: true,
-      };
+    if (data === "receipt:cancel") {
+      await db.update(receipt_imports)
+        .set({ status: "rejected" })
+        .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
+        .catch(() => {});
+      return { text: "❌ Ticket cancelado.", edit: true };
     }
 
-    const resultText = await registerPersonalTransaction(
-      userId, groupId, cat.id, pending.parsed_amount_ars, pending.parsed_merchant ?? undefined, false
-    );
+    if (data === "receipt:edit_amount") {
+      const rows = await db.select().from(receipt_imports)
+        .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
+        .orderBy(desc(receipt_imports.created_at)).limit(1);
+      const pending = rows[0] ?? null;
+      if (!pending) return { text: "❌ No hay ticket pendiente.", edit: true };
 
-    await db.update(receipt_imports)
-      .set({ status: "confirmed" })
-      .where(eq(receipt_imports.id, pending.id))
-      .catch(() => {});
-
-    return { text: resultText, edit: true };
-  }
-
-  if (data === "receipt:cancel") {
-    await db.update(receipt_imports)
-      .set({ status: "rejected" })
-      .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
-      .catch(() => {});
-    return { text: "❌ Ticket cancelado.", edit: true };
-  }
-
-  if (data === "receipt:edit_amount") {
-    const rows = await db.select().from(receipt_imports)
-      .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
-      .orderBy(desc(receipt_imports.created_at)).limit(1);
-    const pending = rows[0] ?? null;
-    if (!pending) return { text: "❌ No hay ticket pendiente.", edit: true };
-
-    await setConversationState(chatId, telegramUserId, {
-      step: "receipt_edit_amount",
-      data: { import_id: pending.id },
-    });
-    return { text: "✏️ Enviá el nuevo monto (ej: <code>47000</code>):", edit: true };
-  }
-
-  if (data === "receipt:edit_category") {
-    const rows = await db.select().from(receipt_imports)
-      .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
-      .orderBy(desc(receipt_imports.created_at)).limit(1);
-    const pending = rows[0] ?? null;
-    if (!pending) return { text: "❌ No hay ticket pendiente.", edit: true };
-
-    await setConversationState(chatId, telegramUserId, {
-      step: "receipt_edit_category",
-      data: { import_id: pending.id },
-    });
-    return { text: "✏️ Enviá la categoría (ej: <code>supermercado</code>):", edit: true };
-  }
-
-  if (data === "receipt:edit_merchant") {
-    const rows = await db.select().from(receipt_imports)
-      .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
-      .orderBy(desc(receipt_imports.created_at)).limit(1);
-    const pending = rows[0] ?? null;
-    if (!pending) return { text: "❌ No hay ticket pendiente.", edit: true };
-
-    await setConversationState(chatId, telegramUserId, {
-      step: "receipt_edit_merchant",
-      data: { import_id: pending.id },
-    });
-    return { text: "✏️ Enviá el nombre del comercio (ej: <code>Carrefour</code>):", edit: true };
-  }
-
-  // ── expense:* — /gasto + NL expense confirmation ──────────────────
-  if (data === "expense:confirm") {
-    const state = await getConversationState(chatId, telegramUserId);
-    if (state?.step !== "expense_confirm") {
-      return { text: "⏱️ Confirmación expirada. Volvé a escribir el gasto.", edit: true };
+      await setConversationState(chatId, telegramUserId, {
+        step: "receipt_edit_amount",
+        data: { import_id: pending.id },
+      });
+      return { text: "✏️ Enviá el nuevo monto (ej: <code>47000</code>):", edit: true };
     }
-    const s = state.data as PendingExpenseState;
-    await clearConversationState(chatId, telegramUserId);
 
-    const resultText = await registerPersonalTransaction(
-      s.user_id, s.group_id, s.category_id, s.amount_ars, s.merchant, s.is_exception
-    );
-    return { text: resultText, edit: true };
-  }
+    if (data === "receipt:edit_category") {
+      const rows = await db.select().from(receipt_imports)
+        .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
+        .orderBy(desc(receipt_imports.created_at)).limit(1);
+      const pending = rows[0] ?? null;
+      if (!pending) return { text: "❌ No hay ticket pendiente.", edit: true };
 
-  if (data === "expense:cancel") {
-    await clearConversationState(chatId, telegramUserId);
-    return { text: "❌ Gasto cancelado.", edit: true };
-  }
-
-  // ── exception:* — budget exception confirmation ────────────────────
-  if (data === "exception:confirm") {
-    const state = await getConversationState(chatId, telegramUserId);
-    if (state?.step !== "expense_confirm") {
-      return { text: "⏱️ Confirmación expirada.", edit: true };
+      await setConversationState(chatId, telegramUserId, {
+        step: "receipt_edit_category",
+        data: { import_id: pending.id },
+      });
+      return { text: "✏️ Enviá la categoría (ej: <code>supermercado</code>):", edit: true };
     }
-    const s = state.data as PendingExpenseState;
-    await clearConversationState(chatId, telegramUserId);
 
-    const resultText = await registerPersonalTransaction(
-      s.user_id, s.group_id, s.category_id, s.amount_ars, s.merchant, true
-    );
-    return { text: `⚠️ Registrado como excepción.\n\n${resultText}`, edit: true };
+    if (data === "receipt:edit_merchant") {
+      const rows = await db.select().from(receipt_imports)
+        .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
+        .orderBy(desc(receipt_imports.created_at)).limit(1);
+      const pending = rows[0] ?? null;
+      if (!pending) return { text: "❌ No hay ticket pendiente.", edit: true };
+
+      await setConversationState(chatId, telegramUserId, {
+        step: "receipt_edit_merchant",
+        data: { import_id: pending.id },
+      });
+      return { text: "✏️ Enviá el nombre del comercio (ej: <code>Carrefour</code>):", edit: true };
+    }
+
+    // ── expense:* — /gasto + NL expense confirmation ──────────────────
+    if (data === "expense:confirm") {
+      const state = await getConversationState(chatId, telegramUserId);
+      if (state?.step !== "expense_confirm") {
+        return { text: "⏱️ Confirmación expirada. Volvé a escribir el gasto.", edit: true };
+      }
+      const s = state.data as PendingExpenseState;
+      await clearConversationState(chatId, telegramUserId);
+
+      const resultText = await registerPersonalTransaction(
+        s.user_id, s.group_id, s.category_id, s.amount_ars, s.merchant, s.is_exception
+      );
+      return { text: resultText, edit: true };
+    }
+
+    if (data === "expense:cancel") {
+      await clearConversationState(chatId, telegramUserId);
+      return { text: "❌ Gasto cancelado.", edit: true };
+    }
+
+    // ── exception:* — budget exception confirmation ────────────────────
+    if (data === "exception:confirm") {
+      const state = await getConversationState(chatId, telegramUserId);
+      if (state?.step !== "expense_confirm") {
+        return { text: "⏱️ Confirmación expirada.", edit: true };
+      }
+      const s = state.data as PendingExpenseState;
+      await clearConversationState(chatId, telegramUserId);
+
+      const resultText = await registerPersonalTransaction(
+        s.user_id, s.group_id, s.category_id, s.amount_ars, s.merchant, true
+      );
+      return { text: `⚠️ Registrado como excepción.\n\n${resultText}`, edit: true };
+    }
+
+    if (data === "exception:cancel") {
+      await clearConversationState(chatId, telegramUserId);
+      return { text: "❌ Cancelado.", edit: true };
+    }
+
+    return { text: "❌ Acción no reconocida.", edit: false };
+  } catch (err) {
+    console.error("handlePersonalCallback error:", { data, message: err instanceof Error ? err.message : String(err) });
+    return { text: "❌ Error interno. Intentá nuevamente.", edit: false };
   }
-
-  if (data === "exception:cancel") {
-    await clearConversationState(chatId, telegramUserId);
-    return { text: "❌ Cancelado.", edit: true };
-  }
-
-  return { text: "❌ Acción no reconocida.", edit: false };
 }
