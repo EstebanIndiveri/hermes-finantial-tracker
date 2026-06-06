@@ -13,6 +13,8 @@ import {
   answerCallbackQuery,
 } from "@/lib/telegram/splits/telegram-api";
 import type { TelegramResponse } from "@/lib/telegram/splits/telegram-api";
+import { handlePersonalCallback } from "@/lib/telegram/personal-callback-handler";
+import { editTelegramPersonalMessage } from "@/lib/telegram/send-message";
 
 // Allow up to 60 seconds for OCR + AI processing
 export const maxDuration = 60;
@@ -74,6 +76,36 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // Personal chat callback
+    const personalChatId = String(cq.message?.chat?.id ?? cq.from.id);
+    
+    try {
+      const personalUser = await db.query.users.findFirst({
+        where: eq(users.telegram_user_id, telegramUserId),
+      });
+      if (!personalUser) {
+        await sendTelegramMessage(personalChatId, "Tu sesión expiró. Vinculá tu cuenta nuevamente.");
+      } else {
+        const personalGroupId = personalUser.active_telegram_group_id ?? null;
+        if (!personalGroupId) {
+          await sendTelegramMessage(personalChatId, "No tenés grupo activo.");
+        } else {
+          const response = await handlePersonalCallback(
+            personalChatId, telegramUserId, personalUser.id, personalGroupId, data, messageId
+          );
+          if (response.edit && messageId) {
+            await editTelegramPersonalMessage(personalChatId, messageId, response.text, response.replyMarkup);
+          } else {
+            await sendTelegramMessage(personalChatId, response.text, response.replyMarkup);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Personal callback error:", { message: err instanceof Error ? err.message : "Unknown error", data });
+      try {
+        await sendTelegramMessage(personalChatId, "Ocurrió un error. Intentá nuevamente.");
+      } catch { /* best-effort */ }
+    }
     return NextResponse.json({ ok: true });
   }
 
