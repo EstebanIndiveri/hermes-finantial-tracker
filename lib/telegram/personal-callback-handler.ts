@@ -222,10 +222,11 @@ export async function handlePersonalCallback(
     // ── exception:* — budget exception confirmation ────────────────────
     if (data === "exception:confirm") {
       const state = await getConversationState(chatId, telegramUserId);
-      if (state?.step !== "expense_confirm") {
+      const stateData = state?.data as PendingExpenseState | undefined;
+      if (state?.step !== "expense_confirm" || !stateData?.is_exception) {
         return { text: "⏱️ Confirmación expirada.", edit: true };
       }
-      const s = state.data as PendingExpenseState;
+      const s = stateData;
       await clearConversationState(chatId, telegramUserId);
 
       const resultText = await registerPersonalTransaction(
