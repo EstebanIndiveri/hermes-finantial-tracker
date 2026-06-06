@@ -1,20 +1,11 @@
-export interface InlineKeyboardButton {
-  text: string;
-  callback_data: string;
-}
-
-export interface InlineKeyboardMarkup {
-  inline_keyboard: InlineKeyboardButton[][];
-}
-
-export function buildPersonalKeyboard(rows: InlineKeyboardButton[][]): InlineKeyboardMarkup {
-  return { inline_keyboard: rows };
-}
+// Re-export shared types from the canonical source
+export type { InlineKeyboardButton, InlineKeyboardMarkup } from "./splits/telegram-api";
+export { buildInlineKeyboard as buildPersonalKeyboard } from "./splits/telegram-api";
 
 export async function sendTelegramMessage(
   chatId: string,
   text: string,
-  replyMarkup?: InlineKeyboardMarkup
+  replyMarkup?: import("./splits/telegram-api").InlineKeyboardMarkup
 ): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN not set");
@@ -38,7 +29,7 @@ export async function editTelegramPersonalMessage(
   chatId: string,
   messageId: number,
   text: string,
-  replyMarkup?: InlineKeyboardMarkup
+  replyMarkup?: import("./splits/telegram-api").InlineKeyboardMarkup
 ): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN not set");
