@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
           const response = await handlePersonalCallback(
             personalChatId, telegramUserId, personalUser.id, personalGroupId, data, messageId
           );
-          if (response.edit && messageId) {
+          if (response.edit === true && messageId) {
             await editTelegramPersonalMessage(personalChatId, messageId, response.text, response.replyMarkup);
           } else {
             await sendTelegramMessage(personalChatId, response.text, response.replyMarkup);
