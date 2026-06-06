@@ -9,6 +9,7 @@ import { ocrTelegramPhoto, ocrTelegramDocument } from "./ocr";
 import { parseReceiptText } from "@/lib/ai/parse-receipt";
 import { randomUUID } from "crypto";
 import type { InlineKeyboardMarkup } from "./send-message";
+import { buildPersonalKeyboard } from "./send-message";
 
 export interface PersonalBotMessage {
   text: string;
@@ -157,134 +158,90 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     return { text: "Cancelado." };
   }
 
-  // ── /confirmar_ticket ─────────────────────────────────────────
-  if (text === "/confirmar_ticket") {
-    const rows = await db
-      .select()
-      .from(receipt_imports)
-      .where(and(
-        eq(receipt_imports.user_id, userId),
-        eq(receipt_imports.status, "pending")
-      ))
-      .orderBy(desc(receipt_imports.created_at))
-      .limit(1);
-
-    const pendingImport = rows[0] ?? null;
-
-    if (!pendingImport || !pendingImport.parsed_amount_ars) {
-      return { text: "No hay ticket pendiente de confirmar. Enviá una foto primero." };
-    }
-
-    const slug = pendingImport.parsed_category_slug ?? null;
-    if (!slug) {
-      return { text: `⚠️ Falta la categoría. Escribila primero (ej: <code>servicios</code>) y luego /confirmar_ticket.` };
-    }
-
-    const catRows = await db.select().from(categories).where(and(eq(categories.slug, slug), eq(categories.group_id, groupId))).limit(1);
-    const cat = catRows[0] ?? null;
-    if (!cat) {
-      return { text: `⚠️ Categoría "${slug}" no encontrada. Escribí la categoría correcta para continuar.` };
-    }
-
-    const result = await registerTransaction(
-      userId, groupId, cat.id, pendingImport.parsed_amount_ars,
-      pendingImport.parsed_merchant ?? undefined, month, false
-    );
-
+  // ── Intercept text replies for pending receipt edit states ─────────
+  if (text && !text.startsWith("/")) {
+    let editState = null;
     try {
-      await db.update(receipt_imports)
-        .set({ status: "confirmed", transaction_id: result.transactionId })
-        .where(eq(receipt_imports.id, pendingImport.id));
-    } catch (err) {
-      console.error("receipt_imports confirm error:", err instanceof Error ? err.message : String(err));
-    }
+      const { getConversationState } = await import("./splits/conversation-state");
+      editState = await getConversationState(chatId, String(msg.from.id));
+    } catch { /* ignore */ }
+    
+    if (editState?.step === "receipt_edit_amount") {
+      const { data: ed } = editState as { step: string; data: { import_id: string } };
+      const newAmount = parseFloat(text.replace(/[$\s.]/g, "").replace(",", ".").trim());
+      if (isNaN(newAmount) || newAmount <= 0) return { text: "❌ Monto inválido. Enviá solo el número, ej: <code>47000</code>" };
 
-    return { text: result.message };
-  }
+      await db.update(receipt_imports).set({ parsed_amount_ars: newAmount }).where(eq(receipt_imports.id, ed.import_id));
+      try {
+        const { clearConversationState } = await import("./splits/conversation-state");
+        await clearConversationState(chatId, String(msg.from.id));
+      } catch { /* ignore */ }
 
-  // ── /cancelar_ticket ──────────────────────────────────────────
-  if (text === "/cancelar_ticket") {
-    try {
-      await db.update(receipt_imports)
-        .set({ status: "rejected" })
-        .where(
-          and(
-            eq(receipt_imports.user_id, userId),
-            eq(receipt_imports.status, "pending")
-          )
-        );
-    } catch { /* swallow */ }
-
-    return { text: "❌ Importación cancelada." };
-  }
-
-  // ── EDIT LOOP: free text while a receipt is pending in DB ─────
-  const pendingEditRows = text && !text.startsWith("/")
-    ? await db
-        .select()
-        .from(receipt_imports)
-        .where(and(
-          eq(receipt_imports.user_id, userId),
-          eq(receipt_imports.status, "pending")
-        ))
-        .orderBy(desc(receipt_imports.created_at))
-        .limit(1)
-    : [];
-
-  const pendingImport = pendingEditRows[0] ?? null;
-
-  if (pendingImport && text && !text.startsWith("/")) {
-    const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
-    const parsed = await parseFinancialMessage(text);
-
-    // Merge corrections into current DB state
-    let newAmount = pendingImport.parsed_amount_ars ?? 0;
-    let newSlug = pendingImport.parsed_category_slug ?? null;
-    let newMerchant = pendingImport.parsed_merchant ?? null;
-
-    if (parsed.amount_ars && parsed.amount_ars > 0) newAmount = parsed.amount_ars;
-
-    if (parsed.category) {
-      const slug = parsed.category.toLowerCase();
-      const catEditRows = await db.select().from(categories).where(and(eq(categories.slug, slug), eq(categories.group_id, groupId))).limit(1);
-      if (catEditRows[0]) newSlug = slug;
-    }
-
-    if (parsed.merchant) newMerchant = parsed.merchant;
-    // Plain short text with no number/category → treat as merchant name
-    if (!parsed.amount_ars && !parsed.category && text.length < 40) {
-      newMerchant = text.trim();
-    }
-
-    // Persist the corrected values back to receipt_imports
-    try {
-      await db.update(receipt_imports)
-        .set({
-          parsed_amount_ars: newAmount,
-          parsed_category_slug: newSlug,
-          parsed_merchant: newMerchant,
-        })
-        .where(eq(receipt_imports.id, pendingImport.id));
-    } catch (err) {
-      console.error("receipt_imports edit error:", err instanceof Error ? err.message : String(err));
-    }
-
-    // Resolve category display info
-    const catDispRows = newSlug
-      ? await db.select().from(categories).where(and(eq(categories.slug, newSlug), eq(categories.group_id, groupId))).limit(1)
-      : [];
-    const cat = catDispRows[0] ?? null;
-
-    return {
-      text: buildReceiptProposalMessage({
+      const rows = await db.select().from(receipt_imports).where(eq(receipt_imports.id, ed.import_id)).limit(1);
+      const r = rows[0];
+      if (!r) return { text: "❌ Ticket no encontrado." };
+      const catRows = r.parsed_category_slug
+        ? await db.select().from(categories).where(and(eq(categories.slug, r.parsed_category_slug), eq(categories.group_id, groupId))).limit(1)
+        : [];
+      return buildReceiptProposalMessage({
         amount_ars: newAmount,
-        categoryName: cat?.name ?? "sin categoría",
-        categoryEmoji: cat?.emoji ?? "📦",
-        merchant: newMerchant ?? undefined,
-        date: pendingImport.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
+        categoryName: catRows[0]?.name ?? r.parsed_category_slug ?? "sin categoría",
+        categoryEmoji: catRows[0]?.emoji ?? "📦",
+        merchant: r.parsed_merchant ?? undefined,
+        date: r.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
         source: "edit",
-      }),
-    };
+      });
+    }
+
+    if (editState?.step === "receipt_edit_category") {
+      const { data: ed } = editState as { step: string; data: { import_id: string } };
+      const slug = text.trim().toLowerCase().replace(/\s+/g, "_");
+      const catRows = await db.select().from(categories).where(and(eq(categories.slug, slug), eq(categories.group_id, groupId))).limit(1);
+      if (!catRows[0]) return { text: `❌ Categoría "<b>${slug}</b>" no encontrada. Intentá con otro nombre.` };
+
+      await db.update(receipt_imports).set({ parsed_category_slug: slug }).where(eq(receipt_imports.id, ed.import_id));
+      try {
+        const { clearConversationState } = await import("./splits/conversation-state");
+        await clearConversationState(chatId, String(msg.from.id));
+      } catch { /* ignore */ }
+
+      const rows = await db.select().from(receipt_imports).where(eq(receipt_imports.id, ed.import_id)).limit(1);
+      const r = rows[0];
+      if (!r?.parsed_amount_ars) return { text: "❌ Ticket no encontrado." };
+      return buildReceiptProposalMessage({
+        amount_ars: r.parsed_amount_ars,
+        categoryName: catRows[0].name,
+        categoryEmoji: catRows[0].emoji ?? "📦",
+        merchant: r.parsed_merchant ?? undefined,
+        date: r.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
+        source: "edit",
+      });
+    }
+
+    if (editState?.step === "receipt_edit_merchant") {
+      const { data: ed } = editState as { step: string; data: { import_id: string } };
+      const newMerchant = text.trim().slice(0, 100);
+      await db.update(receipt_imports).set({ parsed_merchant: newMerchant }).where(eq(receipt_imports.id, ed.import_id));
+      try {
+        const { clearConversationState } = await import("./splits/conversation-state");
+        await clearConversationState(chatId, String(msg.from.id));
+      } catch { /* ignore */ }
+
+      const rows = await db.select().from(receipt_imports).where(eq(receipt_imports.id, ed.import_id)).limit(1);
+      const r = rows[0];
+      if (!r?.parsed_amount_ars) return { text: "❌ Ticket no encontrado." };
+      const catDispRows = r.parsed_category_slug
+        ? await db.select().from(categories).where(and(eq(categories.slug, r.parsed_category_slug), eq(categories.group_id, groupId))).limit(1)
+        : [];
+      return buildReceiptProposalMessage({
+        amount_ars: r.parsed_amount_ars,
+        categoryName: catDispRows[0]?.name ?? r.parsed_category_slug ?? "sin categoría",
+        categoryEmoji: catDispRows[0]?.emoji ?? "📦",
+        merchant: newMerchant,
+        date: r.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
+        source: "edit",
+      });
+    }
   }
 
   if (text.startsWith("/gasto")) {
@@ -492,15 +449,13 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         }
 
         // State already persisted in receipt_imports (status=pending) — no in-memory set needed
-        return {
-          text: buildReceiptProposalMessage({
-            amount_ars: parsed.amount_ars,
-            categoryName: cat.name, categoryEmoji: cat.emoji,
-            merchant: parsed.merchant ?? undefined,
-            date: getArgentinaDate().toISOString().slice(0, 10),
-            source: "caption",
-          }),
-        };
+        return buildReceiptProposalMessage({
+          amount_ars: parsed.amount_ars,
+          categoryName: cat.name, categoryEmoji: cat.emoji,
+          merchant: parsed.merchant ?? undefined,
+          date: getArgentinaDate().toISOString().slice(0, 10),
+          source: "caption",
+        });
       }
     }
 
@@ -587,21 +542,18 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
           `supermercado · verduleria · salidas_pareja · restaurante · servicios · tarjeta · movilidad · viaje · pareja · compras_personales · imprevistos`,
           ``,
           `O usá: /gasto ${amount_ars} [categoria]${merchant ? ` ${merchant}` : ""}`,
-          `/cancelar_ticket → descartar`,
         ].filter(Boolean).join("\n"),
       };
     }
 
     // State already persisted in receipt_imports (status=pending)
-    return {
-      text: buildReceiptProposalMessage({
-        amount_ars,
-        categoryName: cat.name, categoryEmoji: cat.emoji,
-        merchant: merchant ?? undefined,
-        date: parsedDate,
-        source: "ocr",
-      }),
-    };
+    return buildReceiptProposalMessage({
+      amount_ars,
+      categoryName: cat.name, categoryEmoji: cat.emoji,
+      merchant: merchant ?? undefined,
+      date: parsedDate,
+      source: "ocr",
+    });
   }
 
   if (text.startsWith("/vincular")) {
@@ -970,9 +922,9 @@ function buildReceiptProposalMessage({
   merchant?: string;
   date: string;
   source: "ocr" | "caption" | "edit";
-}): string {
+}): PersonalBotMessage {
   const sourceLabel = source === "caption" ? "📝 caption" : source === "edit" ? "✏️ editado" : "🔍 OCR";
-  return [
+  const text = [
     `🧾 <b>Ticket detectado</b> (${sourceLabel})`,
     ``,
     `💰 <b>Monto:</b> $${amount_ars.toLocaleString("es-AR")} ARS`,
@@ -980,11 +932,23 @@ function buildReceiptProposalMessage({
     merchant ? `🏪 <b>Comercio:</b> ${escapeHtml(merchant)}` : "",
     `📅 <b>Fecha:</b> ${date}`,
     ``,
-    `¿Todo bien? Confirmá o corregí:`,
-    `/confirmar_ticket → registrar`,
-    `/cancelar_ticket → descartar`,
-    `O escribí correcciones, ej: <code>35000</code> / <code>restaurante</code> / <code>CORDIEZ</code>`,
+    `¿Todo bien?`,
   ].filter(Boolean).join("\n");
+
+  return {
+    text,
+    replyMarkup: buildPersonalKeyboard([
+      [{ text: "✅ Confirmar", callback_data: "receipt:confirm" }],
+      [
+        { text: "💰 Editar monto", callback_data: "receipt:edit_amount" },
+        { text: "📂 Editar categoría", callback_data: "receipt:edit_category" },
+      ],
+      [
+        { text: "🏪 Editar comercio", callback_data: "receipt:edit_merchant" },
+        { text: "❌ Cancelar", callback_data: "receipt:cancel" },
+      ],
+    ]),
+  };
 }
 
 /** Saves a receipt_imports row, swallowing errors to never break the webhook */
