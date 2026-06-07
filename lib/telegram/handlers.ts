@@ -9,8 +9,8 @@ import { ocrTelegramPhoto, ocrTelegramDocument } from "./ocr";
 import { parseReceiptText } from "@/lib/ai/parse-receipt";
 import { randomUUID } from "crypto";
 import type { InlineKeyboardMarkup } from "./send-message";
-import { buildPersonalKeyboard } from "./send-message";
-import { setConversationState } from "./splits/conversation-state";
+import { sendTelegramMessage, buildPersonalKeyboard } from "./send-message";
+import { setConversationState, clearConversationState } from "./splits/conversation-state";
 
 export interface PersonalBotMessage {
   text: string;
@@ -515,6 +515,10 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   if (isPhoto || isImageDoc) {
     const caption = msg.caption?.trim() ?? "";
     const receiptId = randomUUID();
+    
+    // Send immediate feedback before slow OCR
+    await sendTelegramMessage(chatId, "🔍 <i>Procesando imagen...</i>").catch(() => {});
+    
     const fileId = isPhoto
       ? msg.photo![msg.photo!.length - 1]?.file_id
       : msg.document!.file_id;
@@ -550,13 +554,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         });
 
         if (!cat) {
-          return {
-            text: [
-              `🧾 Detecté en el caption: <b>$${parsed.amount_ars.toLocaleString("es-AR")}</b>`,
-              `⚠️ No reconocí la categoría "${slug ?? "(ninguna)"}".`,
-              `Usá: /gasto ${parsed.amount_ars} [categoria] ${parsed.merchant ?? ""}`,
-            ].join("\n"),
-          };
+          return buildCategoryKeyboard(groupId, parsed.amount_ars, parsed.merchant ?? null, receiptId, chatId, String(msg.from.id));
         }
 
         // State already persisted in receipt_imports (status=pending) — no in-memory set needed
@@ -640,21 +638,8 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     }
 
     if (!cat) {
-      // No category detected — state already in DB (status=pending), user must type it
-      return {
-        text: [
-          `🧾 <b>Ticket detectado</b> (🔍 OCR)`,
-          ``,
-          `💰 <b>Monto:</b> $${amount_ars.toLocaleString("es-AR")} ARS`,
-          merchant ? `🏪 <b>Comercio:</b> ${escapeHtml(merchant)}` : "",
-          `📅 <b>Fecha:</b> ${parsedDate}`,
-          ``,
-          `⚠️ No detecté la categoría. Respondé con la categoría para continuar:`,
-          `supermercado · verduleria · salidas_pareja · restaurante · servicios · tarjeta · movilidad · viaje · pareja · compras_personales · imprevistos`,
-          ``,
-          `O usá: /gasto ${amount_ars} [categoria]${merchant ? ` ${merchant}` : ""}`,
-        ].filter(Boolean).join("\n"),
-      };
+      // No category detected — show category selection buttons
+      return buildCategoryKeyboard(groupId, amount_ars, merchant, receiptId, chatId, String(msg.from.id));
     }
 
     // State already persisted in receipt_imports (status=pending)
@@ -998,7 +983,7 @@ async function registerTransaction(
 }
 
 /** Formats the receipt proposal message shown to the user */
-function buildReceiptProposalMessage({
+export function buildReceiptProposalMessage({
   amount_ars,
   categoryName,
   categoryEmoji,
@@ -1039,6 +1024,49 @@ function buildReceiptProposalMessage({
       ],
     ]),
   };
+}
+
+/** Builds a category selection keyboard for when OCR can't detect category */
+async function buildCategoryKeyboard(
+  groupId: string,
+  amount_ars: number,
+  merchant: string | null,
+  importId: string,
+  chatId: string,
+  telegramUserId: string,
+): Promise<PersonalBotMessage> {
+  await setConversationState(chatId, telegramUserId, {
+    step: "receipt_select_category",
+    data: { import_id: importId },
+  });
+
+  const cats = await db.select().from(categories).where(eq(categories.group_id, groupId));
+
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+  for (let i = 0; i < cats.length; i += 2) {
+    const row: Array<{ text: string; callback_data: string }> = [
+      { text: `${cats[i].emoji} ${cats[i].name}`, callback_data: `receipt:select_category:${cats[i].slug}` },
+    ];
+    if (cats[i + 1]) {
+      row.push({
+        text: `${cats[i + 1].emoji} ${cats[i + 1].name}`,
+        callback_data: `receipt:select_category:${cats[i + 1].slug}`,
+      });
+    }
+    rows.push(row);
+  }
+  rows.push([{ text: "❌ Cancelar", callback_data: "receipt:cancel" }]);
+
+  const text = [
+    `🧾 <b>Ticket detectado</b> (🔍 OCR)`,
+    ``,
+    `💰 <b>Monto:</b> $${amount_ars.toLocaleString("es-AR")} ARS`,
+    merchant ? `🏪 <b>Comercio:</b> ${escapeHtml(merchant)}` : "",
+    ``,
+    `📂 <b>¿Qué categoría es?</b>`,
+  ].filter(Boolean).join("\n");
+
+  return { text, replyMarkup: buildPersonalKeyboard(rows) };
 }
 
 /** Saves a receipt_imports row, swallowing errors to never break the webhook */

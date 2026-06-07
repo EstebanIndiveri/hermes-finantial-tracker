@@ -16,6 +16,7 @@ import { formatTransactionConfirm } from "./formatters";
 import { getConversationState, setConversationState, clearConversationState } from "./splits/conversation-state";
 import type { InlineKeyboardMarkup } from "./send-message";
 import { buildPersonalKeyboard } from "./send-message";
+import { buildReceiptProposalMessage } from "./handlers";
 
 export interface PersonalCallbackResponse {
   text: string;
@@ -179,10 +180,31 @@ export async function handlePersonalCallback(
       if (!pending) return { text: "❌ No hay ticket pendiente.", edit: true };
 
       await setConversationState(chatId, telegramUserId, {
-        step: "receipt_edit_category",
+        step: "receipt_select_category",
         data: { import_id: pending.id },
       });
-      return { text: "✏️ Enviá la categoría (ej: <code>supermercado</code>):", edit: true };
+
+      const cats = await db.select().from(categories).where(eq(categories.group_id, groupId));
+      const kbRows: Array<Array<{ text: string; callback_data: string }>> = [];
+      for (let i = 0; i < cats.length; i += 2) {
+        const row: Array<{ text: string; callback_data: string }> = [
+          { text: `${cats[i].emoji} ${cats[i].name}`, callback_data: `receipt:select_category:${cats[i].slug}` },
+        ];
+        if (cats[i + 1]) {
+          row.push({
+            text: `${cats[i + 1].emoji} ${cats[i + 1].name}`,
+            callback_data: `receipt:select_category:${cats[i + 1].slug}`,
+          });
+        }
+        kbRows.push(row);
+      }
+      kbRows.push([{ text: "❌ Cancelar", callback_data: "receipt:cancel" }]);
+
+      return {
+        text: "📂 <b>Seleccioná la categoría:</b>",
+        replyMarkup: buildPersonalKeyboard(kbRows),
+        edit: true,
+      };
     }
 
     if (data === "receipt:edit_merchant") {
@@ -238,6 +260,56 @@ export async function handlePersonalCallback(
     if (data === "exception:cancel") {
       await clearConversationState(chatId, telegramUserId);
       return { text: "❌ Cancelado.", edit: true };
+    }
+
+    if (data.startsWith("receipt:select_category:")) {
+      const slug = data.split(":")[2] ?? "";
+      if (!slug) return { text: "❌ Categoría inválida.", edit: true };
+
+      // Get import_id from conversation state (set by edit_category or buildCategoryKeyboard)
+      const state = await getConversationState(chatId, telegramUserId);
+      const importId = (state?.data as { import_id?: string } | undefined)?.import_id ?? null;
+
+      let pending = null;
+      if (importId) {
+        const rows = await db.select().from(receipt_imports).where(eq(receipt_imports.id, importId)).limit(1);
+        pending = rows[0] ?? null;
+      }
+      if (!pending) {
+        const rows = await db.select().from(receipt_imports)
+          .where(and(eq(receipt_imports.user_id, userId), eq(receipt_imports.status, "pending")))
+          .orderBy(desc(receipt_imports.created_at))
+          .limit(1);
+        pending = rows[0] ?? null;
+      }
+      if (!pending) return { text: "❌ No hay ticket pendiente. Enviá la foto nuevamente.", edit: true };
+
+      const cat = await db.query.categories.findFirst({
+        where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+      });
+      if (!cat) return { text: `❌ Categoría <b>${slug}</b> no encontrada en tu grupo.`, edit: true };
+
+      await db.update(receipt_imports)
+        .set({ parsed_category_slug: slug })
+        .where(eq(receipt_imports.id, pending.id))
+        .catch((err) => console.error("Failed to update receipt category:", err));
+
+      await clearConversationState(chatId, telegramUserId);
+
+      const amount = pending.parsed_amount_ars!;
+      const merchant = pending.parsed_merchant ?? undefined;
+      const date = pending.parsed_date ?? new Date().toISOString().slice(0, 10);
+
+      const proposal = buildReceiptProposalMessage({
+        amount_ars: amount,
+        categoryName: cat.name,
+        categoryEmoji: cat.emoji,
+        merchant,
+        date,
+        source: "edit",
+      });
+
+      return { ...proposal, edit: true };
     }
 
     return { text: "❌ Acción no reconocida.", edit: false };
