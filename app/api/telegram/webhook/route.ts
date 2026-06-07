@@ -86,9 +86,19 @@ export async function POST(req: NextRequest) {
       if (!personalUser) {
         await sendTelegramMessage(personalChatId, "Tu sesión expiró. Vinculá tu cuenta nuevamente.");
       } else {
-        const personalGroupId = personalUser.active_telegram_group_id ?? null;
+        // Mirror the same fallback logic as the message path
+        let personalGroupId = personalUser.active_telegram_group_id ?? null;
         if (!personalGroupId) {
-          await sendTelegramMessage(personalChatId, "No tenés grupo activo.");
+          try {
+            const personalGroup = await getPersonalGroup(personalUser.id);
+            personalGroupId = personalGroup ?? null;
+          } catch {
+            personalGroupId = null;
+          }
+        }
+        
+        if (!personalGroupId) {
+          await sendTelegramMessage(personalChatId, "No tenés ningún grupo activo. Creá uno desde la web.");
         } else {
           const response = await handlePersonalCallback(
             personalChatId, telegramUserId, personalUser.id, personalGroupId, data, messageId
