@@ -90,3 +90,7 @@ export function canDeleteOthersData(role: GroupRole): boolean {
 export function isOwner(role: GroupRole): boolean {
   return role === "owner";
 }
+
+export function isAdminOrAbove(role: GroupRole): boolean {
+  return role === "owner" || role === "admin";
+}

@@ -14,6 +14,7 @@ interface Group {
   id: string;
   name: string;
   owner_id: string;
+  partner_id: string | null;
   role: "owner" | "admin" | "member";
 }
 
@@ -23,6 +24,8 @@ export default function GroupSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [editName, setEditName] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [partnerId, setPartnerId] = useState<string | null>(null);
+  const [savingPartner, setSavingPartner] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -31,17 +34,19 @@ export default function GroupSettingsPage() {
     async function load() {
       try {
         const groupsRes = await fetch("/api/groups");
-        const groups: Array<{ group_id: string; role: "owner" | "admin" | "member"; group: { id: string; name: string; owner_id: string } }> = await groupsRes.json();
+        const groups: Array<{ group_id: string; role: "owner" | "admin" | "member"; group: { id: string; name: string; owner_id: string; partner_id: string | null } }> = await groupsRes.json();
         if (groups.length === 0) return;
         const activeGroupData = groups[0];
         const activeGroup: Group = {
           id: activeGroupData.group_id,
           name: activeGroupData.group.name,
           owner_id: activeGroupData.group.owner_id,
+          partner_id: activeGroupData.group.partner_id,
           role: activeGroupData.role,
         };
         setGroup(activeGroup);
         setEditName(activeGroup.name);
+        setPartnerId(activeGroup.partner_id);
 
         const membersRes = await fetch(`/api/groups/${activeGroup.id}/members`);
         const membersData: Member[] = await membersRes.json();
@@ -89,6 +94,26 @@ export default function GroupSettingsPage() {
     } catch { setError("Error de red"); }
   }
 
+  async function handleSavePartner() {
+    if (!group) return;
+    setSavingPartner(true);
+    try {
+      const res = await fetch(`/api/groups/${group.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerId }),
+      });
+      if (res.ok) {
+        setGroup(g => g ? { ...g, partner_id: partnerId } : g);
+        setSuccess("Partner actualizado");
+      } else {
+        const d = await res.json();
+        setError(d.error ?? "Error");
+      }
+    } catch { setError("Error de red"); }
+    finally { setSavingPartner(false); }
+  }
+
   async function handleDeleteGroup() {
     if (!group || !confirm(`¿Eliminar el grupo "${group.name}"? Esta acción no se puede deshacer.`)) return;
     try {
@@ -124,6 +149,38 @@ export default function GroupSettingsPage() {
             />
             <button onClick={handleRename} disabled={savingName || !editName.trim()} style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "var(--haccent)", color: "white", cursor: "pointer", fontSize: "0.8rem" }}>
               {savingName ? "..." : "Guardar"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {canManage && (
+        <section style={{ marginBottom: 28 }}>
+          <h2 style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--htext3)", marginBottom: 10 }}>
+            💰 Partner de reintegros
+          </h2>
+          <p style={{ fontSize: "0.78rem", color: "var(--htext2)", marginBottom: 12 }}>
+            El partner es quien paga los reintegros cuando un miembro solicita uno. Si no hay partner, los reintegros quedan abiertos para que cualquier miembro los pague.
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <select
+              value={partnerId ?? ""}
+              onChange={e => setPartnerId(e.target.value || null)}
+              style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--hborder)", background: "var(--hbg)", color: "var(--htext1)", fontSize: "0.85rem" }}
+            >
+              <option value="">Sin partner (abierto)</option>
+              {members.map(m => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.user?.name ?? m.user_id} {m.role === "owner" ? "(Owner)" : m.role === "admin" ? "(Admin)" : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleSavePartner}
+              disabled={savingPartner || partnerId === group.partner_id}
+              style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "var(--haccent)", color: "white", cursor: "pointer", fontSize: "0.8rem", opacity: partnerId === group.partner_id ? 0.5 : 1 }}
+            >
+              {savingPartner ? "..." : "Guardar"}
             </button>
           </div>
         </section>

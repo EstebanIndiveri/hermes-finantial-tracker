@@ -111,6 +111,7 @@ export const groups = sqliteTable("groups", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   owner_id: text("owner_id").notNull().references(() => users.id),
+  partner_id: text("partner_id").references(() => users.id),
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
 

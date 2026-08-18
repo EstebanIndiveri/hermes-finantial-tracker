@@ -1,5 +1,5 @@
 import { db } from "@/lib/db/client";
-import { categories, reimbursementRequests, transactions } from "@/lib/db/schema";
+import { categories, groups, reimbursementRequests, transactions } from "@/lib/db/schema";
 import {
   getUserById,
   notifyGroupOfReimbursementRequest,
@@ -101,8 +101,7 @@ export async function createReimbursementWithNotifications(
   amount: number,
   payerId?: string,
 ): Promise<ReimbursementRequest> {
-  const request = await createReimbursementRequest(transactionId, requesterId, amount, payerId);
-
+  // First, get the transaction to find the groupId
   const [transaction] = await db
     .select({
       description: transactions.description,
@@ -111,6 +110,22 @@ export async function createReimbursementWithNotifications(
     })
     .from(transactions)
     .where(eq(transactions.id, transactionId));
+
+  // If no payerId provided, try to use the group's partner
+  let effectivePayerId = payerId;
+  if (!effectivePayerId && transaction?.groupId) {
+    const [group] = await db
+      .select({ partnerId: groups.partner_id })
+      .from(groups)
+      .where(eq(groups.id, transaction.groupId));
+    
+    // Only use partner if it's not the same as the requester
+    if (group?.partnerId && group.partnerId !== requesterId) {
+      effectivePayerId = group.partnerId;
+    }
+  }
+
+  const request = await createReimbursementRequest(transactionId, requesterId, amount, effectivePayerId);
 
   if (!transaction?.groupId) {
     return request;
@@ -129,8 +144,8 @@ export async function createReimbursementWithNotifications(
     transaction.description ?? "",
   );
 
-  if (payerId) {
-    await sendPushToUser(payerId, {
+  if (effectivePayerId) {
+    await sendPushToUser(effectivePayerId, {
       title: "💸 Solicitud de Reintegro",
       body: `Te han solicitado $${amount.toLocaleString("es-AR")}`,
       url: "/dashboard/reimbursements",
