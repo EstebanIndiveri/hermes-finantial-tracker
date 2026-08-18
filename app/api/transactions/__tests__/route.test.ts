@@ -924,3 +924,83 @@ describe("POST /api/transactions", () => {
     expect(data.error).toContain("exchange");
   });
 });
+
+describe("POST /api/transactions reimbursement integration", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({
+      id: "ms-1",
+      user_id: "user-123",
+      month: "2025-05",
+      exchange_rate: 1000,
+    });
+    (db.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
+  });
+
+  test("creates a reimbursement request when the transaction requires reimbursement", async () => {
+    (db.transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<void>) => callback({
+      insert: jest.fn(() => ({
+        values: jest.fn().mockResolvedValue(undefined),
+      })),
+    }));
+
+    (createReimbursementWithNotifications as jest.Mock).mockResolvedValue({ id: "reimb-1" });
+
+    const req = new NextRequest("http://localhost:3000/api/transactions", {
+      method: "POST",
+      body: JSON.stringify({
+        category_id: "123e4567-e89b-12d3-a456-426614174000",
+        amount_ars: 5000,
+        requiresReimbursement: true,
+        payerId: "payer-1",
+      }),
+    });
+    Object.defineProperty(req.headers, "get", {
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(201);
+    expect(createReimbursementWithNotifications).toHaveBeenCalledTimes(1);
+    expect(createReimbursementWithNotifications).toHaveBeenCalledWith(
+      expect.any(String),
+      "user-123",
+      5000,
+      "payer-1",
+    );
+  });
+
+  test("does not create a reimbursement request when reimbursement is not required", async () => {
+    (db.transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<void>) => callback({
+      insert: jest.fn(() => ({
+        values: jest.fn().mockResolvedValue(undefined),
+      })),
+    }));
+
+    const req = new NextRequest("http://localhost:3000/api/transactions", {
+      method: "POST",
+      body: JSON.stringify({
+        category_id: "123e4567-e89b-12d3-a456-426614174000",
+        amount_ars: 5000,
+        requiresReimbursement: false,
+      }),
+    });
+    Object.defineProperty(req.headers, "get", {
+      value: jest.fn((key: string) => {
+        if (key === "x-user-id") return "user-123";
+        if (key === "x-group-id") return "group-123";
+        return null;
+      }),
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(201);
+    expect(createReimbursementWithNotifications).not.toHaveBeenCalled();
+  });
+});

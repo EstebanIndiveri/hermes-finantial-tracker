@@ -125,8 +125,46 @@ describe("reimbursement requests helper", () => {
     expect(sendPushToUser).toHaveBeenCalledWith("user-2", {
       title: "💸 Solicitud de Reintegro",
       body: "Te han solicitado $2.500",
-      url: "/reimbursements",
+      url: "/dashboard/reimbursements",
     });
+  });
+
+  it("returns the reimbursement without notifications when the transaction has no group", async () => {
+    const returning = jest.fn().mockResolvedValue([
+      {
+        id: "reimbursement-id",
+        transactionId: "tx-1",
+        requesterId: "user-1",
+        payerId: "user-2",
+        amount: 2500,
+        status: "pending",
+        paidAt: null,
+        createdAt: 123456,
+      },
+    ]);
+    const values = jest.fn(() => ({ returning }));
+    (mockDb.insert as jest.Mock).mockReturnValue({ values });
+    (mockDb.select as jest.Mock).mockReturnValueOnce({
+      from: jest.fn(() => ({
+        where: jest.fn().mockResolvedValue([{ description: "Cena", groupId: null, categoryId: "cat-1" }]),
+      })),
+    });
+
+    await expect(
+      createReimbursementWithNotifications("tx-1", "user-1", 2500, "user-2"),
+    ).resolves.toEqual({
+      id: "reimbursement-id",
+      transactionId: "tx-1",
+      requesterId: "user-1",
+      payerId: "user-2",
+      amount: 2500,
+      status: "pending",
+      paidAt: null,
+      createdAt: 123456,
+    });
+
+    expect(notifyGroupOfReimbursementRequest).not.toHaveBeenCalled();
+    expect(sendPushToUser).not.toHaveBeenCalled();
   });
 
   it("marks a reimbursement as paid and notifies the requester", async () => {
@@ -158,8 +196,33 @@ describe("reimbursement requests helper", () => {
     expect(sendPushToUser).toHaveBeenCalledWith("user-1", {
       title: "✅ Reintegro Pagado",
       body: "Beto te pagó $4.500",
-      url: "/reimbursements",
+      url: "/dashboard/reimbursements",
     });
+  });
+
+  it("fails to pay an already cancelled reimbursement", async () => {
+    (mockDb.select as jest.Mock).mockReturnValue({
+      from: jest.fn(() => ({
+        where: jest.fn().mockResolvedValue([
+          {
+            id: "r-1",
+            transactionId: "tx-1",
+            requesterId: "user-1",
+            payerId: "user-2",
+            amount: 4500,
+            status: "cancelled",
+            paidAt: null,
+            createdAt: 321,
+          },
+        ]),
+      })),
+    });
+
+    await expect(markReimbursementAsPaidWithNotifications("r-1", "user-2")).resolves.toBe(false);
+
+    expect(mockDb.update).not.toHaveBeenCalled();
+    expect(notifyReimbursementPaid).not.toHaveBeenCalled();
+    expect(sendPushToUser).not.toHaveBeenCalled();
   });
 
   it("returns reimbursements involving the user ordered by creation date", async () => {
@@ -214,6 +277,18 @@ describe("reimbursement requests helper", () => {
         createdAt: 100,
       },
     ]);
+  });
+
+  it("returns an empty list when the user has no reimbursements", async () => {
+    (mockDb.select as jest.Mock).mockReturnValue({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({
+          orderBy: jest.fn().mockResolvedValue([]),
+        })),
+      })),
+    });
+
+    await expect(getReimbursementsByUser("user-1")).resolves.toEqual([]);
   });
 
   it("returns pending reimbursements for a payer", async () => {
@@ -279,6 +354,18 @@ describe("reimbursement requests helper", () => {
     await expect(cancelReimbursement("r-1", "user-1")).resolves.toBe(true);
 
     expect(where).toHaveBeenCalledWith(expect.anything());
+  });
+
+  it("fails to cancel an already paid reimbursement", async () => {
+    const where = jest.fn().mockResolvedValue([]);
+    const returning = jest.fn(() => ({ where }));
+    const set = jest.fn(() => ({ returning }));
+    (mockDb.update as jest.Mock).mockReturnValue({ set });
+
+    await expect(cancelReimbursement("r-1", "user-1")).resolves.toBe(false);
+
+    expect(notifyReimbursementPaid).not.toHaveBeenCalled();
+    expect(sendPushToUser).not.toHaveBeenCalled();
   });
 
   it("returns false when no reimbursement is cancelled", async () => {
