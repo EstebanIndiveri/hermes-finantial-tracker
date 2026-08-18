@@ -242,6 +242,32 @@ hermes-finantial-tracker/
 └── __tests__/                 # Tests unitarios
 ```
 
+## Reintegros
+
+La funcionalidad de reintegros permite a los miembros de un dashboard solicitar el reembolso de gastos realizados.
+
+### Flujo
+
+1. **Registro de gasto con reintegro**: Al registrar un gasto (web o bot), se puede marcar "Requiere reintegro"
+2. **Notificación**: Se notifica a los miembros del dashboard vía Telegram y Web Push
+3. **Datos de pago**: El solicitante configura sus datos de pago (CBU/Alias/Efectivo) en Configuración
+4. **Pago**: El pagador marca el reintegro como pagado desde la web o con el comando /reintegros
+5. **Confirmación**: El solicitante recibe notificación del pago
+
+### Comandos Telegram
+
+- `/reintegros` - Ver reintegros pendientes y marcar como pagados
+
+### Configuración
+
+Agregar al archivo `.env.local`:
+
+```env
+# Web Push VAPID keys (generar con: npx web-push generate-vapid-keys)
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=tu_clave_publica
+VAPID_PRIVATE_KEY=tu_clave_privada
+```
+
 ## 🧪 Tests
 
 ```bash
