@@ -7,13 +7,13 @@ jest.mock("@/lib/auth/session", () => ({
 
 jest.mock("@/lib/reimbursements/requests", () => ({
   getReimbursementById: jest.fn(),
-  markReimbursementAsPaid: jest.fn(),
+  markReimbursementAsPaidWithNotifications: jest.fn(),
 }));
 
 const { verifySession } = require("@/lib/auth/session");
 const {
   getReimbursementById,
-  markReimbursementAsPaid,
+  markReimbursementAsPaidWithNotifications,
 } = require("@/lib/reimbursements/requests");
 
 function makeReq(url: string): NextRequest {
@@ -77,7 +77,7 @@ describe("POST /api/reimbursements/[id]/pay", () => {
   it("returns 500 when marking the reimbursement as paid fails", async () => {
     verifySession.mockResolvedValue({ userId: "payer-1" });
     getReimbursementById.mockResolvedValue({ payerId: "payer-1", status: "pending" });
-    markReimbursementAsPaid.mockResolvedValue(false);
+    markReimbursementAsPaidWithNotifications.mockResolvedValue(false);
 
     const response = await POST(makeReq("http://localhost/api/reimbursements/reimb-1/pay"), {
       params: { id: "reimb-1" },
@@ -90,7 +90,7 @@ describe("POST /api/reimbursements/[id]/pay", () => {
   it("marks the reimbursement as paid for the payer", async () => {
     verifySession.mockResolvedValue({ userId: "payer-1" });
     getReimbursementById.mockResolvedValue({ payerId: "payer-1", status: "pending" });
-    markReimbursementAsPaid.mockResolvedValue(true);
+    markReimbursementAsPaidWithNotifications.mockResolvedValue(true);
 
     const response = await POST(makeReq("http://localhost/api/reimbursements/reimb-1/pay"), {
       params: { id: "reimb-1" },
@@ -98,6 +98,6 @@ describe("POST /api/reimbursements/[id]/pay", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true });
-    expect(markReimbursementAsPaid).toHaveBeenCalledWith("reimb-1", "payer-1");
+    expect(markReimbursementAsPaidWithNotifications).toHaveBeenCalledWith("reimb-1", "payer-1");
   });
 });

@@ -133,7 +133,7 @@ export async function createReimbursementWithNotifications(
     await sendPushToUser(payerId, {
       title: "💸 Solicitud de Reintegro",
       body: `Te han solicitado $${amount.toLocaleString("es-AR")}`,
-      url: "/reimbursements",
+      url: "/dashboard/reimbursements",
     });
   }
 
@@ -237,7 +237,7 @@ export async function markReimbursementAsPaidWithNotifications(
   await sendPushToUser(reimbursement.requesterId, {
     title: "✅ Reintegro Pagado",
     body: `${payerName} te pagó $${reimbursement.amount.toLocaleString("es-AR")}`,
-    url: "/reimbursements",
+    url: "/dashboard/reimbursements",
   });
 
   return true;

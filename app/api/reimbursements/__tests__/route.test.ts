@@ -7,13 +7,13 @@ jest.mock("@/lib/auth/session", () => ({
 
 jest.mock("@/lib/reimbursements/requests", () => ({
   getReimbursementsByUser: jest.fn(),
-  createReimbursementRequest: jest.fn(),
+  createReimbursementWithNotifications: jest.fn(),
 }));
 
 const { verifySession } = require("@/lib/auth/session");
 const {
   getReimbursementsByUser,
-  createReimbursementRequest,
+  createReimbursementWithNotifications,
 } = require("@/lib/reimbursements/requests");
 
 function makeReq(url: string, options?: RequestInit): NextRequest {
@@ -99,7 +99,7 @@ describe("POST /api/reimbursements", () => {
 
   it("creates a reimbursement request for the authenticated user", async () => {
     verifySession.mockResolvedValue({ userId: "user-1" });
-    createReimbursementRequest.mockResolvedValue({ id: "reimb-1", amount: 100 });
+    createReimbursementWithNotifications.mockResolvedValue({ id: "reimb-1", amount: 100 });
 
     const response = await POST(
       makeReq("http://localhost/api/reimbursements", {
@@ -110,6 +110,6 @@ describe("POST /api/reimbursements", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ id: "reimb-1", amount: 100 });
-    expect(createReimbursementRequest).toHaveBeenCalledWith("tx-1", "user-1", 100, "payer-1");
+    expect(createReimbursementWithNotifications).toHaveBeenCalledWith("tx-1", "user-1", 100, "payer-1");
   });
 });
