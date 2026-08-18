@@ -2,9 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { CheckCircle, Clock, DollarSign, XCircle } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface Reimbursement {
   id: string;
@@ -59,13 +56,35 @@ export function ReimbursementsList() {
   }
 
   function getStatusBadge(status: Reimbursement["status"]) {
+    const badgeStyle: React.CSSProperties = {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "4px",
+      padding: "4px 10px",
+      borderRadius: "6px",
+      fontSize: "12px",
+      fontWeight: 500,
+    };
+
     switch (status) {
       case "pending":
-        return <Badge variant="outline" className="gap-1"><Clock className="h-3 w-3" /> Pendiente</Badge>;
+        return (
+          <span style={{ ...badgeStyle, background: "var(--haccent2)", color: "var(--htext1)" }}>
+            <Clock style={{ width: 12, height: 12 }} /> Pendiente
+          </span>
+        );
       case "paid":
-        return <Badge variant="default" className="gap-1 bg-green-600"><CheckCircle className="h-3 w-3" /> Pagado</Badge>;
+        return (
+          <span style={{ ...badgeStyle, background: "#22c55e", color: "white" }}>
+            <CheckCircle style={{ width: 12, height: 12 }} /> Pagado
+          </span>
+        );
       case "cancelled":
-        return <Badge variant="secondary" className="gap-1"><XCircle className="h-3 w-3" /> Cancelado</Badge>;
+        return (
+          <span style={{ ...badgeStyle, background: "var(--hborder)", color: "var(--htext2)" }}>
+            <XCircle style={{ width: 12, height: 12 }} /> Cancelado
+          </span>
+        );
       default:
         return null;
     }
@@ -80,100 +99,134 @@ export function ReimbursementsList() {
   }
 
   if (loading) {
-    return <div className="text-muted-foreground">Cargando reintegros...</div>;
+    return (
+      <div style={{ color: "var(--htext2)", padding: "2rem", textAlign: "center" }}>
+        Cargando reintegros...
+      </div>
+    );
   }
 
-  const pendingToPay = reimbursements.filter((reimbursement) => reimbursement.status === "pending" && reimbursement.payerId);
-  const pendingToReceive = reimbursements.filter((reimbursement) => reimbursement.status === "pending" && !reimbursement.payerId);
-  const completed = reimbursements.filter((reimbursement) => reimbursement.status !== "pending");
+  const pendingToPay = reimbursements.filter((r) => r.status === "pending" && r.payerId);
+  const pendingToReceive = reimbursements.filter((r) => r.status === "pending" && !r.payerId);
+  const completed = reimbursements.filter((r) => r.status !== "pending");
+
+  const cardTitleStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    fontSize: "1.1rem",
+    fontWeight: 600,
+    color: "var(--htext1)",
+  };
+
+  const cardDescStyle: React.CSSProperties = {
+    fontSize: "0.875rem",
+    color: "var(--htext2)",
+    marginTop: "4px",
+  };
+
+  const itemStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "1rem",
+    borderRadius: "8px",
+    border: "1px solid var(--hborder)",
+    background: "var(--hbg2)",
+    marginBottom: "0.75rem",
+  };
+
+  const amountStyle: React.CSSProperties = {
+    fontSize: "1.125rem",
+    fontWeight: 600,
+    color: "var(--htext1)",
+  };
+
+  const dateStyle: React.CSSProperties = {
+    fontSize: "0.875rem",
+    color: "var(--htext2)",
+  };
 
   return (
-    <div className="space-y-6">
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       {pendingToPay.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
+        <div className="h-card h-animate">
+          <div className="h-card-header">
+            <h2 style={cardTitleStyle}>
+              <DollarSign style={{ width: 20, height: 20 }} />
               Reintegros por Pagar
-            </CardTitle>
-            <CardDescription>
+            </h2>
+            <p style={cardDescStyle}>
               Estos reintegros te fueron asignados para pagar
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+            </p>
+          </div>
+          <div className="h-card-body">
             {pendingToPay.map((reimbursement) => (
-              <div
-                key={reimbursement.id}
-                className="flex items-center justify-between rounded-lg border p-4"
-              >
+              <div key={reimbursement.id} style={itemStyle}>
                 <div>
-                  <p className="text-lg font-semibold">
+                  <p style={amountStyle}>
                     ${reimbursement.amount.toLocaleString("es-AR")}
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p style={dateStyle}>
                     {formatDate(reimbursement.createdAt)}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                   {getStatusBadge(reimbursement.status)}
-                  <Button
+                  <button
+                    className="h-btn-submit"
                     onClick={() => void handlePay(reimbursement.id)}
                     disabled={paying === reimbursement.id}
+                    style={{ padding: "8px 16px", fontSize: "14px" }}
                   >
                     {paying === reimbursement.id ? "Pagando..." : "Marcar Pagado"}
-                  </Button>
+                  </button>
                 </div>
               </div>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {pendingToReceive.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Reintegros Pendientes</CardTitle>
-            <CardDescription>
+        <div className="h-card h-animate">
+          <div className="h-card-header">
+            <h2 style={cardTitleStyle}>Reintegros Pendientes</h2>
+            <p style={cardDescStyle}>
               Reintegros que solicitaste y están pendientes
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+            </p>
+          </div>
+          <div className="h-card-body">
             {pendingToReceive.map((reimbursement) => (
-              <div
-                key={reimbursement.id}
-                className="flex items-center justify-between rounded-lg border p-4"
-              >
+              <div key={reimbursement.id} style={itemStyle}>
                 <div>
-                  <p className="text-lg font-semibold">
+                  <p style={amountStyle}>
                     ${reimbursement.amount.toLocaleString("es-AR")}
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p style={dateStyle}>
                     {formatDate(reimbursement.createdAt)}
                   </p>
                 </div>
                 {getStatusBadge(reimbursement.status)}
               </div>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {completed.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Historial</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <div className="h-card h-animate">
+          <div className="h-card-header">
+            <h2 style={cardTitleStyle}>Historial</h2>
+          </div>
+          <div className="h-card-body">
             {completed.map((reimbursement) => (
-              <div
-                key={reimbursement.id}
-                className="flex items-center justify-between rounded-lg border p-4 opacity-75"
-              >
+              <div key={reimbursement.id} style={{ ...itemStyle, opacity: 0.75 }}>
                 <div>
-                  <p className="font-semibold">
+                  <p style={{ ...amountStyle, fontSize: "1rem" }}>
                     ${reimbursement.amount.toLocaleString("es-AR")}
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p style={dateStyle}>
                     {formatDate(reimbursement.createdAt)}
                     {reimbursement.paidAt ? ` • Pagado ${formatDate(new Date(reimbursement.paidAt).getTime())}` : ""}
                   </p>
@@ -181,16 +234,16 @@ export function ReimbursementsList() {
                 {getStatusBadge(reimbursement.status)}
               </div>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {reimbursements.length === 0 && (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
+        <div className="h-card h-animate">
+          <div className="h-card-body" style={{ padding: "3rem", textAlign: "center", color: "var(--htext2)" }}>
             No hay reintegros registrados
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
     </div>
   );

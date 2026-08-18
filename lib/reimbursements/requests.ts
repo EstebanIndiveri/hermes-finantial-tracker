@@ -6,7 +6,7 @@ import {
   notifyReimbursementPaid,
 } from "@/lib/notifications/telegram";
 import { sendPushToUser } from "@/lib/notifications/web-push";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 export type ReimbursementStatus = "pending" | "paid" | "cancelled";
@@ -182,14 +182,54 @@ export async function getPendingReimbursementsForPayer(payerId: string): Promise
 }
 
 /**
- * Marks a reimbursement as paid when it belongs to the given payer.
+ * Retrieves pending "open" reimbursements for a group (no payer assigned).
+ * Excludes reimbursements requested by the given user.
+ *
+ * @param groupId - Group identifier.
+ * @param excludeUserId - User to exclude (the one viewing, shouldn't see their own requests here).
+ * @returns Open pending reimbursement requests.
+ */
+export async function getOpenGroupReimbursements(
+  groupId: string,
+  excludeUserId: string,
+): Promise<ReimbursementRequest[]> {
+  const rows = await db
+    .select({
+      id: reimbursementRequests.id,
+      transactionId: reimbursementRequests.transactionId,
+      requesterId: reimbursementRequests.requesterId,
+      payerId: reimbursementRequests.payerId,
+      amount: reimbursementRequests.amount,
+      status: reimbursementRequests.status,
+      paidAt: reimbursementRequests.paidAt,
+      createdAt: reimbursementRequests.createdAt,
+    })
+    .from(reimbursementRequests)
+    .innerJoin(transactions, eq(reimbursementRequests.transactionId, transactions.id))
+    .where(
+      and(
+        eq(transactions.group_id, groupId),
+        eq(reimbursementRequests.status, "pending"),
+        isNull(reimbursementRequests.payerId),
+        ne(reimbursementRequests.requesterId, excludeUserId),
+      ),
+    )
+    .orderBy(desc(reimbursementRequests.createdAt));
+
+  return rows.map(mapReimbursementRequestRow);
+}
+
+/**
+ * Marks a reimbursement as paid. Works for both assigned payers and open reimbursements.
+ * For open reimbursements, assigns the payer at payment time.
  *
  * @param id - Reimbursement request identifier.
  * @param payerId - User identifier of the payer.
  * @returns Whether a reimbursement request was updated.
  */
 export async function markReimbursementAsPaid(id: string, payerId: string): Promise<boolean> {
-  const updatedRows = await db
+  // First, try to update if payerId matches (assigned reimbursement)
+  let updatedRows = await db
     .update(reimbursementRequests)
     .set({
       status: "paid",
@@ -200,6 +240,25 @@ export async function markReimbursementAsPaid(id: string, payerId: string): Prom
       and(
         eq(reimbursementRequests.id, id),
         eq(reimbursementRequests.payerId, payerId),
+        eq(reimbursementRequests.status, "pending"),
+      ),
+    );
+
+  if (updatedRows.length > 0) return true;
+
+  // If no match, try open reimbursement (payerId is NULL) and assign the payer
+  updatedRows = await db
+    .update(reimbursementRequests)
+    .set({
+      status: "paid",
+      payerId,
+      paidAt: new Date().toISOString(),
+    })
+    .returning({ id: reimbursementRequests.id })
+    .where(
+      and(
+        eq(reimbursementRequests.id, id),
+        isNull(reimbursementRequests.payerId),
         eq(reimbursementRequests.status, "pending"),
       ),
     );

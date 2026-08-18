@@ -11,7 +11,7 @@ import { randomUUID } from "crypto";
 import type { InlineKeyboardMarkup } from "./send-message";
 import { sendTelegramMessage, buildPersonalKeyboard } from "./send-message";
 import { setConversationState, clearConversationState } from "./splits/conversation-state";
-import { getReimbursementsByUser } from "@/lib/reimbursements/requests";
+import { getReimbursementsByUser, getOpenGroupReimbursements, type ReimbursementRequest } from "@/lib/reimbursements/requests";
 
 export interface PersonalBotMessage {
   text: string;
@@ -57,26 +57,39 @@ function buildExpenseConfirmationMessage(
 }
 
 function buildReimbursementsMessage(
-  reimbursements: Awaited<ReturnType<typeof getReimbursementsByUser>>,
+  reimbursements: ReimbursementRequest[],
+  openGroupReimbursements: ReimbursementRequest[],
   userId: string,
 ): PersonalBotMessage {
+  // User is assigned as payer
   const pendingToPay = reimbursements.filter(
     (reimbursement) => reimbursement.status === "pending" && reimbursement.payerId === userId,
   );
+  // User is the requester
   const pendingRequested = reimbursements.filter(
     (reimbursement) => reimbursement.status === "pending" && reimbursement.requesterId === userId,
   );
+  // Open reimbursements from the group (no payer assigned, not requested by user)
+  const openToPay = openGroupReimbursements.filter(
+    (r) => r.status === "pending",
+  );
 
-  const toPayLines = pendingToPay.length > 0
-    ? pendingToPay.map((reimbursement) => `• $${reimbursement.amount.toLocaleString("es-AR")}`)
+  // Combine assigned + open as "to pay"
+  const allToPay = [...pendingToPay, ...openToPay];
+
+  const toPayLines = allToPay.length > 0
+    ? allToPay.map((reimbursement) => {
+        const openTag = reimbursement.payerId === null ? " (abierto)" : "";
+        return `• $${reimbursement.amount.toLocaleString("es-AR")}${openTag}`;
+      })
     : ["• No tenés reintegros pendientes para pagar."];
   const requestedLines = pendingRequested.length > 0
     ? pendingRequested.map((reimbursement) => `• $${reimbursement.amount.toLocaleString("es-AR")}`)
     : ["• No tenés reintegros solicitados pendientes."];
 
-  const keyboard = pendingToPay.length > 0
+  const keyboard = allToPay.length > 0
     ? buildPersonalKeyboard(
-      pendingToPay.map((reimbursement) => [
+      allToPay.map((reimbursement) => [
         { text: "✅ Pagado", callback_data: `pay_reimbursement:${reimbursement.id}` },
       ]),
     )
@@ -237,8 +250,11 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   }
 
   if (text === "/reintegros") {
-    const reimbursements = await getReimbursementsByUser(userId);
-    return buildReimbursementsMessage(reimbursements, userId);
+    const [reimbursements, openGroupReimbursements] = await Promise.all([
+      getReimbursementsByUser(userId),
+      getOpenGroupReimbursements(groupId, userId),
+    ]);
+    return buildReimbursementsMessage(reimbursements, openGroupReimbursements, userId);
   }
 
   if (text.startsWith("/disponible")) {
