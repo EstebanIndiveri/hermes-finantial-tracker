@@ -11,10 +11,19 @@ import { randomUUID } from "crypto";
 import type { InlineKeyboardMarkup } from "./send-message";
 import { sendTelegramMessage, buildPersonalKeyboard } from "./send-message";
 import { setConversationState, clearConversationState } from "./splits/conversation-state";
+import { getReimbursementsByUser } from "@/lib/reimbursements/requests";
 
 export interface PersonalBotMessage {
   text: string;
   replyMarkup?: InlineKeyboardMarkup;
+}
+
+interface PendingExpenseReimbursementState {
+  step: "expense_reimbursement_confirm";
+  transaction_id: string;
+  amount_ars: number;
+  user_id: string;
+  group_id: string;
 }
 
 
@@ -44,6 +53,46 @@ function buildExpenseConfirmationMessage(
         { text: "❌ Cancelar", callback_data: "expense:cancel" },
       ],
     ]),
+  };
+}
+
+function buildReimbursementsMessage(
+  reimbursements: Awaited<ReturnType<typeof getReimbursementsByUser>>,
+  userId: string,
+): PersonalBotMessage {
+  const pendingToPay = reimbursements.filter(
+    (reimbursement) => reimbursement.status === "pending" && reimbursement.payerId === userId,
+  );
+  const pendingRequested = reimbursements.filter(
+    (reimbursement) => reimbursement.status === "pending" && reimbursement.requesterId === userId,
+  );
+
+  const toPayLines = pendingToPay.length > 0
+    ? pendingToPay.map((reimbursement) => `• $${reimbursement.amount.toLocaleString("es-AR")}`)
+    : ["• No tenés reintegros pendientes para pagar."];
+  const requestedLines = pendingRequested.length > 0
+    ? pendingRequested.map((reimbursement) => `• $${reimbursement.amount.toLocaleString("es-AR")}`)
+    : ["• No tenés reintegros solicitados pendientes."];
+
+  const keyboard = pendingToPay.length > 0
+    ? buildPersonalKeyboard(
+      pendingToPay.map((reimbursement) => [
+        { text: "✅ Pagado", callback_data: `pay_reimbursement:${reimbursement.id}` },
+      ]),
+    )
+    : undefined;
+
+  return {
+    text: [
+      "💸 <b>Reintegros por pagar</b>",
+      "",
+      ...toPayLines,
+      "",
+      "🙋 <b>Reintegros solicitados</b>",
+      "",
+      ...requestedLines,
+    ].join("\n"),
+    replyMarkup: keyboard,
   };
 }
 
@@ -185,6 +234,11 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     const summary = await getMonthSummary(groupId, month);
     if (!summary) return { text: "No hay configuración para este mes. Configurá desde la web." };
     return { text: formatResumen({ month, ...summary }) };
+  }
+
+  if (text === "/reintegros") {
+    const reimbursements = await getReimbursementsByUser(userId);
+    return buildReimbursementsMessage(reimbursements, userId);
   }
 
   if (text.startsWith("/disponible")) {
