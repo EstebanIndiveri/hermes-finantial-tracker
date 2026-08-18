@@ -41,4 +41,21 @@ describe("lib/db/client", () => {
     expect(errorSpy).toHaveBeenCalledWith("Failed to enable SQLite foreign keys:", pragmaError);
     errorSpy.mockRestore();
   });
+
+  it("exports schema entries for reimbursement and push tables", async () => {
+    const { db } = await import("../client");
+
+    expect(mockDrizzle).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        schema: expect.objectContaining({
+          userPaymentInfo: expect.anything(),
+          reimbursementRequests: expect.anything(),
+          pushSubscriptions: expect.anything(),
+          transactions: expect.anything(),
+        }),
+      }),
+    );
+    expect(db).toEqual({ mocked: true });
+  });
 });
