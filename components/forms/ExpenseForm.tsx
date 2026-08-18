@@ -23,6 +23,7 @@ export function ExpenseForm({ categories }: { categories: Category[] }) {
   const [catId, setCatId] = useState("");
   const [merchant, setMerchant] = useState("");
   const [desc, setDesc] = useState("");
+  const [requiresReimbursement, setRequiresReimbursement] = useState(false);
   const [loading, setLoading] = useState(false);
   const [closedModal, setClosedModal] = useState<{ open: boolean; isHard: boolean; name: string } | null>(null);
   const [pendingException, setPendingException] = useState(false);
@@ -49,6 +50,7 @@ export function ExpenseForm({ categories }: { categories: Category[] }) {
           merchant: merchant || undefined,
           description: desc || undefined,
           is_exception: isException,
+          requiresReimbursement,
         }),
       });
       const data = await res.json();
@@ -74,6 +76,7 @@ export function ExpenseForm({ categories }: { categories: Category[] }) {
       setCatId("");
       setMerchant("");
       setDesc("");
+      setRequiresReimbursement(false);
       setPendingException(false);
       router.refresh();
     } catch (err) {
@@ -144,6 +147,16 @@ export function ExpenseForm({ categories }: { categories: Category[] }) {
             maxLength={300}
             className="bg-background/50 border-border/60 focus-visible:ring-indigo-500/50 focus-visible:border-indigo-500/50"
           />
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <input
+            id="requiresReimbursement"
+            type="checkbox"
+            checked={requiresReimbursement}
+            onChange={(event) => setRequiresReimbursement(event.target.checked)}
+          />
+          <Label htmlFor="requiresReimbursement">Requiere reintegro</Label>
         </div>
 
         <Button

@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { calculateCategoryStatus } from "@/lib/finance/rules";
 import { getGroupMembership } from "@/lib/groups/permissions";
+import { createReimbursementWithNotifications } from "@/lib/reimbursements/requests";
 
 const createSchema = z.object({
   category_id: z.string().uuid(),
@@ -15,6 +16,7 @@ const createSchema = z.object({
   description: z.string().max(300).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   is_exception: z.boolean().optional().default(false),
+  requiresReimbursement: z.boolean().optional().default(false),
   month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
 });
 
@@ -61,8 +63,17 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
+  const payerId = typeof body?.payerId === "string" ? body.payerId : undefined;
 
-  const { category_id, amount_ars, merchant, description, is_exception, month: monthParam } = parsed.data;
+  const {
+    category_id,
+    amount_ars,
+    merchant,
+    description,
+    is_exception,
+    requiresReimbursement,
+    month: monthParam,
+  } = parsed.data;
   const currentMonth = getActiveMonthArgentina();
   const month = monthParam && monthParam <= currentMonth ? monthParam : currentMonth;
 
@@ -135,20 +146,27 @@ export async function POST(req: NextRequest) {
     const date = parsed.data.date ?? today.toISOString().slice(0, 10);
 
     const id = randomUUID();
-    await db.insert(transactions).values({
-      id,
-      user_id: userId,
-      group_id: groupId,
-      category_id,
-      amount_ars,
-      amount_usd,
-      merchant: merchant ?? null,
-      description: description ?? null,
-      date,
-      month,
-      source: "web",
-      status: "active",
-      is_exception: is_exception ? 1 : 0,
+    await db.transaction(async (tx) => {
+      await tx.insert(transactions).values({
+        id,
+        user_id: userId,
+        group_id: groupId,
+        category_id,
+        amount_ars,
+        amount_usd,
+        merchant: merchant ?? null,
+        description: description ?? null,
+        date,
+        month,
+        source: "web",
+        status: "active",
+        is_exception: is_exception ? 1 : 0,
+        requiresReimbursement,
+      });
+
+      if (requiresReimbursement) {
+        await createReimbursementWithNotifications(id, userId, amount_ars, payerId);
+      }
     });
 
     return NextResponse.json({ id, amount_ars, amount_usd, month }, { status: 201 });

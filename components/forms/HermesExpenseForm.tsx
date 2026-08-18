@@ -19,6 +19,7 @@ export function HermesExpenseForm({ categories, exchangeRate, month }: Props) {
   const [amount, setAmount] = useState("");
   const [catId, setCatId] = useState("");
   const [merchant, setMerchant] = useState("");
+  const [requiresReimbursement, setRequiresReimbursement] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -35,7 +36,14 @@ export function HermesExpenseForm({ categories, exchangeRate, month }: Props) {
       const res = await fetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount_ars: num, category_id: catId, merchant: merchant || undefined, is_exception: isException, ...(month ? { month } : {}) }),
+        body: JSON.stringify({
+          amount_ars: num,
+          category_id: catId,
+          merchant: merchant || undefined,
+          is_exception: isException,
+          requiresReimbursement,
+          ...(month ? { month } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -44,7 +52,7 @@ export function HermesExpenseForm({ categories, exchangeRate, month }: Props) {
         toast.error(data.message ?? "Error al registrar"); return;
       }
       toast.success(`$${num.toLocaleString("es-AR")} registrado ✅`);
-      setAmount(""); setCatId(""); setMerchant(""); setShowConfirm(false);
+      setAmount(""); setCatId(""); setMerchant(""); setRequiresReimbursement(false); setShowConfirm(false);
       router.refresh();
     } catch { toast.error("Error de conexión"); }
     finally { setLoading(false); }
@@ -121,6 +129,18 @@ export function HermesExpenseForm({ categories, exchangeRate, month }: Props) {
             onChange={e => setMerchant(e.target.value)}
             autoComplete="off"
           />
+        </div>
+
+        <div className="h-form-group full" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            id="h-requires-reimbursement"
+            type="checkbox"
+            checked={requiresReimbursement}
+            onChange={e => setRequiresReimbursement(e.target.checked)}
+          />
+          <label className="h-form-label" htmlFor="h-requires-reimbursement" style={{ marginBottom: 0 }}>
+            Requiere reintegro
+          </label>
         </div>
       </div>
 
