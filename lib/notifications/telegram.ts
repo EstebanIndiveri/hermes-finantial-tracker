@@ -80,7 +80,9 @@ export async function notifyGroupOfReimbursementRequest(
 Usa /reintegros para ver pendientes.`;
 
   for (const member of members) {
-    await sendTelegramMessage(member.telegramId, message);
+    if (member.telegramId) {
+      await sendTelegramMessage(member.telegramId, message);
+    }
   }
 }
 

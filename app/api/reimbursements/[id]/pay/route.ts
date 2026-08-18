@@ -7,8 +7,9 @@ import {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  const { id } = await params;
   const cookie = req.cookies.get("hermes_session")?.value;
   const userId = cookie ? await verifySession(cookie) : null;
 
@@ -16,7 +17,7 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const reimbursement = await getReimbursementById(params.id);
+  const reimbursement = await getReimbursementById(id);
 
   if (!reimbursement) {
     return NextResponse.json({ error: "Reimbursement not found" }, { status: 404 });
@@ -30,7 +31,7 @@ export async function POST(
     return NextResponse.json({ error: "Reimbursement is not pending" }, { status: 400 });
   }
 
-  const paid = await markReimbursementAsPaidWithNotifications(params.id, userId);
+  const paid = await markReimbursementAsPaidWithNotifications(id, userId);
 
   if (!paid) {
     return NextResponse.json({ error: "Failed to mark as paid" }, { status: 500 });

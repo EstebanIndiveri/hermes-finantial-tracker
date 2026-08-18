@@ -8,9 +8,9 @@ function getSessionCookie(req: NextRequest): string | null {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const cookie = getSessionCookie(req);
-  const session = cookie ? await verifySession(cookie) : null;
+  const userId = cookie ? await verifySession(cookie) : null;
 
-  if (!session?.userId) {
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -25,15 +25,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid subscription" }, { status: 400 });
   }
 
-  await saveSubscription(session.userId, subscription);
+  await saveSubscription(userId, subscription);
   return NextResponse.json({ success: true });
 }
 
 export async function DELETE(req: NextRequest): Promise<NextResponse> {
   const cookie = getSessionCookie(req);
-  const session = cookie ? await verifySession(cookie) : null;
+  const userId = cookie ? await verifySession(cookie) : null;
 
-  if (!session?.userId) {
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
