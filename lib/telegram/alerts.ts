@@ -75,7 +75,7 @@ export function buildDailyAlert(ctx: AlertContext): AlertDecision {
   }
 
   // ── Estado del mes ──
-  const statusIcon = ctx.status === "GREEN" ? "��" : ctx.status === "YELLOW" ? "🟡" : "🔴";
+  const statusIcon = ctx.status === "GREEN" ? "🟢" : ctx.status === "YELLOW" ? "🟡" : "🔴";
   const goalPct = ctx.saving_goal_usd > 0
     ? Math.round((ctx.ahorro_proyectado_usd / ctx.saving_goal_usd) * 100)
     : null;
