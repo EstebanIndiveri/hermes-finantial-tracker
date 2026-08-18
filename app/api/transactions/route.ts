@@ -146,28 +146,29 @@ export async function POST(req: NextRequest) {
     const date = parsed.data.date ?? today.toISOString().slice(0, 10);
 
     const id = randomUUID();
-    await db.transaction(async (tx) => {
-      await tx.insert(transactions).values({
-        id,
-        user_id: userId,
-        group_id: groupId,
-        category_id,
-        amount_ars,
-        amount_usd,
-        merchant: merchant ?? null,
-        description: description ?? null,
-        date,
-        month,
-        source: "web",
-        status: "active",
-        is_exception: is_exception ? 1 : 0,
-        requiresReimbursement,
-      });
-
-      if (requiresReimbursement) {
-        await createReimbursementWithNotifications(id, userId, amount_ars, payerId);
-      }
+    
+    // Insert transaction first
+    await db.insert(transactions).values({
+      id,
+      user_id: userId,
+      group_id: groupId,
+      category_id,
+      amount_ars,
+      amount_usd,
+      merchant: merchant ?? null,
+      description: description ?? null,
+      date,
+      month,
+      source: "web",
+      status: "active",
+      is_exception: is_exception ? 1 : 0,
+      requiresReimbursement,
     });
+
+    // Create reimbursement after transaction is committed (so it can read the transaction)
+    if (requiresReimbursement) {
+      await createReimbursementWithNotifications(id, userId, amount_ars, payerId);
+    }
 
     return NextResponse.json({ id, amount_ars, amount_usd, month }, { status: 201 });
   } catch (err) {
