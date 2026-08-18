@@ -1,9 +1,11 @@
 import {
   cancelReimbursement,
+  createReimbursementWithNotifications,
   createReimbursementRequest,
   getPendingReimbursementsForPayer,
   getReimbursementById,
   getReimbursementsByUser,
+  markReimbursementAsPaidWithNotifications,
   markReimbursementAsPaid,
 } from "../requests";
 import { db } from "@/lib/db/client";
@@ -20,7 +22,23 @@ jest.mock("@/lib/db/client", () => ({
   },
 }));
 
+jest.mock("@/lib/notifications/telegram", () => ({
+  getUserById: jest.fn(),
+  notifyGroupOfReimbursementRequest: jest.fn(),
+  notifyReimbursementPaid: jest.fn(),
+}));
+
+jest.mock("@/lib/notifications/web-push", () => ({
+  sendPushToUser: jest.fn(),
+}));
+
 const mockDb = db as jest.Mocked<typeof db>;
+const {
+  getUserById,
+  notifyGroupOfReimbursementRequest,
+  notifyReimbursementPaid,
+} = require("@/lib/notifications/telegram");
+const { sendPushToUser } = require("@/lib/notifications/web-push");
 
 describe("reimbursement requests helper", () => {
   beforeEach(() => {
@@ -52,6 +70,95 @@ describe("reimbursement requests helper", () => {
       status: "pending",
       paidAt: null,
       createdAt: 123456,
+    });
+  });
+
+  it("creates a reimbursement and notifies the group and assigned payer", async () => {
+    const returning = jest.fn().mockResolvedValue([
+      {
+        id: "reimbursement-id",
+        transactionId: "tx-1",
+        requesterId: "user-1",
+        payerId: "user-2",
+        amount: 2500,
+        status: "pending",
+        paidAt: null,
+        createdAt: 123456,
+      },
+    ]);
+    const values = jest.fn(() => ({ returning }));
+    (mockDb.insert as jest.Mock).mockReturnValue({ values });
+    (mockDb.select as jest.Mock)
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([
+            { description: "Cena", groupId: "group-1", categoryId: "cat-1" },
+          ]),
+        })),
+      })
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue([{ name: "Comida" }]),
+        })),
+      });
+
+    await expect(
+      createReimbursementWithNotifications("tx-1", "user-1", 2500, "user-2"),
+    ).resolves.toEqual({
+      id: "reimbursement-id",
+      transactionId: "tx-1",
+      requesterId: "user-1",
+      payerId: "user-2",
+      amount: 2500,
+      status: "pending",
+      paidAt: null,
+      createdAt: 123456,
+    });
+
+    expect(notifyGroupOfReimbursementRequest).toHaveBeenCalledWith(
+      "group-1",
+      "user-1",
+      2500,
+      "Comida",
+      "Cena",
+    );
+    expect(sendPushToUser).toHaveBeenCalledWith("user-2", {
+      title: "💸 Solicitud de Reintegro",
+      body: "Te han solicitado $2.500",
+      url: "/reimbursements",
+    });
+  });
+
+  it("marks a reimbursement as paid and notifies the requester", async () => {
+    (mockDb.select as jest.Mock).mockReturnValue({
+      from: jest.fn(() => ({
+        where: jest.fn().mockResolvedValue([
+          {
+            id: "r-1",
+            transactionId: "tx-1",
+            requesterId: "user-1",
+            payerId: "user-2",
+            amount: 4500,
+            status: "pending",
+            paidAt: null,
+            createdAt: 321,
+          },
+        ]),
+      })),
+    });
+    const where = jest.fn().mockResolvedValue([{ id: "r-1" }]);
+    const returning = jest.fn(() => ({ where }));
+    const set = jest.fn(() => ({ returning }));
+    (mockDb.update as jest.Mock).mockReturnValue({ set });
+    getUserById.mockResolvedValue({ name: "Beto" });
+
+    await expect(markReimbursementAsPaidWithNotifications("r-1", "user-2")).resolves.toBe(true);
+
+    expect(notifyReimbursementPaid).toHaveBeenCalledWith("user-1", "Beto", 4500);
+    expect(sendPushToUser).toHaveBeenCalledWith("user-1", {
+      title: "✅ Reintegro Pagado",
+      body: "Beto te pagó $4.500",
+      url: "/reimbursements",
     });
   });
 

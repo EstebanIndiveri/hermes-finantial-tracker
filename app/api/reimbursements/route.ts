@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
 import {
-  createReimbursementRequest,
+  createReimbursementWithNotifications,
   getReimbursementsByUser,
 } from "@/lib/reimbursements/requests";
 
@@ -34,6 +34,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "transactionId and positive amount required" }, { status: 400 });
   }
 
-  const request = await createReimbursementRequest(transactionId, userId, amount, payerId);
+  const request = await createReimbursementWithNotifications(transactionId, userId, amount, payerId);
   return NextResponse.json(request);
 }

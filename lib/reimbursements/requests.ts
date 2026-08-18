@@ -1,5 +1,11 @@
 import { db } from "@/lib/db/client";
-import { reimbursementRequests } from "@/lib/db/schema";
+import { categories, reimbursementRequests, transactions } from "@/lib/db/schema";
+import {
+  getUserById,
+  notifyGroupOfReimbursementRequest,
+  notifyReimbursementPaid,
+} from "@/lib/notifications/telegram";
+import { sendPushToUser } from "@/lib/notifications/web-push";
 import { and, desc, eq, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
@@ -81,6 +87,60 @@ export async function createReimbursementRequest(
 }
 
 /**
+ * Creates a pending reimbursement request and dispatches notifications.
+ *
+ * @param transactionId - Related transaction identifier.
+ * @param requesterId - User identifier requesting reimbursement.
+ * @param amount - Requested reimbursement amount.
+ * @param payerId - Optional user identifier responsible for payment.
+ * @returns The created reimbursement request.
+ */
+export async function createReimbursementWithNotifications(
+  transactionId: string,
+  requesterId: string,
+  amount: number,
+  payerId?: string,
+): Promise<ReimbursementRequest> {
+  const request = await createReimbursementRequest(transactionId, requesterId, amount, payerId);
+
+  const [transaction] = await db
+    .select({
+      description: transactions.description,
+      groupId: transactions.group_id,
+      categoryId: transactions.category_id,
+    })
+    .from(transactions)
+    .where(eq(transactions.id, transactionId));
+
+  if (!transaction?.groupId) {
+    return request;
+  }
+
+  const [category] = await db
+    .select({ name: categories.name })
+    .from(categories)
+    .where(eq(categories.id, transaction.categoryId));
+
+  await notifyGroupOfReimbursementRequest(
+    transaction.groupId,
+    requesterId,
+    amount,
+    category?.name ?? "Sin categoría",
+    transaction.description ?? "",
+  );
+
+  if (payerId) {
+    await sendPushToUser(payerId, {
+      title: "💸 Solicitud de Reintegro",
+      body: `Te han solicitado $${amount.toLocaleString("es-AR")}`,
+      url: "/reimbursements",
+    });
+  }
+
+  return request;
+}
+
+/**
  * Retrieves reimbursements where the user is requester or payer.
  *
  * @param userId - User identifier to search reimbursements for.
@@ -145,6 +205,42 @@ export async function markReimbursementAsPaid(id: string, payerId: string): Prom
     );
 
   return updatedRows.length > 0;
+}
+
+/**
+ * Marks a reimbursement as paid and dispatches notifications to the requester.
+ *
+ * @param id - Reimbursement request identifier.
+ * @param payerId - User identifier of the payer.
+ * @returns Whether a reimbursement request was updated.
+ */
+export async function markReimbursementAsPaidWithNotifications(
+  id: string,
+  payerId: string,
+): Promise<boolean> {
+  const reimbursement = await getReimbursementById(id);
+
+  if (!reimbursement || reimbursement.status !== "pending") {
+    return false;
+  }
+
+  const paid = await markReimbursementAsPaid(id, payerId);
+
+  if (!paid) {
+    return false;
+  }
+
+  const payer = await getUserById(payerId);
+  const payerName = payer?.name ?? "Alguien";
+
+  await notifyReimbursementPaid(reimbursement.requesterId, payerName, reimbursement.amount);
+  await sendPushToUser(reimbursement.requesterId, {
+    title: "✅ Reintegro Pagado",
+    body: `${payerName} te pagó $${reimbursement.amount.toLocaleString("es-AR")}`,
+    url: "/reimbursements",
+  });
+
+  return true;
 }
 
 /**

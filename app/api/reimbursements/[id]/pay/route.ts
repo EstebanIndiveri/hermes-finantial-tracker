@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
 import {
   getReimbursementById,
-  markReimbursementAsPaid,
+  markReimbursementAsPaidWithNotifications,
 } from "@/lib/reimbursements/requests";
 
 export async function POST(
@@ -30,7 +30,7 @@ export async function POST(
     return NextResponse.json({ error: "Reimbursement is not pending" }, { status: 400 });
   }
 
-  const paid = await markReimbursementAsPaid(params.id, userId);
+  const paid = await markReimbursementAsPaidWithNotifications(params.id, userId);
 
   if (!paid) {
     return NextResponse.json({ error: "Failed to mark as paid" }, { status: 500 });
