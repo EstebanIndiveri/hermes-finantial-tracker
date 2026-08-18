@@ -68,6 +68,7 @@ export const transactions = sqliteTable("transactions", {
   month: text("month").notNull(),
   source: text("source").notNull().default("web"),
   status: text("status").notNull().default("active"),
+  requiresReimbursement: integer("requires_reimbursement", { mode: "boolean" }).default(false),
   is_exception: integer("is_exception").notNull().default(0),
   deleted_at: integer("deleted_at"),
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
@@ -231,6 +232,35 @@ export const split_payments = sqliteTable("split_payments", {
   telegram_update_id: text("telegram_update_id"),
 });
 
+export const userPaymentInfo = sqliteTable("user_payment_info", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  paymentMethod: text("payment_method").notNull(),
+  value: text("value"),
+  isDefault: integer("is_default", { mode: "boolean" }).default(false),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+});
+
+export const reimbursementRequests = sqliteTable("reimbursement_requests", {
+  id: text("id").primaryKey(),
+  transactionId: text("transaction_id").notNull().references(() => transactions.id),
+  requesterId: text("requester_id").notNull().references(() => users.id),
+  payerId: text("payer_id").references(() => users.id),
+  amount: real("amount").notNull(),
+  status: text("status").notNull().default("pending"),
+  paidAt: text("paid_at"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+});
+
+export const pushSubscriptions = sqliteTable("push_subscriptions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  endpoint: text("endpoint").notNull(),
+  p256dhKey: text("p256dh_key").notNull(),
+  authKey: text("auth_key").notNull(),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+});
+
 // ── Splits / Compartidos relations ──────────────────────────
 export const tempUsersRelations = relations(temp_users, ({ one, many }) => ({
   upgradedTo: one(users, { fields: [temp_users.upgraded_to], references: [users.id] }),
@@ -275,6 +305,20 @@ export const splitPaymentsRelations = relations(split_payments, ({ one }) => ({
   payerTemp: one(temp_users, { fields: [split_payments.payer_temp_id], references: [temp_users.id] }),
   payeeUser: one(users, { fields: [split_payments.payee_user_id], references: [users.id] }),
   payeeTemp: one(temp_users, { fields: [split_payments.payee_temp_id], references: [temp_users.id] }),
+}));
+
+export const userPaymentInfoRelations = relations(userPaymentInfo, ({ one }) => ({
+  user: one(users, { fields: [userPaymentInfo.userId], references: [users.id] }),
+}));
+
+export const reimbursementRequestsRelations = relations(reimbursementRequests, ({ one }) => ({
+  transaction: one(transactions, { fields: [reimbursementRequests.transactionId], references: [transactions.id] }),
+  requester: one(users, { fields: [reimbursementRequests.requesterId], references: [users.id] }),
+  payer: one(users, { fields: [reimbursementRequests.payerId], references: [users.id] }),
+}));
+
+export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
+  user: one(users, { fields: [pushSubscriptions.userId], references: [users.id] }),
 }));
 
 // Relations for query builder with `with` syntax
