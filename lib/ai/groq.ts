@@ -6,7 +6,7 @@ export function getGroqClient(): GroqClient | null {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
 
-  const model = process.env.GROQ_MODEL ?? "gpt-oss-20b";
+  const model = process.env.GROQ_MODEL ?? "openai/gpt-oss-20b";
 
   return {
     async complete(systemPrompt: string, userPrompt: string): Promise<string> {
