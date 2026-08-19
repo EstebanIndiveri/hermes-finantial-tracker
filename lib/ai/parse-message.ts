@@ -9,6 +9,7 @@ const ParsedMessageSchema = z.object({
   description: z.string().nullable().optional(),
   date_text: z.string().nullable().optional(),
   needs_confirmation: z.boolean().default(false),
+  requires_reimbursement: z.boolean().default(false),
   confidence: z.number().min(0).max(1),
 });
 
@@ -30,6 +31,11 @@ REGLA CRÍTICA para query_available vs simulate_expense:
 - "disponible" o "cuánto queda" o "cuánto hay" → query_available
 - "puedo gastar 5000" o "me alcanza para 30000" → simulate_expense
 
+REINTEGRO (reembolso):
+- Si el usuario menciona "reintegro", "me lo devuelvan", "necesito que me reintegren", "con reembolso" → requires_reimbursement: true
+- Ej: "gasté 5000 en super y necesito reintegro", "2000 verdulería reintegro" → requires_reimbursement: true
+- Si no menciona reintegro → requires_reimbursement: false
+
 Categorías válidas (slug): supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos
 
 MAPEO de expresiones a categorías:
@@ -48,6 +54,7 @@ Campos a devolver:
 - description: descripción breve o null
 - date_text: referencia a fecha en texto o null
 - needs_confirmation: true si el usuario pide confirmación antes de registrar
+- requires_reimbursement: true si el usuario necesita reintegro/reembolso del gasto
 - confidence: número entre 0.0 y 1.0 (usar 0.9+ cuando el intent es claro)
 
 Respondé ÚNICAMENTE con el objeto JSON. Sin markdown. Sin bloques de código. Primera línea debe ser { y última }.`;
@@ -63,7 +70,7 @@ function extractJson(raw: string): string {
 export async function parseFinancialMessage(text: string): Promise<ParsedMessage> {
   const client = getGroqClient();
   if (!client) {
-    return { intent: "unknown", confidence: 0, needs_confirmation: false };
+    return { intent: "unknown", confidence: 0, needs_confirmation: false, requires_reimbursement: false };
   }
 
   let raw: string;
@@ -71,7 +78,7 @@ export async function parseFinancialMessage(text: string): Promise<ParsedMessage
     raw = await client.complete(SYSTEM_PROMPT, text);
   } catch (err) {
     console.error("Groq API error:", err instanceof Error ? err.message : String(err));
-    return { intent: "unknown", confidence: 0, needs_confirmation: false };
+    return { intent: "unknown", confidence: 0, needs_confirmation: false, requires_reimbursement: false };
   }
 
   const cleaned = extractJson(raw);
@@ -81,13 +88,13 @@ export async function parseFinancialMessage(text: string): Promise<ParsedMessage
     parsed = JSON.parse(cleaned);
   } catch (err) {
     console.error("Groq JSON parse error. Raw:", raw, "Error:", err instanceof Error ? err.message : String(err));
-    return { intent: "unknown", confidence: 0, needs_confirmation: false };
+    return { intent: "unknown", confidence: 0, needs_confirmation: false, requires_reimbursement: false };
   }
 
   try {
     return ParsedMessageSchema.parse(parsed);
   } catch (err) {
     console.error("Groq Zod validation error:", err instanceof Error ? err.message : String(err), "Parsed:", JSON.stringify(parsed));
-    return { intent: "unknown", confidence: 0, needs_confirmation: false };
+    return { intent: "unknown", confidence: 0, needs_confirmation: false, requires_reimbursement: false };
   }
 }

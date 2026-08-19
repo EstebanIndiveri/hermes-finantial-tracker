@@ -1,5 +1,5 @@
 import { db } from "@/lib/db/client";
-import { transactions, categories, monthly_settings, budgets, bot_messages, receipt_imports, telegram_link_codes, users, groups } from "@/lib/db/schema";
+import { transactions, categories, monthly_settings, budgets, bot_messages, receipt_imports, telegram_link_codes, users, groups, group_members } from "@/lib/db/schema";
 import { eq, and, sum, desc, gt } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
@@ -12,6 +12,7 @@ import type { InlineKeyboardMarkup } from "./send-message";
 import { sendTelegramMessage, buildPersonalKeyboard } from "./send-message";
 import { setConversationState, clearConversationState } from "./splits/conversation-state";
 import { getReimbursementsByUser, getOpenGroupReimbursements, type ReimbursementRequest } from "@/lib/reimbursements/requests";
+import { getGroupMembership, isAdminOrAbove } from "@/lib/groups/permissions";
 
 export interface PersonalBotMessage {
   text: string;
@@ -128,7 +129,8 @@ async function buildExpenseOrExceptionMessage(
   month: string,
   cat: { id: string; name: string; emoji: string | null },
   amount_ars: number,
-  merchant: string | undefined
+  merchant: string | undefined,
+  requires_reimbursement?: boolean
 ): Promise<PersonalBotMessage> {
   const budget = await db.query.budgets.findFirst({
     where: and(
@@ -180,6 +182,7 @@ async function buildExpenseOrExceptionMessage(
             group_id: groupId,
             user_id: userId,
             is_exception: true,
+            requires_reimbursement: requires_reimbursement ?? false,
           },
         });
       } catch (err) {
@@ -213,6 +216,7 @@ async function buildExpenseOrExceptionMessage(
         group_id: groupId,
         user_id: userId,
         is_exception: false,
+        requires_reimbursement: requires_reimbursement ?? false,
       },
     });
   } catch (err) {
@@ -261,6 +265,61 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       getOpenGroupReimbursements(groupId, userId),
     ]);
     return buildReimbursementsMessage(reimbursements, openGroupReimbursements, userId);
+  }
+
+  // ── /partner - Configure group partner ──
+  if (text === "/partner") {
+    // Check if user is admin or owner
+    const membership = await getGroupMembership(userId, groupId);
+    const canManage = membership && isAdminOrAbove(membership.role);
+    if (!canManage) {
+      return { text: "❌ Solo administradores pueden configurar el partner del grupo." };
+    }
+
+    // Get group members
+    const members = await db
+      .select({
+        id: users.id,
+        name: users.name,
+      })
+      .from(group_members)
+      .innerJoin(users, eq(group_members.user_id, users.id))
+      .where(eq(group_members.group_id, groupId));
+
+    if (members.length === 0) {
+      return { text: "❌ No hay miembros en el grupo." };
+    }
+
+    // Get current partner
+    const group = await db.query.groups.findFirst({
+      where: eq(groups.id, groupId),
+    });
+
+    const currentPartner = group?.partner_id
+      ? members.find(m => m.id === group.partner_id)
+      : null;
+
+    const kbRows: Array<Array<{ text: string; callback_data: string }>> = [];
+    for (let i = 0; i < members.length; i += 2) {
+      const row: Array<{ text: string; callback_data: string }> = [{
+        text: `${members[i].id === currentPartner?.id ? "✅ " : ""}${members[i].name}`,
+        callback_data: `partner:select:${members[i].id}`,
+      }];
+      if (members[i + 1]) {
+        row.push({
+          text: `${members[i + 1].id === currentPartner?.id ? "✅ " : ""}${members[i + 1].name}`,
+          callback_data: `partner:select:${members[i + 1].id}`,
+        });
+      }
+      kbRows.push(row);
+    }
+    kbRows.push([{ text: "🚫 Quitar partner", callback_data: "partner:remove" }]);
+    kbRows.push([{ text: "❌ Cancelar", callback_data: "partner:cancel" }]);
+
+    return {
+      text: `👥 <b>Configurar Partner del grupo</b>\n\n${currentPartner ? `Partner actual: <b>${currentPartner.name}</b>` : "Sin partner configurado"}\n\nEl partner recibe por defecto las solicitudes de reintegro.`,
+      replyMarkup: buildPersonalKeyboard(kbRows),
+    };
   }
 
   if (text.startsWith("/disponible")) {
@@ -977,7 +1036,8 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       month,
       cat,
       amount_ars,
-      merchant
+      merchant,
+      parsed.requires_reimbursement ?? false
     );
   }
 

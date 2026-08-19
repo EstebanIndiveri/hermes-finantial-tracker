@@ -6,6 +6,7 @@ import {
   categories,
   budgets,
   monthly_settings,
+  groups,
 } from "@/lib/db/schema";
 import { eq, and, sum, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -18,6 +19,7 @@ import type { InlineKeyboardMarkup } from "./send-message";
 import { buildPersonalKeyboard } from "./send-message";
 import { buildReceiptProposalMessage } from "./handlers";
 import { createReimbursementWithNotifications, markReimbursementAsPaidWithNotifications } from "@/lib/reimbursements/requests";
+import { getGroupMembership, isAdminOrAbove } from "@/lib/groups/permissions";
 
 export interface PersonalCallbackResponse {
   text: string;
@@ -36,6 +38,7 @@ interface PendingExpenseState {
   group_id: string;
   user_id: string;
   is_exception: boolean;
+  requires_reimbursement?: boolean;
 }
 
 interface PendingExpenseReimbursementState {
@@ -249,6 +252,20 @@ export async function handlePersonalCallback(
         return { text: result.text, edit: true };
       }
 
+      // If requires_reimbursement was detected from NL, create it automatically
+      if (s.requires_reimbursement) {
+        await createReimbursementWithNotifications(
+          result.transactionId,
+          s.user_id,
+          s.amount_ars,
+          undefined,
+        );
+        return {
+          text: `${result.text}\n\n✅ Reintegro solicitado automáticamente. Ya avisamos al grupo.`,
+          edit: true,
+        };
+      }
+
       await setConversationState(chatId, telegramUserId, {
         step: "expense_reimbursement_confirm",
         data: {
@@ -290,6 +307,20 @@ export async function handlePersonalCallback(
       );
       if (!result.transactionId) {
         return { text: result.text, edit: true };
+      }
+
+      // If requires_reimbursement was detected from NL, create it automatically
+      if (s.requires_reimbursement) {
+        await createReimbursementWithNotifications(
+          result.transactionId,
+          s.user_id,
+          s.amount_ars,
+          undefined,
+        );
+        return {
+          text: `⚠️ Registrado como excepción.\n\n${result.text}\n\n✅ Reintegro solicitado automáticamente. Ya avisamos al grupo.`,
+          edit: true,
+        };
       }
 
       await setConversationState(chatId, telegramUserId, {
@@ -403,6 +434,48 @@ export async function handlePersonalCallback(
     if (data.startsWith("expense:reimbursement_no:")) {
       await clearConversationState(chatId, telegramUserId);
       return { text: "✅ Gasto registrado sin reintegro.", edit: true };
+    }
+
+    // ── partner:* — Configure group partner ──────────────────────────
+    if (data.startsWith("partner:select:")) {
+      const membership = await getGroupMembership(userId, groupId);
+      const canManage = membership && isAdminOrAbove(membership.role);
+      if (!canManage) {
+        return { text: "❌ Solo administradores pueden configurar el partner.", edit: true };
+      }
+
+      const selectedUserId = data.split(":")[2] ?? "";
+      if (!selectedUserId) {
+        return { text: "❌ Usuario inválido.", edit: true };
+      }
+
+      try {
+        await db.update(groups).set({ partner_id: selectedUserId }).where(eq(groups.id, groupId));
+        return { text: "✅ Partner actualizado correctamente.", edit: true };
+      } catch (err) {
+        console.error("Failed to update partner:", err);
+        return { text: "❌ Error al actualizar partner.", edit: true };
+      }
+    }
+
+    if (data === "partner:remove") {
+      const membership = await getGroupMembership(userId, groupId);
+      const canManage = membership && isAdminOrAbove(membership.role);
+      if (!canManage) {
+        return { text: "❌ Solo administradores pueden configurar el partner.", edit: true };
+      }
+
+      try {
+        await db.update(groups).set({ partner_id: null }).where(eq(groups.id, groupId));
+        return { text: "✅ Partner eliminado. Los reintegros serán abiertos para todo el grupo.", edit: true };
+      } catch (err) {
+        console.error("Failed to remove partner:", err);
+        return { text: "❌ Error al eliminar partner.", edit: true };
+      }
+    }
+
+    if (data === "partner:cancel") {
+      return { text: "❌ Configuración de partner cancelada.", edit: true };
     }
 
     return { text: "❌ Acción no reconocida.", edit: false };
