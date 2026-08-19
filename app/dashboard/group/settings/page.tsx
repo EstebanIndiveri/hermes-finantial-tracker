@@ -1,6 +1,7 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { InviteModal } from "@/components/dashboard/InviteModal";
+import { Toast } from "@/components/ui/Toast";
 import GroupSettingsLoading from "./loading";
 
 interface Member {
@@ -18,6 +19,11 @@ interface Group {
   role: "owner" | "admin" | "member";
 }
 
+interface ToastState {
+  message: string;
+  type: "success" | "error";
+}
+
 export default function GroupSettingsPage() {
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
@@ -27,8 +33,15 @@ export default function GroupSettingsPage() {
   const [partnerId, setPartnerId] = useState<string | null>(null);
   const [savingPartner, setSavingPartner] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [toast, setToast] = useState<ToastState | null>(null);
+
+  const showToast = useCallback((message: string, type: "success" | "error") => {
+    setToast({ message, type });
+  }, []);
+
+  const clearToast = useCallback(() => {
+    setToast(null);
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -51,11 +64,11 @@ export default function GroupSettingsPage() {
         const membersRes = await fetch(`/api/groups/${activeGroup.id}/members`);
         const membersData: Member[] = await membersRes.json();
         setMembers(membersData);
-      } catch { setError("Error al cargar el grupo"); }
+      } catch { showToast("Error al cargar el grupo", "error"); }
       finally { setLoading(false); }
     }
     load();
-  }, []);
+  }, [showToast]);
 
   async function handleRename() {
     if (!group || !editName.trim()) return;
@@ -66,9 +79,9 @@ export default function GroupSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: editName.trim() }),
       });
-      if (res.ok) { setGroup(g => g ? { ...g, name: editName.trim() } : g); setSuccess("Nombre actualizado"); }
-      else { const d = await res.json(); setError(d.error ?? "Error"); }
-    } catch { setError("Error de red"); }
+      if (res.ok) { setGroup(g => g ? { ...g, name: editName.trim() } : g); showToast("Nombre actualizado", "success"); }
+      else { const d = await res.json(); showToast(d.error ?? "Error", "error"); }
+    } catch { showToast("Error de red", "error"); }
     finally { setSavingName(false); }
   }
 
@@ -80,18 +93,24 @@ export default function GroupSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: newRole }),
       });
-      if (res.ok) setMembers(ms => ms.map(m => m.user_id === userId ? { ...m, role: newRole } : m));
-      else { const d = await res.json(); setError(d.error ?? "Error"); }
-    } catch { setError("Error de red"); }
+      if (res.ok) {
+        setMembers(ms => ms.map(m => m.user_id === userId ? { ...m, role: newRole } : m));
+        showToast(`Rol actualizado a ${newRole}`, "success");
+      }
+      else { const d = await res.json(); showToast(d.error ?? "Error", "error"); }
+    } catch { showToast("Error de red", "error"); }
   }
 
   async function handleRemoveMember(userId: string) {
     if (!group || !confirm("¿Remover este miembro del grupo?")) return;
     try {
       const res = await fetch(`/api/groups/${group.id}/members/${userId}`, { method: "DELETE" });
-      if (res.ok) setMembers(ms => ms.filter(m => m.user_id !== userId));
-      else { const d = await res.json(); setError(d.error ?? "Error"); }
-    } catch { setError("Error de red"); }
+      if (res.ok) {
+        setMembers(ms => ms.filter(m => m.user_id !== userId));
+        showToast("Miembro removido", "success");
+      }
+      else { const d = await res.json(); showToast(d.error ?? "Error", "error"); }
+    } catch { showToast("Error de red", "error"); }
   }
 
   async function handleSavePartner() {
@@ -105,12 +124,13 @@ export default function GroupSettingsPage() {
       });
       if (res.ok) {
         setGroup(g => g ? { ...g, partner_id: partnerId } : g);
-        setSuccess("Partner actualizado");
+        const partnerName = members.find(m => m.user_id === partnerId)?.user?.name;
+        showToast(partnerId ? `Partner configurado: ${partnerName}` : "Partner removido", "success");
       } else {
         const d = await res.json();
-        setError(d.error ?? "Error");
+        showToast(d.error ?? "Error", "error");
       }
-    } catch { setError("Error de red"); }
+    } catch { showToast("Error de red", "error"); }
     finally { setSavingPartner(false); }
   }
 
@@ -119,8 +139,8 @@ export default function GroupSettingsPage() {
     try {
       const res = await fetch(`/api/groups/${group.id}`, { method: "DELETE" });
       if (res.ok) window.location.href = "/dashboard";
-      else { const d = await res.json(); setError(d.error ?? "Error"); }
-    } catch { setError("Error de red"); }
+      else { const d = await res.json(); showToast(d.error ?? "Error", "error"); }
+    } catch { showToast("Error de red", "error"); }
   }
 
   if (loading) return <GroupSettingsLoading />;
@@ -130,109 +150,117 @@ export default function GroupSettingsPage() {
   const canManage = group.role === "owner" || group.role === "admin";
 
   return (
-    <div style={{ maxWidth: 600, padding: "24px 20px" }}>
-      <h1 style={{ fontSize: "1.3rem", fontWeight: 700, marginBottom: 4 }}>Configuración del grupo</h1>
-      <p style={{ color: "var(--htext3)", fontSize: "0.85rem", marginBottom: 28 }}>Grupo actual: {group.name}</p>
+    <>
+      <div style={{ maxWidth: 600, padding: "24px 20px" }}>
+        <h1 style={{ fontSize: "1.3rem", fontWeight: 700, marginBottom: 4 }}>Configuración del grupo</h1>
+        <p style={{ color: "var(--htext3)", fontSize: "0.85rem", marginBottom: 28 }}>Grupo actual: {group.name}</p>
 
-      {error && <div style={{ background: "#7f1d1d", color: "#fca5a5", padding: "10px 14px", borderRadius: 8, marginBottom: 16, fontSize: "0.82rem" }}>{error}<button onClick={() => setError("")} style={{ marginLeft: 8, background: "none", border: "none", color: "#fca5a5", cursor: "pointer" }}>×</button></div>}
-      {success && <div style={{ background: "#14532d", color: "#86efac", padding: "10px 14px", borderRadius: 8, marginBottom: 16, fontSize: "0.82rem" }}>{success}<button onClick={() => setSuccess("")} style={{ marginLeft: 8, background: "none", border: "none", color: "#86efac", cursor: "pointer" }}>×</button></div>}
-
-      {isOwner && (
-        <section style={{ marginBottom: 28 }}>
-          <h2 style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--htext3)", marginBottom: 10 }}>Nombre del grupo</h2>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              value={editName}
-              onChange={e => setEditName(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleRename()}
-              style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--hborder)", background: "var(--hbg)", color: "var(--htext1)", fontSize: "0.85rem" }}
-            />
-            <button onClick={handleRename} disabled={savingName || !editName.trim()} style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "var(--haccent)", color: "white", cursor: "pointer", fontSize: "0.8rem" }}>
-              {savingName ? "..." : "Guardar"}
-            </button>
-          </div>
-        </section>
-      )}
-
-      {canManage && (
-        <section style={{ marginBottom: 28 }}>
-          <h2 style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--htext3)", marginBottom: 10 }}>
-            💰 Partner de reintegros
-          </h2>
-          <p style={{ fontSize: "0.78rem", color: "var(--htext2)", marginBottom: 12 }}>
-            El partner es quien paga los reintegros cuando un miembro solicita uno. Si no hay partner, los reintegros quedan abiertos para que cualquier miembro los pague.
-          </p>
-          <div style={{ display: "flex", gap: 8 }}>
-            <select
-              value={partnerId ?? ""}
-              onChange={e => setPartnerId(e.target.value || null)}
-              style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--hborder)", background: "var(--hbg)", color: "var(--htext1)", fontSize: "0.85rem" }}
-            >
-              <option value="">Sin partner (abierto)</option>
-              {members.map(m => (
-                <option key={m.user_id} value={m.user_id}>
-                  {m.user?.name ?? m.user_id} {m.role === "owner" ? "(Owner)" : m.role === "admin" ? "(Admin)" : ""}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={handleSavePartner}
-              disabled={savingPartner || partnerId === group.partner_id}
-              style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "var(--haccent)", color: "white", cursor: "pointer", fontSize: "0.8rem", opacity: partnerId === group.partner_id ? 0.5 : 1 }}
-            >
-              {savingPartner ? "..." : "Guardar"}
-            </button>
-          </div>
-        </section>
-      )}
-
-      <section style={{ marginBottom: 28 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h2 style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--htext3)", margin: 0 }}>
-            Miembros ({members.length})
-          </h2>
-          {canManage && (
-            <button onClick={() => setShowInviteModal(true)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid var(--hborder)", background: "transparent", color: "var(--htext1)", cursor: "pointer", fontSize: "0.78rem" }}>
-              + Invitar
-            </button>
-          )}
-        </div>
-        {members.map(m => (
-          <div key={m.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--hborder)" }}>
-            <div style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--haccent)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "white", fontSize: "0.85rem", flexShrink: 0 }}>
-              {m.user?.name?.charAt(0)?.toUpperCase() ?? "?"}
+        {isOwner && (
+          <section style={{ marginBottom: 28 }}>
+            <h2 style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--htext3)", marginBottom: 10 }}>Nombre del grupo</h2>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleRename()}
+                style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--hborder)", background: "var(--hbg)", color: "var(--htext1)", fontSize: "0.85rem" }}
+              />
+              <button onClick={handleRename} disabled={savingName || !editName.trim()} style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "var(--haccent)", color: "white", cursor: "pointer", fontSize: "0.8rem" }}>
+                {savingName ? "..." : "Guardar"}
+              </button>
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--htext1)" }}>{m.user?.name ?? m.user_id}</div>
+          </section>
+        )}
+
+        {canManage && (
+          <section style={{ marginBottom: 28 }}>
+            <h2 style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--htext3)", marginBottom: 10 }}>
+              💰 Partner de reintegros
+            </h2>
+            <p style={{ fontSize: "0.78rem", color: "var(--htext2)", marginBottom: 12 }}>
+              El partner es quien paga los reintegros cuando un miembro solicita uno. Si no hay partner, los reintegros quedan abiertos para que cualquier miembro los pague.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <select
+                value={partnerId ?? ""}
+                onChange={e => setPartnerId(e.target.value || null)}
+                style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--hborder)", background: "var(--hbg)", color: "var(--htext1)", fontSize: "0.85rem" }}
+              >
+                <option value="">Sin partner (abierto)</option>
+                {members.map(m => (
+                  <option key={m.user_id} value={m.user_id}>
+                    {m.user?.name ?? m.user_id} {m.role === "owner" ? "(Owner)" : m.role === "admin" ? "(Admin)" : ""}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleSavePartner}
+                disabled={savingPartner || partnerId === group.partner_id}
+                style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "var(--haccent)", color: "white", cursor: "pointer", fontSize: "0.8rem", opacity: partnerId === group.partner_id ? 0.5 : 1 }}
+              >
+                {savingPartner ? "..." : "Guardar"}
+              </button>
             </div>
-            <span style={{ fontSize: "0.7rem", padding: "2px 8px", borderRadius: 4, fontWeight: 600, background: m.role === "owner" ? "#312e81" : m.role === "admin" ? "#14532d" : "var(--hborder)", color: m.role === "owner" ? "#c7d2fe" : m.role === "admin" ? "#86efac" : "var(--htext2)" }}>
-              {m.role}
-            </span>
-            {isOwner && m.role !== "owner" && (
-              <div style={{ display: "flex", gap: 4 }}>
-                <button onClick={() => handleChangeRole(m.user_id, m.role === "admin" ? "member" : "admin")} style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid var(--hborder)", background: "transparent", color: "var(--htext2)", cursor: "pointer", fontSize: "0.7rem" }}>
-                  {m.role === "admin" ? "→ Member" : "→ Admin"}
-                </button>
-                <button onClick={() => handleRemoveMember(m.user_id)} style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid #7f1d1d", background: "transparent", color: "#f87171", cursor: "pointer", fontSize: "0.7rem" }}>
-                  ✕
-                </button>
-              </div>
+          </section>
+        )}
+
+        <section style={{ marginBottom: 28 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <h2 style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--htext3)", margin: 0 }}>
+              Miembros ({members.length})
+            </h2>
+            {canManage && (
+              <button onClick={() => setShowInviteModal(true)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid var(--hborder)", background: "transparent", color: "var(--htext1)", cursor: "pointer", fontSize: "0.78rem" }}>
+                + Invitar
+              </button>
             )}
           </div>
-        ))}
-      </section>
-
-      {isOwner && (
-        <section>
-          <h2 style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#f87171", marginBottom: 10 }}>Zona de peligro</h2>
-          <button onClick={handleDeleteGroup} style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid #7f1d1d", background: "transparent", color: "#f87171", cursor: "pointer", fontSize: "0.82rem" }}>
-            Eliminar grupo &ldquo;{group.name}&rdquo;
-          </button>
-          <p style={{ fontSize: "0.72rem", color: "var(--htext3)", marginTop: 6 }}>Esta acción eliminará todos los datos del grupo y no se puede deshacer.</p>
+          {members.map(m => (
+            <div key={m.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--hborder)" }}>
+              <div style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--haccent)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "white", fontSize: "0.85rem", flexShrink: 0 }}>
+                {m.user?.name?.charAt(0)?.toUpperCase() ?? "?"}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--htext1)" }}>{m.user?.name ?? m.user_id}</div>
+              </div>
+              <span style={{ fontSize: "0.7rem", padding: "2px 8px", borderRadius: 4, fontWeight: 600, background: m.role === "owner" ? "#312e81" : m.role === "admin" ? "#14532d" : "var(--hborder)", color: m.role === "owner" ? "#c7d2fe" : m.role === "admin" ? "#86efac" : "var(--htext2)" }}>
+                {m.role}
+              </span>
+              {isOwner && m.role !== "owner" && (
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button onClick={() => handleChangeRole(m.user_id, m.role === "admin" ? "member" : "admin")} style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid var(--hborder)", background: "transparent", color: "var(--htext2)", cursor: "pointer", fontSize: "0.7rem" }}>
+                    {m.role === "admin" ? "→ Member" : "→ Admin"}
+                  </button>
+                  <button onClick={() => handleRemoveMember(m.user_id)} style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid #7f1d1d", background: "transparent", color: "#f87171", cursor: "pointer", fontSize: "0.7rem" }}>
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
         </section>
-      )}
 
-      {showInviteModal && <InviteModal groupId={group.id} onClose={() => setShowInviteModal(false)} />}
-    </div>
+        {isOwner && (
+          <section>
+            <h2 style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#f87171", marginBottom: 10 }}>Zona de peligro</h2>
+            <button onClick={handleDeleteGroup} style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid #7f1d1d", background: "transparent", color: "#f87171", cursor: "pointer", fontSize: "0.82rem" }}>
+              Eliminar grupo &ldquo;{group.name}&rdquo;
+            </button>
+            <p style={{ fontSize: "0.72rem", color: "var(--htext3)", marginTop: 6 }}>Esta acción eliminará todos los datos del grupo y no se puede deshacer.</p>
+          </section>
+        )}
+
+        {showInviteModal && <InviteModal groupId={group.id} onClose={() => setShowInviteModal(false)} />}
+      </div>
+
+      {/* Floating Toast */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={clearToast}
+        />
+      )}
+    </>
   );
 }
