@@ -21,7 +21,7 @@ interface Group {
 
 interface ToastState {
   message: string;
-  type: "success" | "error";
+  type: "success" | "error" | "loading";
 }
 
 export default function GroupSettingsPage() {
@@ -35,7 +35,7 @@ export default function GroupSettingsPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
-  const showToast = useCallback((message: string, type: "success" | "error") => {
+  const showToast = useCallback((message: string, type: "success" | "error" | "loading") => {
     setToast({ message, type });
   }, []);
 
@@ -116,6 +116,7 @@ export default function GroupSettingsPage() {
   async function handleSavePartner() {
     if (!group) return;
     setSavingPartner(true);
+    showToast("Guardando partner...", "loading");
     try {
       const res = await fetch(`/api/groups/${group.id}`, {
         method: "PATCH",

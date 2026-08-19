@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, XCircle, X } from "lucide-react";
+import { CheckCircle, XCircle, X, Loader2 } from "lucide-react";
 
-export type ToastType = "success" | "error";
+export type ToastType = "success" | "error" | "loading";
 
 interface ToastProps {
   message: string;
@@ -20,6 +20,9 @@ export function Toast({ message, type, onClose, duration = 4000 }: ToastProps) {
     // Trigger enter animation
     requestAnimationFrame(() => setIsVisible(true));
 
+    // Loading toasts don't auto-dismiss
+    if (type === "loading") return;
+
     // Auto dismiss
     const timer = setTimeout(() => {
       setIsLeaving(true);
@@ -27,7 +30,7 @@ export function Toast({ message, type, onClose, duration = 4000 }: ToastProps) {
     }, duration);
 
     return () => clearTimeout(timer);
-  }, [duration, onClose]);
+  }, [duration, onClose, type]);
 
   const handleClose = () => {
     setIsLeaving(true);
@@ -35,6 +38,19 @@ export function Toast({ message, type, onClose, duration = 4000 }: ToastProps) {
   };
 
   const isSuccess = type === "success";
+  const isLoading = type === "loading";
+
+  const getBackground = () => {
+    if (isLoading) return "linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)";
+    if (isSuccess) return "linear-gradient(135deg, #065f46 0%, #047857 100%)";
+    return "linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%)";
+  };
+
+  const getBorderColor = () => {
+    if (isLoading) return "rgba(147, 197, 253, 0.3)";
+    if (isSuccess) return "rgba(134, 239, 172, 0.3)";
+    return "rgba(252, 165, 165, 0.3)";
+  };
 
   return (
     <div
@@ -48,9 +64,7 @@ export function Toast({ message, type, onClose, duration = 4000 }: ToastProps) {
         gap: 12,
         padding: "14px 18px",
         borderRadius: 12,
-        background: isSuccess 
-          ? "linear-gradient(135deg, #065f46 0%, #047857 100%)" 
-          : "linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%)",
+        background: getBackground(),
         color: "white",
         fontSize: "0.9rem",
         fontWeight: 500,
@@ -61,7 +75,7 @@ export function Toast({ message, type, onClose, duration = 4000 }: ToastProps) {
         opacity: isVisible && !isLeaving ? 1 : 0,
         transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
         backdropFilter: "blur(8px)",
-        border: `1px solid ${isSuccess ? "rgba(134, 239, 172, 0.3)" : "rgba(252, 165, 165, 0.3)"}`,
+        border: `1px solid ${getBorderColor()}`,
         maxWidth: 360,
       }}
     >
@@ -70,14 +84,20 @@ export function Toast({ message, type, onClose, duration = 4000 }: ToastProps) {
           width: 28,
           height: 28,
           borderRadius: "50%",
-          background: isSuccess ? "rgba(134, 239, 172, 0.2)" : "rgba(252, 165, 165, 0.2)",
+          background: isLoading 
+            ? "rgba(147, 197, 253, 0.2)" 
+            : isSuccess 
+              ? "rgba(134, 239, 172, 0.2)" 
+              : "rgba(252, 165, 165, 0.2)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
         }}
       >
-        {isSuccess ? (
+        {isLoading ? (
+          <Loader2 style={{ width: 16, height: 16, color: "#93c5fd", animation: "spin 1s linear infinite" }} />
+        ) : isSuccess ? (
           <CheckCircle style={{ width: 16, height: 16, color: "#86efac" }} />
         ) : (
           <XCircle style={{ width: 16, height: 16, color: "#fca5a5" }} />
@@ -86,53 +106,61 @@ export function Toast({ message, type, onClose, duration = 4000 }: ToastProps) {
       
       <span style={{ flex: 1, lineHeight: 1.4 }}>{message}</span>
       
-      <button
-        onClick={handleClose}
-        style={{
-          background: "rgba(255,255,255,0.1)",
-          border: "none",
-          borderRadius: 6,
-          padding: 4,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition: "background 0.2s",
-          flexShrink: 0,
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")}
-        onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}
-      >
-        <X style={{ width: 14, height: 14, color: "rgba(255,255,255,0.8)" }} />
-      </button>
+      {!isLoading && (
+        <button
+          onClick={handleClose}
+          style={{
+            background: "rgba(255,255,255,0.1)",
+            border: "none",
+            borderRadius: 6,
+            padding: 4,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transition: "background 0.2s",
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}
+        >
+          <X style={{ width: 14, height: 14, color: "rgba(255,255,255,0.8)" }} />
+        </button>
+      )}
 
-      {/* Progress bar */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: 3,
-          borderRadius: "0 0 12px 12px",
-          overflow: "hidden",
-        }}
-      >
+      {/* Progress bar - only show for non-loading toasts */}
+      {!isLoading && (
         <div
           style={{
-            width: "100%",
-            height: "100%",
-            background: isSuccess ? "#86efac" : "#fca5a5",
-            animation: `shrink ${duration}ms linear forwards`,
-            transformOrigin: "left",
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 3,
+            borderRadius: "0 0 12px 12px",
+            overflow: "hidden",
           }}
-        />
-      </div>
+        >
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              background: isSuccess ? "#86efac" : "#fca5a5",
+              animation: `shrink ${duration}ms linear forwards`,
+              transformOrigin: "left",
+            }}
+          />
+        </div>
+      )}
 
       <style jsx>{`
         @keyframes shrink {
           from { transform: scaleX(1); }
           to { transform: scaleX(0); }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </div>

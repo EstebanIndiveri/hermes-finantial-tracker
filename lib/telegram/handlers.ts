@@ -89,9 +89,15 @@ function buildReimbursementsMessage(
 
   const keyboard = allToPay.length > 0
     ? buildPersonalKeyboard(
-      allToPay.map((reimbursement) => [
-        { text: "✅ Pagado", callback_data: `pay_reimbursement:${reimbursement.id}` },
-      ]),
+      allToPay.map((reimbursement) => {
+        const openTag = reimbursement.payerId === null ? " 🌐" : "";
+        return [
+          { 
+            text: `✅ Pagar $${reimbursement.amount.toLocaleString("es-AR")}${openTag}`, 
+            callback_data: `pay_reimbursement:${reimbursement.id}` 
+          },
+        ];
+      }),
     )
     : undefined;
 
