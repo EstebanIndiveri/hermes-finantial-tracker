@@ -14,26 +14,38 @@ interface Reimbursement {
   createdAt: number;
 }
 
+interface CurrentUser {
+  id: string;
+}
+
 export function ReimbursementsList() {
   const [reimbursements, setReimbursements] = useState<Reimbursement[]>([]);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetchReimbursements();
+    void fetchData();
   }, []);
 
-  async function fetchReimbursements() {
+  async function fetchData() {
     try {
-      const res = await fetch("/api/reimbursements");
-      if (!res.ok) {
-        return;
+      const [reimbRes, userRes] = await Promise.all([
+        fetch("/api/reimbursements"),
+        fetch("/api/auth/me"),
+      ]);
+
+      if (reimbRes.ok) {
+        const data: Reimbursement[] = await reimbRes.json();
+        setReimbursements(data);
       }
 
-      const data: Reimbursement[] = await res.json();
-      setReimbursements(data);
+      if (userRes.ok) {
+        const user: CurrentUser = await userRes.json();
+        setCurrentUser(user);
+      }
     } catch (error) {
-      console.error("Error fetching reimbursements:", error);
+      console.error("Error fetching data:", error);
     } finally {
       setLoading(false);
     }
@@ -46,7 +58,7 @@ export function ReimbursementsList() {
         method: "POST",
       });
       if (res.ok) {
-        await fetchReimbursements();
+        await fetchData();
       }
     } catch (error) {
       console.error("Error paying reimbursement:", error);
@@ -106,8 +118,25 @@ export function ReimbursementsList() {
     );
   }
 
-  const pendingToPay = reimbursements.filter((r) => r.status === "pending" && r.payerId);
-  const pendingToReceive = reimbursements.filter((r) => r.status === "pending" && !r.payerId);
+  const userId = currentUser?.id;
+
+  // Reintegros que el usuario puede pagar:
+  // - Assigned to this user (payerId === userId)
+  // - Open (payerId === null) AND not requested by this user
+  const canPay = (r: Reimbursement) => 
+    r.status === "pending" && (
+      r.payerId === userId || 
+      (r.payerId === null && r.requesterId !== userId)
+    );
+
+  // Reintegros que el usuario solicitó (pendientes de recibir)
+  const pendingToReceive = reimbursements.filter(
+    (r) => r.status === "pending" && r.requesterId === userId
+  );
+
+  // Reintegros que el usuario puede pagar
+  const pendingToPay = reimbursements.filter(canPay);
+
   const completed = reimbursements.filter((r) => r.status !== "pending");
 
   const cardTitleStyle: React.CSSProperties = {
