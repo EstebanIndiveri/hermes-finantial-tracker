@@ -55,6 +55,7 @@ export async function getGroupMembersWithTelegram(groupId: string, excludeUserId
 export async function notifyGroupOfReimbursementRequest(
   groupId: string,
   requesterId: string,
+  reimbursementId: string,
   amount: number,
   categoryName: string,
   description: string,
@@ -75,13 +76,17 @@ export async function notifyGroupOfReimbursementRequest(
 📁 Categoría: ${categoryName}
 📝 ${description || "Sin descripción"}
 
-💳 Datos de pago: ${paymentText}
+💳 Datos de pago: ${paymentText}`;
 
-Usa /reintegros para ver pendientes.`;
+  const replyMarkup = {
+    inline_keyboard: [[
+      { text: `✅ Pagar $${amount.toLocaleString("es-AR")}`, callback_data: `pay_reimbursement:${reimbursementId}` },
+    ]],
+  };
 
   for (const member of members) {
     if (member.telegramId) {
-      await sendTelegramMessage(member.telegramId, message);
+      await sendTelegramMessage(member.telegramId, message, { reply_markup: replyMarkup });
     }
   }
 }

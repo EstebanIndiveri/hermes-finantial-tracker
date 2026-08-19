@@ -164,7 +164,7 @@ describe("telegram reimbursements", () => {
     expect(response.text).toContain("¿Necesitás reintegro de este gasto?");
     expect(response.replyMarkup).toEqual({
       inline_keyboard: [[
-        { text: "💸 Sí, necesito reintegro", callback_data: expect.stringMatching(/^expense:reimbursement_yes:/) },
+        { text: "💸 Sí", callback_data: expect.stringMatching(/^expense:reimbursement_yes:/) },
         { text: "❌ No", callback_data: expect.stringMatching(/^expense:reimbursement_no:/) },
       ]],
     });

@@ -118,6 +118,7 @@ describe("reimbursement requests helper", () => {
     expect(notifyGroupOfReimbursementRequest).toHaveBeenCalledWith(
       "group-1",
       "user-1",
+      "reimbursement-id",
       2500,
       "Comida",
       "Cena",

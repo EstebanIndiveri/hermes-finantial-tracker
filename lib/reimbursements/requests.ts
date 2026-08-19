@@ -139,6 +139,7 @@ export async function createReimbursementWithNotifications(
   await notifyGroupOfReimbursementRequest(
     transaction.groupId,
     requesterId,
+    request.id,
     amount,
     category?.name ?? "Sin categoría",
     transaction.description ?? "",

@@ -280,7 +280,7 @@ export async function handlePersonalCallback(
       return {
         text: `${result.text}\n\n¿Necesitás reintegro de este gasto?`,
         replyMarkup: buildPersonalKeyboard([[
-          { text: "💸 Sí, necesito reintegro", callback_data: `expense:reimbursement_yes:${result.transactionId}` },
+          { text: "💸 Sí", callback_data: `expense:reimbursement_yes:${result.transactionId}` },
           { text: "❌ No", callback_data: `expense:reimbursement_no:${result.transactionId}` },
         ]]),
         edit: true,
@@ -337,7 +337,7 @@ export async function handlePersonalCallback(
       return {
         text: `⚠️ Registrado como excepción.\n\n${result.text}\n\n¿Necesitás reintegro de este gasto?`,
         replyMarkup: buildPersonalKeyboard([[
-          { text: "💸 Sí, necesito reintegro", callback_data: `expense:reimbursement_yes:${result.transactionId}` },
+          { text: "💸 Sí", callback_data: `expense:reimbursement_yes:${result.transactionId}` },
           { text: "❌ No", callback_data: `expense:reimbursement_no:${result.transactionId}` },
         ]]),
         edit: true,
