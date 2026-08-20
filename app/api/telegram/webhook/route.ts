@@ -134,13 +134,26 @@ export async function POST(req: NextRequest) {
     (msg.photo?.length ? "[photo]" : null) ??
     (msg.document ? "[document]" : null) ?? "";
 
+  // Debug: log voice detection
   const voiceFileId = msg.voice?.file_id ?? msg.audio?.file_id;
-  if (voiceFileId && !messageText) {
+  if (msg.voice || msg.audio) {
+    console.log("Voice/Audio detected:", {
+      hasVoice: !!msg.voice,
+      hasAudio: !!msg.audio,
+      fileId: voiceFileId,
+      duration: msg.voice?.duration ?? msg.audio?.duration,
+      messageTextBefore: messageText,
+    });
+  }
+
+  if (voiceFileId) {
     try {
+      console.log("Starting voice transcription for file:", voiceFileId);
       const transcription = await transcribeVoiceMessage(voiceFileId);
+      console.log("Transcription result:", transcription ? transcription.substring(0, 100) : "null");
+      
       if (transcription) {
         messageText = transcription;
-        console.log("Voice transcribed:", transcription.substring(0, 50));
       } else {
         await sendTelegramMessage(chatId, "❌ No pude entender el audio. Intentá de nuevo o escribí el mensaje.");
         return NextResponse.json({ ok: true });

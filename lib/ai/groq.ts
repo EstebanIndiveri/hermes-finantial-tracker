@@ -6,7 +6,7 @@ export function getGroqClient(): GroqClient | null {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
 
-  const model = process.env.GROQ_MODEL ?? "openai/gpt-oss-20b";
+  const model = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 
   return {
     async complete(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -39,9 +39,13 @@ export async function transcribeAudio(
   filename: string = "voice.ogg"
 ): Promise<string | null> {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    console.error("transcribeAudio: GROQ_API_KEY not configured");
+    return null;
+  }
 
   const model = process.env.GROQ_WHISPER_MODEL ?? "whisper-large-v3-turbo";
+  console.log("transcribeAudio: Using model", model, "buffer size:", audioBuffer.length);
 
   const formData = new FormData();
   formData.append("file", new Blob([new Uint8Array(audioBuffer)]), filename);
@@ -59,11 +63,13 @@ export async function transcribeAudio(
     });
 
     if (!res.ok) {
-      console.error("Groq Whisper API error:", res.status);
+      const errorText = await res.text().catch(() => "no body");
+      console.error("Groq Whisper API error:", res.status, errorText);
       return null;
     }
 
     const data = (await res.json()) as { text?: string };
+    console.log("transcribeAudio: Success, text:", data.text?.substring(0, 50));
     return data.text ?? null;
   } catch (err) {
     console.error("Groq transcription error:", err instanceof Error ? err.message : err);
