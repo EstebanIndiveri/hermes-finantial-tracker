@@ -410,6 +410,50 @@ export async function handlePersonalCallback(
       };
     }
 
+    // Handle category selection from voice/text expense (when category not detected)
+    if (data.startsWith("expense:select_category:")) {
+      const slug = data.replace("expense:select_category:", "");
+      const state = await getConversationState(chatId, telegramUserId);
+      interface ExpenseSelectCategoryState {
+        amount_ars: number;
+        merchant: string | null;
+        user_id: string;
+        group_id: string;
+        requires_reimbursement: boolean;
+      }
+      const stateData = state?.data as ExpenseSelectCategoryState | undefined;
+      if (state?.step !== "expense_select_category" || !stateData) {
+        return { text: "⏱️ Selección expirada.", edit: true };
+      }
+
+      const cat = await db.query.categories.findFirst({
+        where: and(eq(categories.slug, slug), eq(categories.group_id, stateData.group_id)),
+      });
+      if (!cat) {
+        return { text: "❌ Categoría no encontrada.", edit: true };
+      }
+
+      // Transition to expense_confirm state with full data
+      const newState: PendingExpenseState = {
+        step: "expense_confirm",
+        category_id: cat.id,
+        category_name: cat.name,
+        category_emoji: cat.emoji,
+        amount_ars: stateData.amount_ars,
+        merchant: stateData.merchant ?? undefined,
+        group_id: stateData.group_id,
+        user_id: stateData.user_id,
+        is_exception: false,
+        requires_reimbursement: stateData.requires_reimbursement,
+      };
+      await setConversationState(chatId, telegramUserId, {
+        step: "expense_confirm",
+        data: newState,
+      });
+
+      return buildEditedExpenseMessage(newState);
+    }
+
     // ── exception:* — budget exception confirmation ────────────────────
     if (data === "exception:confirm") {
       const state = await getConversationState(chatId, telegramUserId);

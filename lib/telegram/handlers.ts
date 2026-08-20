@@ -98,6 +98,56 @@ function buildExpenseEditedMessage(data: {
   };
 }
 
+/** Builds a category selection keyboard for voice/text expense when category not detected */
+async function buildExpenseCategoryKeyboard(
+  groupId: string,
+  amount_ars: number,
+  merchant: string | null,
+  chatId: string,
+  telegramUserId: string,
+  userId: string,
+  requiresReimbursement: boolean,
+): Promise<PersonalBotMessage> {
+  await setConversationState(chatId, telegramUserId, {
+    step: "expense_select_category",
+    data: {
+      amount_ars,
+      merchant,
+      user_id: userId,
+      group_id: groupId,
+      requires_reimbursement: requiresReimbursement,
+    },
+  });
+
+  const cats = await db.select().from(categories).where(eq(categories.group_id, groupId));
+
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+  for (let i = 0; i < cats.length; i += 2) {
+    const row: Array<{ text: string; callback_data: string }> = [
+      { text: `${cats[i].emoji} ${cats[i].name}`, callback_data: `expense:select_category:${cats[i].slug}` },
+    ];
+    if (cats[i + 1]) {
+      row.push({
+        text: `${cats[i + 1].emoji} ${cats[i + 1].name}`,
+        callback_data: `expense:select_category:${cats[i + 1].slug}`,
+      });
+    }
+    rows.push(row);
+  }
+  rows.push([{ text: "❌ Cancelar", callback_data: "expense:cancel" }]);
+
+  const text = [
+    `🎤 <b>Gasto detectado</b>`,
+    ``,
+    `💰 <b>Monto:</b> $${amount_ars.toLocaleString("es-AR")} ARS`,
+    merchant ? `🏪 <b>Comercio:</b> ${escapeHtml(merchant)}` : "",
+    ``,
+    `📂 <b>¿Qué categoría es?</b>`,
+  ].filter(Boolean).join("\n");
+
+  return { text, replyMarkup: buildPersonalKeyboard(rows) };
+}
+
 function buildReimbursementsMessage(
   reimbursements: ReimbursementRequest[],
   openGroupReimbursements: ReimbursementRequest[],
@@ -1132,7 +1182,16 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       return { text: "Entendí que querés registrar un gasto pero no detecté el monto. Ej: \"gasté 47000 en supermercado\"" };
     }
     if (!slug) {
-      return { text: `Entendí $${amount_ars.toLocaleString("es-AR")} pero no detecté la categoría.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos` };
+      // Show category selection buttons instead of plain text
+      return await buildExpenseCategoryKeyboard(
+        groupId,
+        amount_ars,
+        parsed.merchant ?? parsed.description ?? null,
+        chatId,
+        String(msg.from.id),
+        userId,
+        parsed.requires_reimbursement ?? false,
+      );
     }
 
     const cat = await db.query.categories.findFirst({
