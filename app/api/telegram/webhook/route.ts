@@ -128,23 +128,21 @@ export async function POST(req: NextRequest) {
   const chatId = String(update.message.chat.id);
   const msg = update.message;
   
+  // Debug: log ALL message properties to find voice field
+  console.log("Telegram message keys:", Object.keys(msg));
+  console.log("Message has voice?:", !!msg.voice, "has audio?:", !!msg.audio);
+  if (msg.voice) console.log("Voice object:", JSON.stringify(msg.voice));
+  if (msg.audio) console.log("Audio object:", JSON.stringify(msg.audio));
+  
   // Handle voice messages - transcribe to text
   let messageText =
     msg.text ?? msg.caption ??
     (msg.photo?.length ? "[photo]" : null) ??
     (msg.document ? "[document]" : null) ?? "";
 
-  // Debug: log voice detection
+  // Check for voice message
   const voiceFileId = msg.voice?.file_id ?? msg.audio?.file_id;
-  if (msg.voice || msg.audio) {
-    console.log("Voice/Audio detected:", {
-      hasVoice: !!msg.voice,
-      hasAudio: !!msg.audio,
-      fileId: voiceFileId,
-      duration: msg.voice?.duration ?? msg.audio?.duration,
-      messageTextBefore: messageText,
-    });
-  }
+  console.log("voiceFileId:", voiceFileId, "messageText before:", messageText);
 
   if (voiceFileId) {
     try {
