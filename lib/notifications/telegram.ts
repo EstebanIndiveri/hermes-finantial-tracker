@@ -110,3 +110,45 @@ ${payerName} te ha pagado <b>$${amount.toLocaleString("es-AR")}</b>
 
   await sendTelegramMessage(requester.telegram_user_id, message);
 }
+
+export async function notifyReimbursementCancelled(
+  groupId: string,
+  requesterId: string,
+  requesterName: string,
+  amount: number,
+): Promise<void> {
+  const members = await getGroupMembersWithTelegram(groupId, requesterId);
+
+  const message = `❌ <b>Reintegro Cancelado</b>
+
+${requesterName} canceló su solicitud de reintegro de <b>$${amount.toLocaleString("es-AR")}</b>
+
+No es necesario realizar el pago.`;
+
+  for (const member of members) {
+    if (member.telegramId) {
+      await sendTelegramMessage(member.telegramId, message);
+    }
+  }
+}
+
+export async function notifyReimbursementReminder(
+  payerId: string,
+  requesterName: string,
+  amount: number,
+  daysPending: number,
+): Promise<void> {
+  const payer = await getUserById(payerId);
+
+  if (!payer?.telegram_user_id) {
+    return;
+  }
+
+  const message = `⏰ <b>Recordatorio de Reintegro</b>
+
+${requesterName} te solicitó un reintegro de <b>$${amount.toLocaleString("es-AR")}</b> hace ${daysPending} días.
+
+Usa /reintegros para ver y pagar pendientes.`;
+
+  await sendTelegramMessage(payer.telegram_user_id, message);
+}

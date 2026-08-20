@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { users, transactions, bot_messages, split_sessions, splits } from "@/lib/db/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { users, transactions, bot_messages, split_sessions, splits, reimbursementRequests } from "@/lib/db/schema";
+import { eq, and, gte, lte, lt } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
 import { getPersonalGroup } from "@/lib/groups/permissions";
+import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
 
 /**
  * Daily cron job for proactive Telegram alerts.
@@ -146,6 +147,50 @@ export async function GET(req: NextRequest) {
       } catch (err) {
         console.error("Error sending split session alert:", {
           sessionId: session.id,
+          message: err instanceof Error ? err.message : "Unknown error",
+        });
+      }
+    }
+
+    // Reimbursement reminders — alert payers for reimbursements pending > 3 days
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+    const reimbursementCutoff = Date.now() - THREE_DAYS_MS;
+
+    const pendingOldReimbursements = await db
+      .select({
+        id: reimbursementRequests.id,
+        payerId: reimbursementRequests.payerId,
+        requesterId: reimbursementRequests.requesterId,
+        amount: reimbursementRequests.amount,
+        createdAt: reimbursementRequests.createdAt,
+      })
+      .from(reimbursementRequests)
+      .where(
+        and(
+          eq(reimbursementRequests.status, "pending"),
+          lt(reimbursementRequests.createdAt, reimbursementCutoff),
+        ),
+      );
+
+    for (const reimbursement of pendingOldReimbursements) {
+      // Only send to assigned payers (not open reimbursements)
+      if (!reimbursement.payerId) continue;
+
+      const daysPending = Math.floor((Date.now() - reimbursement.createdAt) / (24 * 60 * 60 * 1000));
+      
+      try {
+        const requester = await getUserById(reimbursement.requesterId);
+        const requesterName = requester?.name ?? "Alguien";
+        
+        await notifyReimbursementReminder(
+          reimbursement.payerId,
+          requesterName,
+          reimbursement.amount,
+          daysPending,
+        );
+      } catch (err) {
+        console.error("Error sending reimbursement reminder:", {
+          reimbursementId: reimbursement.id,
           message: err instanceof Error ? err.message : "Unknown error",
         });
       }

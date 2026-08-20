@@ -18,7 +18,7 @@ import { getConversationState, setConversationState, clearConversationState } fr
 import type { InlineKeyboardMarkup } from "./send-message";
 import { buildPersonalKeyboard } from "./send-message";
 import { buildReceiptProposalMessage } from "./handlers";
-import { createReimbursementWithNotifications, markReimbursementAsPaidWithNotifications } from "@/lib/reimbursements/requests";
+import { createReimbursementWithNotifications, markReimbursementAsPaidWithNotifications, cancelReimbursementWithNotifications } from "@/lib/reimbursements/requests";
 import { getGroupMembership, isAdminOrAbove } from "@/lib/groups/permissions";
 
 export interface PersonalCallbackResponse {
@@ -408,6 +408,21 @@ export async function handlePersonalCallback(
       const paid = await markReimbursementAsPaidWithNotifications(reimbursementId, userId);
       return {
         text: paid ? "✅ Reintegro marcado como pagado." : "❌ No se pudo marcar el reintegro como pagado.",
+        edit: true,
+      };
+    }
+
+    if (data.startsWith("cancel_reimbursement:")) {
+      const reimbursementId = data.split(":")[1] ?? "";
+      if (!reimbursementId) {
+        return { text: "❌ Reintegro inválido.", edit: true };
+      }
+
+      const cancelled = await cancelReimbursementWithNotifications(reimbursementId, userId);
+      return {
+        text: cancelled 
+          ? "✅ Reintegro cancelado. Se notificó al grupo." 
+          : "❌ No se pudo cancelar el reintegro. Solo el solicitante puede cancelarlo.",
         edit: true,
       };
     }

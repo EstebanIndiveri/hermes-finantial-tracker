@@ -342,6 +342,52 @@ export async function cancelReimbursement(id: string, requesterId: string): Prom
 }
 
 /**
+ * Cancels a reimbursement and notifies the payer/group.
+ *
+ * @param id - Reimbursement request identifier.
+ * @param requesterId - User identifier of the requester.
+ * @returns Whether a reimbursement request was cancelled.
+ */
+export async function cancelReimbursementWithNotifications(
+  id: string,
+  requesterId: string,
+): Promise<boolean> {
+  const reimbursement = await getReimbursementById(id);
+
+  if (!reimbursement || reimbursement.status !== "pending" || reimbursement.requesterId !== requesterId) {
+    return false;
+  }
+
+  const cancelled = await cancelReimbursement(id, requesterId);
+
+  if (!cancelled) {
+    return false;
+  }
+
+  const requester = await getUserById(requesterId);
+  const requesterName = requester?.name ?? "Alguien";
+
+  // Get the transaction to find the groupId
+  const [transaction] = await db
+    .select({ groupId: transactions.group_id })
+    .from(transactions)
+    .where(eq(transactions.id, reimbursement.transactionId));
+
+  if (transaction?.groupId) {
+    // Notify all group members except the requester
+    const { notifyReimbursementCancelled } = await import("@/lib/notifications/telegram");
+    await notifyReimbursementCancelled(
+      transaction.groupId,
+      requesterId,
+      requesterName,
+      reimbursement.amount,
+    );
+  }
+
+  return true;
+}
+
+/**
  * Retrieves a reimbursement request by its identifier.
  *
  * @param id - Reimbursement request identifier.

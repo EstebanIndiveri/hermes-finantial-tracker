@@ -66,10 +66,14 @@ function buildReimbursementsMessage(
   const pendingToPay = reimbursements.filter(
     (reimbursement) => reimbursement.status === "pending" && reimbursement.payerId === userId,
   );
-  // User is the requester
+  // User is the requester - pending
   const pendingRequested = reimbursements.filter(
     (reimbursement) => reimbursement.status === "pending" && reimbursement.requesterId === userId,
   );
+  // User's recently paid reimbursements (last 5)
+  const recentlyPaid = reimbursements
+    .filter((r) => r.status === "paid" && (r.requesterId === userId || r.payerId === userId))
+    .slice(0, 5);
   // Open reimbursements from the group (no payer assigned, not requested by user)
   const openToPay = openGroupReimbursements.filter(
     (r) => r.status === "pending",
@@ -84,23 +88,37 @@ function buildReimbursementsMessage(
         return `• $${reimbursement.amount.toLocaleString("es-AR")}${openTag}`;
       })
     : ["• No tenés reintegros pendientes para pagar."];
+  
   const requestedLines = pendingRequested.length > 0
     ? pendingRequested.map((reimbursement) => `• $${reimbursement.amount.toLocaleString("es-AR")}`)
     : ["• No tenés reintegros solicitados pendientes."];
 
-  const keyboard = allToPay.length > 0
-    ? buildPersonalKeyboard(
-      allToPay.map((reimbursement) => {
-        const openTag = reimbursement.payerId === null ? " 🌐" : "";
-        return [
-          { 
-            text: `✅ Pagar $${reimbursement.amount.toLocaleString("es-AR")}${openTag}`, 
-            callback_data: `pay_reimbursement:${reimbursement.id}` 
-          },
-        ];
-      }),
-    )
-    : undefined;
+  const paidLines = recentlyPaid.length > 0
+    ? recentlyPaid.map((r) => {
+        const role = r.requesterId === userId ? "recibido" : "pagado";
+        return `• $${r.amount.toLocaleString("es-AR")} (${role})`;
+      })
+    : ["• Sin historial reciente."];
+
+  // Build keyboard with pay buttons + cancel buttons
+  const keyboardRows: Array<Array<{ text: string; callback_data: string }>> = [];
+  
+  // Pay buttons for pending
+  allToPay.forEach((reimbursement) => {
+    const openTag = reimbursement.payerId === null ? " 🌐" : "";
+    keyboardRows.push([{ 
+      text: `✅ Pagar $${reimbursement.amount.toLocaleString("es-AR")}${openTag}`, 
+      callback_data: `pay_reimbursement:${reimbursement.id}` 
+    }]);
+  });
+  
+  // Cancel buttons for requested
+  pendingRequested.forEach((reimbursement) => {
+    keyboardRows.push([{ 
+      text: `❌ Cancelar $${reimbursement.amount.toLocaleString("es-AR")}`, 
+      callback_data: `cancel_reimbursement:${reimbursement.id}` 
+    }]);
+  });
 
   return {
     text: [
@@ -111,8 +129,12 @@ function buildReimbursementsMessage(
       "🙋 <b>Reintegros solicitados</b>",
       "",
       ...requestedLines,
+      "",
+      "📜 <b>Historial reciente</b>",
+      "",
+      ...paidLines,
     ].join("\n"),
-    replyMarkup: keyboard,
+    replyMarkup: keyboardRows.length > 0 ? buildPersonalKeyboard(keyboardRows) : undefined,
   };
 }
 

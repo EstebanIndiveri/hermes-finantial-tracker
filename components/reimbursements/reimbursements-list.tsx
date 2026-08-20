@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, Clock, DollarSign, XCircle } from "lucide-react";
+import { CheckCircle, Clock, DollarSign, XCircle, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 
 interface Reimbursement {
   id: string;
@@ -16,6 +16,14 @@ interface Reimbursement {
 
 interface CurrentUser {
   id: string;
+}
+
+interface Stats {
+  totalRequested: number;
+  totalPaid: number;
+  totalPending: number;
+  requestedByMe: number;
+  paidByMe: number;
 }
 
 export function ReimbursementsList() {
@@ -110,6 +118,27 @@ export function ReimbursementsList() {
     });
   }
 
+  function calculateStats(): Stats {
+    const userId = currentUser?.id;
+    return {
+      totalRequested: reimbursements
+        .filter((r) => r.requesterId === userId)
+        .reduce((sum, r) => sum + r.amount, 0),
+      totalPaid: reimbursements
+        .filter((r) => r.status === "paid" && r.payerId === userId)
+        .reduce((sum, r) => sum + r.amount, 0),
+      totalPending: reimbursements
+        .filter((r) => r.status === "pending")
+        .reduce((sum, r) => sum + r.amount, 0),
+      requestedByMe: reimbursements
+        .filter((r) => r.requesterId === userId && r.status === "paid")
+        .reduce((sum, r) => sum + r.amount, 0),
+      paidByMe: reimbursements
+        .filter((r) => r.payerId === userId && r.status === "paid")
+        .reduce((sum, r) => sum + r.amount, 0),
+    };
+  }
+
   if (loading) {
     return (
       <div style={{ color: "var(--htext2)", padding: "2rem", textAlign: "center" }}>
@@ -119,6 +148,7 @@ export function ReimbursementsList() {
   }
 
   const userId = currentUser?.id;
+  const stats = calculateStats();
 
   // Reintegros que el usuario puede pagar:
   // - Assigned to this user (payerId === userId)
@@ -176,8 +206,66 @@ export function ReimbursementsList() {
     color: "var(--htext2)",
   };
 
+  const statCardStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    padding: "1rem",
+    borderRadius: "8px",
+    background: "var(--hbg2)",
+    border: "1px solid var(--hborder)",
+    flex: 1,
+    minWidth: "120px",
+  };
+
+  const statValueStyle: React.CSSProperties = {
+    fontSize: "1.25rem",
+    fontWeight: 700,
+    color: "var(--htext1)",
+    marginTop: "0.5rem",
+  };
+
+  const statLabelStyle: React.CSSProperties = {
+    fontSize: "0.75rem",
+    color: "var(--htext2)",
+    textAlign: "center",
+    marginTop: "0.25rem",
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {/* Stats Section */}
+      <div className="h-card h-animate">
+        <div className="h-card-header">
+          <h2 style={cardTitleStyle}>
+            <BarChart3 style={{ width: 20, height: 20 }} />
+            Estadísticas
+          </h2>
+        </div>
+        <div className="h-card-body" style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          <div style={statCardStyle}>
+            <TrendingUp style={{ width: 20, height: 20, color: "#22c55e" }} />
+            <span style={statValueStyle}>
+              ${stats.requestedByMe.toLocaleString("es-AR")}
+            </span>
+            <span style={statLabelStyle}>Recibido</span>
+          </div>
+          <div style={statCardStyle}>
+            <TrendingDown style={{ width: 20, height: 20, color: "#f97316" }} />
+            <span style={statValueStyle}>
+              ${stats.paidByMe.toLocaleString("es-AR")}
+            </span>
+            <span style={statLabelStyle}>Pagado</span>
+          </div>
+          <div style={statCardStyle}>
+            <Clock style={{ width: 20, height: 20, color: "var(--haccent)" }} />
+            <span style={statValueStyle}>
+              ${stats.totalPending.toLocaleString("es-AR")}
+            </span>
+            <span style={statLabelStyle}>Pendiente</span>
+          </div>
+        </div>
+      </div>
       {pendingToPay.length > 0 && (
         <div className="h-card h-animate">
           <div className="h-card-header">
