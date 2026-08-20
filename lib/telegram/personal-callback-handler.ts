@@ -287,12 +287,18 @@ export async function handlePersonalCallback(
 
       // If requires_reimbursement was detected from NL, create it automatically
       if (s.requires_reimbursement) {
-        await createReimbursementWithNotifications(
+        const reimbResult = await createReimbursementWithNotifications(
           result.transactionId,
           s.user_id,
           s.amount_ars,
           undefined,
         );
+        if ("error" in reimbResult) {
+          return {
+            text: `${result.text}\n\n⚠️ ${reimbResult.error}`,
+            edit: true,
+          };
+        }
         return {
           text: `${result.text}\n\n✅ Reintegro solicitado automáticamente. Ya avisamos al grupo.`,
           edit: true,
@@ -473,12 +479,18 @@ export async function handlePersonalCallback(
 
       // If requires_reimbursement was detected from NL, create it automatically
       if (s.requires_reimbursement) {
-        await createReimbursementWithNotifications(
+        const reimbResult = await createReimbursementWithNotifications(
           result.transactionId,
           s.user_id,
           s.amount_ars,
           undefined,
         );
+        if ("error" in reimbResult) {
+          return {
+            text: `⚠️ Registrado como excepción.\n\n${result.text}\n\n⚠️ ${reimbResult.error}`,
+            edit: true,
+          };
+        }
         return {
           text: `⚠️ Registrado como excepción.\n\n${result.text}\n\n✅ Reintegro solicitado automáticamente. Ya avisamos al grupo.`,
           edit: true,
@@ -598,13 +610,16 @@ export async function handlePersonalCallback(
         return { text: "⏱️ Confirmación expirada.", edit: true };
       }
 
-      await createReimbursementWithNotifications(
+      const reimbResult = await createReimbursementWithNotifications(
         reimbursementState.transaction_id,
         reimbursementState.user_id,
         reimbursementState.amount_ars,
         undefined,
       );
       await clearConversationState(chatId, telegramUserId);
+      if ("error" in reimbResult) {
+        return { text: `⚠️ ${reimbResult.error}`, edit: true };
+      }
       return { text: "✅ Reintegro solicitado. Ya avisamos al grupo.", edit: true };
     }
 

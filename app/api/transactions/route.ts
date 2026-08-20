@@ -167,7 +167,17 @@ export async function POST(req: NextRequest) {
 
     // Create reimbursement after transaction is committed (so it can read the transaction)
     if (requiresReimbursement) {
-      await createReimbursementWithNotifications(id, userId, amount_ars, payerId);
+      const reimbResult = await createReimbursementWithNotifications(id, userId, amount_ars, payerId);
+      if ("error" in reimbResult) {
+        // Transaction was created but reimbursement failed - return warning
+        return NextResponse.json({ 
+          id, 
+          amount_ars, 
+          amount_usd, 
+          month,
+          warning: reimbResult.error 
+        }, { status: 201 });
+      }
     }
 
     return NextResponse.json({ id, amount_ars, amount_usd, month }, { status: 201 });

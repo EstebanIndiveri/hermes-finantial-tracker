@@ -34,6 +34,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "transactionId and positive amount required" }, { status: 400 });
   }
 
-  const request = await createReimbursementWithNotifications(transactionId, userId, amount, payerId);
-  return NextResponse.json(request);
+  const result = await createReimbursementWithNotifications(transactionId, userId, amount, payerId);
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: 400 });
+  }
+  return NextResponse.json(result);
 }

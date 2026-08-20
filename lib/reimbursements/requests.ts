@@ -100,7 +100,7 @@ export async function createReimbursementWithNotifications(
   requesterId: string,
   amount: number,
   payerId?: string,
-): Promise<ReimbursementRequest> {
+): Promise<ReimbursementRequest | { error: string }> {
   // First, get the transaction to find the groupId
   const [transaction] = await db
     .select({
@@ -123,6 +123,11 @@ export async function createReimbursementWithNotifications(
     if (group?.partnerId && group.partnerId !== requesterId) {
       effectivePayerId = group.partnerId;
     }
+  }
+
+  // Block self-reimbursement: requester cannot pay their own reimbursement
+  if (effectivePayerId === requesterId) {
+    return { error: "No podés solicitar un reintegro a vos mismo." };
   }
 
   const request = await createReimbursementRequest(transactionId, requesterId, amount, effectivePayerId);
