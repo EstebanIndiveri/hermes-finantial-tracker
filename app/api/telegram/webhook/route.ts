@@ -15,8 +15,9 @@ import {
 import type { TelegramResponse } from "@/lib/telegram/splits/telegram-api";
 import { handlePersonalCallback } from "@/lib/telegram/personal-callback-handler";
 import { editTelegramPersonalMessage } from "@/lib/telegram/send-message";
+import { transcribeVoiceMessage } from "@/lib/telegram/voice";
 
-// Allow up to 60 seconds for OCR + AI processing
+// Allow up to 60 seconds for OCR + AI + Voice processing
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
@@ -126,10 +127,30 @@ export async function POST(req: NextRequest) {
   const telegramUserId = String(update.message.from.id);
   const chatId = String(update.message.chat.id);
   const msg = update.message;
-  const messageText =
+  
+  // Handle voice messages - transcribe to text
+  let messageText =
     msg.text ?? msg.caption ??
     (msg.photo?.length ? "[photo]" : null) ??
     (msg.document ? "[document]" : null) ?? "";
+
+  const voiceFileId = msg.voice?.file_id ?? msg.audio?.file_id;
+  if (voiceFileId && !messageText) {
+    try {
+      const transcription = await transcribeVoiceMessage(voiceFileId);
+      if (transcription) {
+        messageText = transcription;
+        console.log("Voice transcribed:", transcription.substring(0, 50));
+      } else {
+        await sendTelegramMessage(chatId, "❌ No pude entender el audio. Intentá de nuevo o escribí el mensaje.");
+        return NextResponse.json({ ok: true });
+      }
+    } catch (err) {
+      console.error("Voice transcription error:", err instanceof Error ? err.message : err);
+      await sendTelegramMessage(chatId, "❌ Error procesando el audio. Intentá de nuevo.");
+      return NextResponse.json({ ok: true });
+    }
+  }
 
   const updateId = String(update.update_id);
   const isGroupMessage = msg?.chat?.type === "group" || msg?.chat?.type === "supergroup";

@@ -33,3 +33,40 @@ export function getGroqClient(): GroqClient | null {
     },
   };
 }
+
+export async function transcribeAudio(
+  audioBuffer: Buffer,
+  filename: string = "voice.ogg"
+): Promise<string | null> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return null;
+
+  const model = process.env.GROQ_WHISPER_MODEL ?? "whisper-large-v3-turbo";
+
+  const formData = new FormData();
+  formData.append("file", new Blob([new Uint8Array(audioBuffer)]), filename);
+  formData.append("model", model);
+  formData.append("language", "es");
+  formData.append("response_format", "json");
+
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      console.error("Groq Whisper API error:", res.status);
+      return null;
+    }
+
+    const data = (await res.json()) as { text?: string };
+    return data.text ?? null;
+  } catch (err) {
+    console.error("Groq transcription error:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
