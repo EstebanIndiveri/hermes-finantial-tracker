@@ -128,40 +128,78 @@ export async function POST(req: NextRequest) {
   const chatId = String(update.message.chat.id);
   const msg = update.message;
   
-  // Debug: log ALL message properties to find voice field
-  console.log("Telegram message keys:", Object.keys(msg));
-  console.log("Message has voice?:", !!msg.voice, "has audio?:", !!msg.audio);
-  if (msg.voice) console.log("Voice object:", JSON.stringify(msg.voice));
-  if (msg.audio) console.log("Audio object:", JSON.stringify(msg.audio));
+  // VOICE MESSAGE HANDLING - Check FIRST before anything else
+  if (msg.voice || msg.audio) {
+    const voiceFileId = msg.voice?.file_id ?? msg.audio?.file_id;
+    console.log("🎤 VOICE DETECTED:", {
+      type: msg.voice ? "voice" : "audio",
+      fileId: voiceFileId,
+      duration: msg.voice?.duration ?? msg.audio?.duration,
+      mimeType: msg.voice?.mime_type ?? msg.audio?.mime_type,
+    });
+
+    if (!voiceFileId) {
+      await sendTelegramMessage(chatId, "❌ Error: no se pudo obtener el archivo de audio.");
+      return NextResponse.json({ ok: true });
+    }
+
+    try {
+      console.log("Starting transcription for:", voiceFileId);
+      const transcription = await transcribeVoiceMessage(voiceFileId);
+      console.log("Transcription result:", transcription);
+      
+      if (!transcription) {
+        await sendTelegramMessage(chatId, "❌ No pude transcribir el audio. Intentá de nuevo o escribí el mensaje.");
+        return NextResponse.json({ ok: true });
+      }
+
+      // Process transcribed text through normal flow
+      const fakeUpdate = { 
+        ...update, 
+        message: { ...msg, text: transcription } 
+      };
+      
+      // Continue with normal message processing using transcribed text
+      const user = await db.query.users.findFirst({
+        where: eq(users.telegram_user_id, telegramUserId),
+      });
+
+      if (!user) {
+        await sendTelegramMessage(chatId, "🎤 Audio transcrito pero no estás vinculado. Vinculá tu cuenta primero.");
+        return NextResponse.json({ ok: true });
+      }
+
+      let groupId: string | null = user.active_telegram_group_id;
+      if (!groupId) {
+        try {
+          const personalGroup = await getPersonalGroup(user.id);
+          groupId = personalGroup ?? null;
+        } catch {
+          groupId = null;
+        }
+      }
+
+      if (!groupId) {
+        await sendTelegramMessage(chatId, "🎤 Audio transcrito pero no tenés grupo activo.");
+        return NextResponse.json({ ok: true });
+      }
+
+      const botResponse = await handleTelegramMessage(fakeUpdate, user.id, groupId);
+      await sendTelegramMessage(chatId, `🎤 "${transcription}"\n\n${botResponse.text}`, botResponse.replyMarkup);
+      return NextResponse.json({ ok: true });
+
+    } catch (err) {
+      console.error("Voice processing error:", err);
+      await sendTelegramMessage(chatId, "❌ Error procesando el audio: " + (err instanceof Error ? err.message : "desconocido"));
+      return NextResponse.json({ ok: true });
+    }
+  }
   
-  // Handle voice messages - transcribe to text
+  // Regular text message handling
   let messageText =
     msg.text ?? msg.caption ??
     (msg.photo?.length ? "[photo]" : null) ??
     (msg.document ? "[document]" : null) ?? "";
-
-  // Check for voice message
-  const voiceFileId = msg.voice?.file_id ?? msg.audio?.file_id;
-  console.log("voiceFileId:", voiceFileId, "messageText before:", messageText);
-
-  if (voiceFileId) {
-    try {
-      console.log("Starting voice transcription for file:", voiceFileId);
-      const transcription = await transcribeVoiceMessage(voiceFileId);
-      console.log("Transcription result:", transcription ? transcription.substring(0, 100) : "null");
-      
-      if (transcription) {
-        messageText = transcription;
-      } else {
-        await sendTelegramMessage(chatId, "❌ No pude entender el audio. Intentá de nuevo o escribí el mensaje.");
-        return NextResponse.json({ ok: true });
-      }
-    } catch (err) {
-      console.error("Voice transcription error:", err instanceof Error ? err.message : err);
-      await sendTelegramMessage(chatId, "❌ Error procesando el audio. Intentá de nuevo.");
-      return NextResponse.json({ ok: true });
-    }
-  }
 
   const updateId = String(update.update_id);
   const isGroupMessage = msg?.chat?.type === "group" || msg?.chat?.type === "supergroup";
