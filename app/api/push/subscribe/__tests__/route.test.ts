@@ -44,7 +44,7 @@ describe("POST /api/push/subscribe", () => {
   });
 
   it("returns 400 when the subscription payload is incomplete", async () => {
-    verifySession.mockResolvedValue({ userId: "user-1" });
+    verifySession.mockResolvedValue("user-1");
 
     const response = await POST(makeReq("POST", { subscription: { endpoint: "https://example.test/subscription" } }, "session-token"));
 
@@ -53,7 +53,7 @@ describe("POST /api/push/subscribe", () => {
   });
 
   it("stores the subscription for the authenticated user", async () => {
-    verifySession.mockResolvedValue({ userId: "user-1" });
+    verifySession.mockResolvedValue("user-1");
 
     const response = await POST(makeReq("POST", {
       subscription: {
@@ -86,7 +86,7 @@ describe("DELETE /api/push/subscribe", () => {
   });
 
   it("returns 400 when endpoint is missing", async () => {
-    verifySession.mockResolvedValue({ userId: "user-1" });
+    verifySession.mockResolvedValue("user-1");
 
     const response = await DELETE(makeReq("DELETE", {}, "session-token"));
 
@@ -95,7 +95,7 @@ describe("DELETE /api/push/subscribe", () => {
   });
 
   it("removes the subscription for the authenticated user", async () => {
-    verifySession.mockResolvedValue({ userId: "user-1" });
+    verifySession.mockResolvedValue("user-1");
 
     const response = await DELETE(
       makeReq("DELETE", { endpoint: "https://example.test/subscription" }, "session-token"),

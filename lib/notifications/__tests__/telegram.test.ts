@@ -136,7 +136,7 @@ describe("notifications telegram", () => {
       isDefault: true,
     });
 
-    await notifyGroupOfReimbursementRequest("group-1", "user-1", 12000, "Comida", "Cena del viernes");
+    await notifyGroupOfReimbursementRequest("group-1", "user-1", "reimb-1", 12000, "Comida", "Cena del viernes");
 
     expect(global.fetch).toHaveBeenCalledTimes(2);
     const firstBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body as string);
