@@ -49,6 +49,39 @@ interface PendingExpenseReimbursementState {
   group_id: string;
 }
 
+function escapeHtml(text: string): string {
+  return text.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
+}
+
+function buildEditedExpenseMessage(state: PendingExpenseState): PersonalCallbackResponse {
+  const formatted = state.amount_ars.toLocaleString("es-AR", { minimumFractionDigits: 0 });
+  const lines = [
+    `💳 <b>¿Registramos este gasto?</b> (✏️ editado)`,
+    ``,
+    `💰 <b>Monto:</b> $${formatted} ARS`,
+    `📂 <b>Categoría:</b> ${state.category_emoji} ${state.category_name}`,
+    state.merchant ? `🏪 <b>Comercio:</b> ${escapeHtml(state.merchant)}` : "",
+    ``,
+    `¿Todo bien?`,
+  ].filter(Boolean);
+
+  return {
+    text: lines.join("\n"),
+    edit: true,
+    replyMarkup: buildPersonalKeyboard([
+      [{ text: "✅ Confirmar", callback_data: "expense:confirm" }],
+      [
+        { text: "💰 Editar monto", callback_data: "expense:edit_amount" },
+        { text: "📂 Editar categoría", callback_data: "expense:edit_category" },
+      ],
+      [
+        { text: "🏪 Editar comercio", callback_data: "expense:edit_merchant" },
+        { text: "❌ Cancelar", callback_data: "expense:cancel" },
+      ],
+    ]),
+  };
+}
+
 // ── Shared: register a transaction ──
 async function registerPersonalTransaction(
   userId: string,
@@ -290,6 +323,91 @@ export async function handlePersonalCallback(
     if (data === "expense:cancel") {
       await clearConversationState(chatId, telegramUserId);
       return { text: "❌ Gasto cancelado.", edit: true };
+    }
+
+    // ── expense:edit_* — Edit pending expense fields ─────────────────
+    if (data === "expense:edit_amount") {
+      const state = await getConversationState(chatId, telegramUserId);
+      if (state?.step !== "expense_confirm") {
+        return { text: "⏱️ Confirmación expirada.", edit: true };
+      }
+      await setConversationState(chatId, telegramUserId, {
+        ...state,
+        step: "expense_edit_amount",
+      });
+      return { 
+        text: "💰 Escribí el nuevo monto (solo el número):", 
+        edit: true 
+      };
+    }
+
+    if (data === "expense:edit_category") {
+      const state = await getConversationState(chatId, telegramUserId);
+      const stateData = state?.data as PendingExpenseState | undefined;
+      if (state?.step !== "expense_confirm" || !stateData) {
+        return { text: "⏱️ Confirmación expirada.", edit: true };
+      }
+      
+      const cats = await db.select().from(categories).where(eq(categories.group_id, stateData.group_id));
+      const buttons = cats.map(c => ({
+        text: `${c.emoji} ${c.name}`,
+        callback_data: `expense:set_category:${c.id}`,
+      }));
+      const rows = [];
+      for (let i = 0; i < buttons.length; i += 2) {
+        rows.push(buttons.slice(i, i + 2));
+      }
+      rows.push([{ text: "❌ Cancelar", callback_data: "expense:cancel" }]);
+      
+      return { 
+        text: "📂 Seleccioná la categoría:", 
+        edit: true,
+        replyMarkup: buildPersonalKeyboard(rows),
+      };
+    }
+
+    if (data.startsWith("expense:set_category:")) {
+      const categoryId = data.replace("expense:set_category:", "");
+      const state = await getConversationState(chatId, telegramUserId);
+      const stateData = state?.data as PendingExpenseState | undefined;
+      if (state?.step !== "expense_confirm" || !stateData) {
+        return { text: "⏱️ Confirmación expirada.", edit: true };
+      }
+      
+      const cat = await db.query.categories.findFirst({
+        where: eq(categories.id, categoryId),
+      });
+      if (!cat) {
+        return { text: "❌ Categoría no encontrada.", edit: true };
+      }
+      
+      const updatedState: PendingExpenseState = {
+        ...stateData,
+        category_id: cat.id,
+        category_name: cat.name,
+        category_emoji: cat.emoji,
+      };
+      await setConversationState(chatId, telegramUserId, {
+        step: "expense_confirm",
+        data: updatedState,
+      });
+      
+      return buildEditedExpenseMessage(updatedState);
+    }
+
+    if (data === "expense:edit_merchant") {
+      const state = await getConversationState(chatId, telegramUserId);
+      if (state?.step !== "expense_confirm") {
+        return { text: "⏱️ Confirmación expirada.", edit: true };
+      }
+      await setConversationState(chatId, telegramUserId, {
+        ...state,
+        step: "expense_edit_merchant",
+      });
+      return { 
+        text: "🏪 Escribí el nombre del comercio:", 
+        edit: true 
+      };
     }
 
     // ── exception:* — budget exception confirmation ────────────────────

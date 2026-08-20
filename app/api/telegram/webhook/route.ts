@@ -131,22 +131,17 @@ export async function POST(req: NextRequest) {
   // VOICE MESSAGE HANDLING - Check FIRST before anything else
   if (msg.voice || msg.audio) {
     const voiceFileId = msg.voice?.file_id ?? msg.audio?.file_id;
-    console.log("🎤 VOICE DETECTED:", {
-      type: msg.voice ? "voice" : "audio",
-      fileId: voiceFileId,
-      duration: msg.voice?.duration ?? msg.audio?.duration,
-      mimeType: msg.voice?.mime_type ?? msg.audio?.mime_type,
-    });
 
     if (!voiceFileId) {
       await sendTelegramMessage(chatId, "❌ Error: no se pudo obtener el archivo de audio.");
       return NextResponse.json({ ok: true });
     }
 
+    // Send immediate feedback while processing
+    await sendTelegramMessage(chatId, "🎤 <i>Procesando audio...</i>").catch(() => {});
+
     try {
-      console.log("Starting transcription for:", voiceFileId);
       const transcription = await transcribeVoiceMessage(voiceFileId);
-      console.log("Transcription result:", transcription);
       
       if (!transcription) {
         await sendTelegramMessage(chatId, "❌ No pude transcribir el audio. Intentá de nuevo o escribí el mensaje.");
@@ -159,7 +154,6 @@ export async function POST(req: NextRequest) {
         message: { ...msg, text: transcription } 
       };
       
-      // Continue with normal message processing using transcribed text
       const user = await db.query.users.findFirst({
         where: eq(users.telegram_user_id, telegramUserId),
       });

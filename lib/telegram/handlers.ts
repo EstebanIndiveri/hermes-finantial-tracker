@@ -42,15 +42,56 @@ function buildExpenseConfirmationMessage(
   const lines = [
     `💳 <b>¿Registramos este gasto?</b>`,
     ``,
-    `${categoryEmoji} <b>${categoryName}</b>: $${formatted} ARS`,
-    merchant ? `🏪 ${escapeHtml(merchant)}` : "",
+    `💰 <b>Monto:</b> $${formatted} ARS`,
+    `📂 <b>Categoría:</b> ${categoryEmoji} ${categoryName}`,
+    merchant ? `🏪 <b>Comercio:</b> ${escapeHtml(merchant)}` : "",
+    ``,
+    `¿Todo bien?`,
   ].filter(Boolean);
 
   return {
     text: lines.join("\n"),
     replyMarkup: buildPersonalKeyboard([
+      [{ text: "✅ Confirmar", callback_data: "expense:confirm" }],
       [
-        { text: "✅ Confirmar", callback_data: "expense:confirm" },
+        { text: "💰 Editar monto", callback_data: "expense:edit_amount" },
+        { text: "📂 Editar categoría", callback_data: "expense:edit_category" },
+      ],
+      [
+        { text: "🏪 Editar comercio", callback_data: "expense:edit_merchant" },
+        { text: "❌ Cancelar", callback_data: "expense:cancel" },
+      ],
+    ]),
+  };
+}
+
+function buildExpenseEditedMessage(data: {
+  amount_ars: number;
+  category_name: string;
+  category_emoji: string;
+  merchant?: string;
+}): PersonalBotMessage {
+  const formatted = data.amount_ars.toLocaleString("es-AR", { minimumFractionDigits: 0 });
+  const lines = [
+    `💳 <b>¿Registramos este gasto?</b> (✏️ editado)`,
+    ``,
+    `💰 <b>Monto:</b> $${formatted} ARS`,
+    `📂 <b>Categoría:</b> ${data.category_emoji} ${data.category_name}`,
+    data.merchant ? `🏪 <b>Comercio:</b> ${escapeHtml(data.merchant)}` : "",
+    ``,
+    `¿Todo bien?`,
+  ].filter(Boolean);
+
+  return {
+    text: lines.join("\n"),
+    replyMarkup: buildPersonalKeyboard([
+      [{ text: "✅ Confirmar", callback_data: "expense:confirm" }],
+      [
+        { text: "💰 Editar monto", callback_data: "expense:edit_amount" },
+        { text: "📂 Editar categoría", callback_data: "expense:edit_category" },
+      ],
+      [
+        { text: "🏪 Editar comercio", callback_data: "expense:edit_merchant" },
         { text: "❌ Cancelar", callback_data: "expense:cancel" },
       ],
     ]),
@@ -534,6 +575,59 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         date: r.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
         source: "edit",
       });
+    }
+
+    // ── Expense edit handlers (voice/NL flow) ────────────────────────
+    if (editState?.step === "expense_edit_amount") {
+      const ed = editState.data as {
+        category_id: string;
+        category_name: string;
+        category_emoji: string;
+        amount_ars: number;
+        merchant?: string;
+        group_id: string;
+        user_id: string;
+        is_exception: boolean;
+        requires_reimbursement?: boolean;
+      };
+      
+      const newAmount = parseFloat(text.replace(/[$\s.]/g, "").replace(",", ".").trim());
+      if (isNaN(newAmount) || newAmount <= 0) {
+        return { text: "❌ Monto inválido. Enviá solo el número, ej: <code>47000</code>" };
+      }
+
+      const { setConversationState } = await import("./splits/conversation-state");
+      const updatedData = { ...ed, amount_ars: newAmount };
+      await setConversationState(chatId, String(msg.from.id), {
+        step: "expense_confirm",
+        data: { ...updatedData, step: "expense_confirm" },
+      });
+
+      return buildExpenseEditedMessage(updatedData);
+    }
+
+    if (editState?.step === "expense_edit_merchant") {
+      const ed = editState.data as {
+        category_id: string;
+        category_name: string;
+        category_emoji: string;
+        amount_ars: number;
+        merchant?: string;
+        group_id: string;
+        user_id: string;
+        is_exception: boolean;
+        requires_reimbursement?: boolean;
+      };
+      
+      const newMerchant = text.trim().slice(0, 100);
+      const { setConversationState } = await import("./splits/conversation-state");
+      const updatedData = { ...ed, merchant: newMerchant };
+      await setConversationState(chatId, String(msg.from.id), {
+        step: "expense_confirm",
+        data: { ...updatedData, step: "expense_confirm" },
+      });
+
+      return buildExpenseEditedMessage(updatedData);
     }
   }
 
