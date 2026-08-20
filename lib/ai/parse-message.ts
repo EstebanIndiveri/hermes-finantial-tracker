@@ -2,7 +2,7 @@ import { getGroqClient } from "./groq";
 import { z } from "zod";
 
 const ParsedMessageSchema = z.object({
-  intent: z.enum(["register_expense", "query_summary", "query_available", "simulate_expense", "delete_last", "unknown"]),
+  intent: z.enum(["register_expense", "query_summary", "query_available", "simulate_expense", "delete_last", "query_reimbursements", "unknown"]),
   amount_ars: z.number().nullable().optional(),
   category: z.string().nullable().optional(),
   merchant: z.string().nullable().optional(),
@@ -23,6 +23,7 @@ INTENTS disponibles:
 - "query_available": preguntar el presupuesto disponible, cuánto queda, cuánto hay disponible en una categoría (SIN mencionar un monto propio a gastar). Ej: "cuánto me queda en restaurante", "qué disponible tengo en salidas", "cuánto es el disponible para salidas en pareja", "cuánto hay para pareja", "disponible en supermercado", "presupuesto de tarjeta", "cómo está mi presupuesto de viaje", "cuánto puedo gastar en servicios" (sin monto propio), "cuánto queda para salidas en pareja", "disponible salidas pareja"
 - "simulate_expense": preguntar si PUEDE gastar UNA CANTIDAD ESPECÍFICA (tiene monto propio). Ej: "puedo gastar 36000", "me alcanza para 50000 en restaurante", "tengo para gastar 15000", "conviene gastar 40000 ahora"
 - "delete_last": borrar, deshacer o eliminar el último gasto. Ej: "borrá el último gasto", "deshacer", "me equivoqué borrá"
+- "query_reimbursements": ver reintegros pendientes. Ej: "reintegros", "mis reintegros", "ver reintegros", "qué reintegros tengo", "reembolsos pendientes"
 - "unknown": no encaja en ninguna categoría financiera
 
 REGLA CRÍTICA para query_available vs simulate_expense:
@@ -32,9 +33,10 @@ REGLA CRÍTICA para query_available vs simulate_expense:
 - "puedo gastar 5000" o "me alcanza para 30000" → simulate_expense
 
 REINTEGRO (reembolso):
-- Si el usuario menciona "reintegro", "me lo devuelvan", "necesito que me reintegren", "con reembolso" → requires_reimbursement: true
-- Ej: "gasté 5000 en super y necesito reintegro", "2000 verdulería reintegro" → requires_reimbursement: true
-- Si no menciona reintegro → requires_reimbursement: false
+- Si el usuario SOLO pregunta por reintegros (sin monto de gasto) → query_reimbursements
+- Si el usuario menciona "reintegro" JUNTO CON un gasto → requires_reimbursement: true
+- Ej: "gasté 5000 en super y necesito reintegro" → register_expense con requires_reimbursement: true
+- Ej: "reintegros" o "ver reintegros" → query_reimbursements
 
 Categorías válidas (slug): supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos
 
@@ -47,7 +49,7 @@ MAPEO de expresiones a categorías:
 - "colectivo", "transporte", "uber", "taxi" → movilidad
 
 Campos a devolver:
-- intent: uno de los 6 valores anteriores
+- intent: uno de los 7 valores anteriores
 - amount_ars: número en pesos argentinos o null (SOLO para register_expense y simulate_expense)
 - category: slug exacto de la categoría mencionada o null
 - merchant: nombre del comercio o null

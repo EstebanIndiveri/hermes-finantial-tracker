@@ -867,7 +867,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   const parsed = await parseFinancialMessage(text);
 
   if (parsed.intent === "unknown" || parsed.confidence < 0.4) {
-    return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible categoria\n/borrar_ultimo" };
+    return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible categoria\n/reintegros\n/borrar_ultimo" };
   }
 
   // ── query_summary → /resumen ──
@@ -1041,7 +1041,16 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     );
   }
 
-  return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]" };
+  // ── query_reimbursements → /reintegros ──
+  if (parsed.intent === "query_reimbursements") {
+    const [reimbursements, openGroupReimbursements] = await Promise.all([
+      getReimbursementsByUser(userId),
+      getOpenGroupReimbursements(groupId, userId),
+    ]);
+    return buildReimbursementsMessage(reimbursements, openGroupReimbursements, userId);
+  }
+
+  return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]\n/reintegros" };
 }
 
 async function registerTransaction(
