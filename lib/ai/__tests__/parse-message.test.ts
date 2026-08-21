@@ -23,6 +23,7 @@ describe("parseFinancialMessage", () => {
       intent: "unknown",
       confidence: 0,
       needs_confirmation: false,
+      requires_reimbursement: false,
     });
   });
 
@@ -43,6 +44,7 @@ describe("parseFinancialMessage", () => {
       intent: "unknown",
       confidence: 0,
       needs_confirmation: false,
+      requires_reimbursement: false,
     });
   });
 
@@ -58,6 +60,7 @@ describe("parseFinancialMessage", () => {
       date_text: null,
       needs_confirmation: false,
       confidence: 0.95,
+      requires_reimbursement: false,
     };
 
     global.fetch = jest.fn().mockResolvedValue({
@@ -108,6 +111,6 @@ describe("parseFinancialMessage", () => {
 
     const callArgs = (global.fetch as jest.Mock).mock.calls[0][1];
     const body = JSON.parse(callArgs.body);
-    expect(body.model).toBe("gpt-oss-20b");
+    expect(body.model).toBe("llama-3.3-70b-versatile");
   });
 });

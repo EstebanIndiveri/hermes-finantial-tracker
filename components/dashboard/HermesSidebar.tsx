@@ -101,6 +101,17 @@ export function HermesSidebar() {
             </svg>
             Reintegros
           </Link>
+          <Link
+            href="/dashboard/recurrentes"
+            className={`h-nav-item${pathname === "/dashboard/recurrentes" ? " active" : ""}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12h1m8-9v1m8 8h1M5.6 5.6l.7.7m12.1-.7l-.7.7M12 16a4 4 0 100-8 4 4 0 000 8z"/>
+              <path d="M12 16v1m-4-4.5l-.5.5m9-.5l.5.5"/>
+            </svg>
+            Recurrentes
+          </Link>
 
           <div className="h-nav-label" style={{ marginTop: 16 }}>Grupo</div>
           <Link

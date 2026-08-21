@@ -17,9 +17,20 @@ import { formatTransactionConfirm } from "./formatters";
 import { getConversationState, setConversationState, clearConversationState } from "./splits/conversation-state";
 import type { InlineKeyboardMarkup } from "./send-message";
 import { buildPersonalKeyboard } from "./send-message";
-import { buildReceiptProposalMessage } from "./handlers";
+import { buildReceiptProposalMessage, buildRecurringSuggestionsMessage } from "./handlers";
 import { createReimbursementWithNotifications, markReimbursementAsPaidWithNotifications, cancelReimbursementWithNotifications } from "@/lib/reimbursements/requests";
 import { getGroupMembership, isAdminOrAbove } from "@/lib/groups/permissions";
+import {
+  getUserRecurringExpenses,
+  createRecurringExpense,
+  toggleRecurringExpense,
+  deleteRecurringExpense,
+  getPendingExecutions,
+  confirmExecution,
+  skipExecution,
+  getRecurringStats,
+} from "@/lib/db/recurring-queries";
+import { RECURRING_SUGGESTIONS, findSuggestionByName } from "@/lib/recurring/suggestions";
 
 export interface PersonalCallbackResponse {
   text: string;
@@ -668,6 +679,362 @@ export async function handlePersonalCallback(
 
     if (data === "partner:cancel") {
       return { text: "❌ Configuración de partner cancelada.", edit: true };
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Recurring Expenses Callbacks
+    // ─────────────────────────────────────────────────────────────
+
+    if (data === "recurring:list") {
+      const expenses = await getUserRecurringExpenses(userId, { groupId });
+      const stats = await getRecurringStats(userId);
+
+      if (expenses.length === 0) {
+        return {
+          text: [
+            `📅 <b>Gastos Recurrentes</b>`,
+            ``,
+            `No tenés gastos recurrentes configurados.`,
+            ``,
+            `Agregá tus pagos fijos (Netflix, alquiler, servicios).`,
+          ].join("\n"),
+          edit: true,
+          replyMarkup: buildPersonalKeyboard([
+            [{ text: "➕ Agregar recurrente", callback_data: "recurring:suggest" }],
+          ]),
+        };
+      }
+
+      const active = expenses.filter((e) => e.isActive);
+      const paused = expenses.filter((e) => !e.isActive);
+
+      const lines = [
+        `📅 <b>Gastos Recurrentes</b>`,
+        ``,
+        `💰 Total mensual: <b>$${stats.totalMonthly.toLocaleString("es-AR")}</b>`,
+        ``,
+      ];
+
+      if (active.length > 0) {
+        lines.push(`<b>Activos:</b>`);
+        active.forEach((e) => {
+          const emoji = e.category?.emoji ?? "📦";
+          lines.push(`${emoji} ${e.name} - $${e.amountArs.toLocaleString("es-AR")}`);
+        });
+        lines.push(``);
+      }
+
+      if (paused.length > 0) {
+        lines.push(`<b>⏸️ Pausados:</b>`);
+        paused.forEach((e) => {
+          const emoji = e.category?.emoji ?? "📦";
+          lines.push(`${emoji} <s>${e.name}</s>`);
+        });
+      }
+
+      return {
+        text: lines.join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [
+            { text: "➕ Agregar", callback_data: "recurring:suggest" },
+            { text: "📋 Pendientes", callback_data: "recurring:pending" },
+          ],
+        ]),
+      };
+    }
+
+    if (data === "recurring:suggest") {
+      const msg = buildRecurringSuggestionsMessage();
+      return { text: msg.text, edit: true, replyMarkup: msg.replyMarkup };
+    }
+
+    if (data.startsWith("recurring:category:")) {
+      const categoryKey = data.split(":")[2];
+      const category = RECURRING_SUGGESTIONS[categoryKey];
+      
+      if (!category) {
+        return { text: "❌ Categoría no encontrada.", edit: true };
+      }
+
+      const rows = category.items.slice(0, 6).map((item) => [{
+        text: `${item.emoji} ${item.name}${item.suggestedAmount ? ` (~$${item.suggestedAmount.toLocaleString("es-AR")})` : ""}`,
+        callback_data: `recurring:select:${item.name}:${item.suggestedAmount ?? 0}:${item.category}`,
+      }]);
+
+      rows.push([{ text: "⬅️ Volver", callback_data: "recurring:suggest" }]);
+
+      return {
+        text: `${category.emoji} <b>${category.label}</b>\n\nElegí un gasto para agregar:`,
+        edit: true,
+        replyMarkup: buildPersonalKeyboard(rows),
+      };
+    }
+
+    if (data.startsWith("recurring:select:")) {
+      const parts = data.split(":");
+      const name = parts[2];
+      const suggestedAmount = parseFloat(parts[3]) || 0;
+      const categorySlug = parts[4] || null;
+
+      if (suggestedAmount > 0) {
+        // Ask to confirm with suggested amount
+        return {
+          text: [
+            `➕ <b>Agregar ${escapeHtml(name)}</b>`,
+            ``,
+            `Monto sugerido: $${suggestedAmount.toLocaleString("es-AR")}`,
+            ``,
+            `¿Confirmás este monto o querés cambiarlo?`,
+          ].join("\n"),
+          edit: true,
+          replyMarkup: buildPersonalKeyboard([
+            [{ text: `✅ $${suggestedAmount.toLocaleString("es-AR")}`, callback_data: `recurring:add_confirm:${name}:${suggestedAmount}:${categorySlug}` }],
+            [{ text: "✏️ Otro monto", callback_data: `recurring:add_amount:${name}:${categorySlug}` }],
+            [{ text: "❌ Cancelar", callback_data: "recurring:suggest" }],
+          ]),
+        };
+      }
+
+      // No suggested amount, ask for it
+      await setConversationState(chatId, telegramUserId, {
+        step: "recurring_amount",
+        data: { name, category_slug: categorySlug },
+      });
+
+      return {
+        text: [
+          `➕ <b>Agregar ${escapeHtml(name)}</b>`,
+          ``,
+          `¿Cuál es el monto mensual?`,
+          ``,
+          `Escribí el monto (ej: 15000):`,
+        ].join("\n"),
+        edit: true,
+      };
+    }
+
+    if (data.startsWith("recurring:add_confirm:")) {
+      const parts = data.split(":");
+      const name = parts[2];
+      const amount = parseFloat(parts[3]);
+      const categorySlug = parts[4] || null;
+
+      let categoryId: string | null = null;
+      let categoryName = "Sin categoría";
+      let categoryEmoji = "📦";
+
+      if (categorySlug) {
+        const cat = await db.query.categories.findFirst({
+          where: and(eq(categories.slug, categorySlug), eq(categories.group_id, groupId)),
+        });
+        if (cat) {
+          categoryId = cat.id;
+          categoryName = cat.name;
+          categoryEmoji = cat.emoji;
+        }
+      }
+
+      const created = await createRecurringExpense({
+        userId,
+        groupId,
+        name,
+        amountArs: amount,
+        categoryId,
+        merchant: name,
+        frequency: "monthly",
+        dayOfMonth: 1,
+      });
+
+      return {
+        text: [
+          `✅ <b>Gasto recurrente creado</b>`,
+          ``,
+          `📅 <b>${escapeHtml(created.name)}</b>`,
+          `💰 $${created.amountArs.toLocaleString("es-AR")} / mes`,
+          `📂 ${categoryEmoji} ${categoryName}`,
+          ``,
+          `Te recordaré este gasto el día 1 de cada mes.`,
+        ].join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+          [{ text: "➕ Agregar otro", callback_data: "recurring:suggest" }],
+        ]),
+      };
+    }
+
+    if (data.startsWith("recurring:toggle:")) {
+      const recurringId = data.split(":")[2];
+      const toggled = await toggleRecurringExpense(recurringId);
+
+      if (!toggled) {
+        return { text: "❌ Gasto recurrente no encontrado.", edit: true };
+      }
+
+      const emoji = toggled.category?.emoji ?? "📦";
+      const status = toggled.isActive ? "✅ Activado" : "⏸️ Pausado";
+
+      return {
+        text: [
+          `${status}`,
+          ``,
+          `${emoji} <b>${escapeHtml(toggled.name)}</b>`,
+          `$${toggled.amountArs.toLocaleString("es-AR")} / mes`,
+          ``,
+          toggled.isActive ? "Se incluirá el próximo mes." : "No se generará hasta que lo actives.",
+        ].join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+        ]),
+      };
+    }
+
+    if (data.startsWith("recurring:delete:")) {
+      const recurringId = data.split(":")[2];
+      await deleteRecurringExpense(recurringId);
+
+      return {
+        text: "✅ Gasto recurrente eliminado.",
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+        ]),
+      };
+    }
+
+    if (data === "recurring:pending") {
+      const pending = await getPendingExecutions(userId);
+      const stats = await getRecurringStats(userId);
+
+      if (pending.length === 0) {
+        return {
+          text: [
+            `📅 <b>Gastos Pendientes</b>`,
+            ``,
+            stats.confirmedThisMonth > 0
+              ? `✅ Ya confirmaste ${stats.confirmedThisMonth} gasto${stats.confirmedThisMonth > 1 ? "s" : ""} este mes.`
+              : `No tenés gastos recurrentes pendientes.`,
+          ].join("\n"),
+          edit: true,
+          replyMarkup: buildPersonalKeyboard([
+            [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+          ]),
+        };
+      }
+
+      const total = pending.reduce(
+        (sum, e) => sum + (e.amountArs ?? e.recurringExpense.amountArs),
+        0
+      );
+
+      const lines = [
+        `📅 <b>Gastos Pendientes del Mes</b>`,
+        ``,
+      ];
+
+      pending.forEach((e, i) => {
+        const emoji = e.recurringExpense.category?.emoji ?? "📦";
+        const amount = e.amountArs ?? e.recurringExpense.amountArs;
+        lines.push(`${i + 1}. ${emoji} ${e.recurringExpense.name} - $${amount.toLocaleString("es-AR")}`);
+      });
+
+      lines.push(``);
+      lines.push(`<b>Total: $${total.toLocaleString("es-AR")}</b>`);
+
+      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+      pending.slice(0, 4).forEach((e) => {
+        rows.push([
+          { text: `✅ ${e.recurringExpense.name}`, callback_data: `recurring:confirm:${e.id}` },
+          { text: `⏭️`, callback_data: `recurring:skip:${e.id}` },
+        ]);
+      });
+
+      if (pending.length > 1) {
+        rows.push([{ text: "✅ Confirmar todos", callback_data: "recurring:confirm_all" }]);
+      }
+
+      return {
+        text: lines.join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard(rows),
+      };
+    }
+
+    if (data.startsWith("recurring:confirm:")) {
+      const execId = data.split(":")[2];
+      const result = await confirmExecution(execId);
+
+      if (!result.success) {
+        return { text: `❌ ${result.error}`, edit: true };
+      }
+
+      return {
+        text: "✅ Gasto registrado correctamente.",
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "📋 Ver pendientes", callback_data: "recurring:pending" }],
+          [{ text: "📊 Resumen", callback_data: "summary" }],
+        ]),
+      };
+    }
+
+    if (data.startsWith("recurring:skip:")) {
+      const execId = data.split(":")[2];
+      const result = await skipExecution(execId);
+
+      if (!result.success) {
+        return { text: `❌ ${result.error}`, edit: true };
+      }
+
+      return {
+        text: "⏭️ Gasto saltado este mes.",
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "📋 Ver pendientes", callback_data: "recurring:pending" }],
+        ]),
+      };
+    }
+
+    if (data === "recurring:confirm_all") {
+      const pending = await getPendingExecutions(userId);
+      let confirmed = 0;
+
+      for (const exec of pending) {
+        const result = await confirmExecution(exec.id);
+        if (result.success) confirmed++;
+      }
+
+      return {
+        text: `✅ ${confirmed} gasto${confirmed > 1 ? "s" : ""} registrado${confirmed > 1 ? "s" : ""}.`,
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "📊 Resumen", callback_data: "summary" }],
+          [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+        ]),
+      };
+    }
+
+    if (data === "recurring:cancel") {
+      await clearConversationState(chatId, telegramUserId);
+      return { text: "❌ Operación cancelada.", edit: true };
+    }
+
+    if (data === "recurring:custom") {
+      await setConversationState(chatId, telegramUserId, {
+        step: "recurring_name",
+        data: {},
+      });
+
+      return {
+        text: [
+          `✏️ <b>Agregar Gasto Recurrente</b>`,
+          ``,
+          `Escribí el nombre del gasto (ej: Netflix, Alquiler):`,
+        ].join("\n"),
+        edit: true,
+      };
     }
 
     return { text: "❌ Acción no reconocida.", edit: false };

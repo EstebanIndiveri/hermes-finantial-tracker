@@ -262,6 +262,42 @@ export const pushSubscriptions = sqliteTable("push_subscriptions", {
   createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
 
+// ── Recurring Expenses ──────────────────────────────────────
+export const recurringExpenses = sqliteTable("recurring_expenses", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  groupId: text("group_id").references(() => groups.id),
+  name: text("name").notNull(),
+  amountArs: real("amount_ars").notNull(),
+  categoryId: text("category_id").references(() => categories.id),
+  merchant: text("merchant"),
+  frequency: text("frequency", { enum: ["monthly", "weekly", "yearly"] }).notNull().default("monthly"),
+  dayOfMonth: integer("day_of_month").notNull().default(1),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  autoConfirm: integer("auto_confirm", { mode: "boolean" }).notNull().default(false),
+  notes: text("notes"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+}, (t) => ({
+  userIdx: index("recurring_user_idx").on(t.userId),
+  activeIdx: index("recurring_active_idx").on(t.isActive),
+}));
+
+export const recurringExecutions = sqliteTable("recurring_executions", {
+  id: text("id").primaryKey(),
+  recurringExpenseId: text("recurring_expense_id").notNull().references(() => recurringExpenses.id, { onDelete: "cascade" }),
+  transactionId: text("transaction_id").references(() => transactions.id),
+  scheduledDate: text("scheduled_date").notNull(),
+  executedAt: integer("executed_at"),
+  status: text("status", { enum: ["pending", "confirmed", "skipped", "auto_executed"] }).notNull().default("pending"),
+  amountArs: real("amount_ars"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+}, (t) => ({
+  recurringIdx: index("execution_recurring_idx").on(t.recurringExpenseId),
+  dateIdx: index("execution_date_idx").on(t.scheduledDate),
+  statusIdx: index("execution_status_idx").on(t.status),
+}));
+
 // ── Splits / Compartidos relations ──────────────────────────
 export const tempUsersRelations = relations(temp_users, ({ one, many }) => ({
   upgradedTo: one(users, { fields: [temp_users.upgraded_to], references: [users.id] }),
@@ -320,6 +356,18 @@ export const reimbursementRequestsRelations = relations(reimbursementRequests, (
 
 export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
   user: one(users, { fields: [pushSubscriptions.userId], references: [users.id] }),
+}));
+
+export const recurringExpensesRelations = relations(recurringExpenses, ({ one, many }) => ({
+  user: one(users, { fields: [recurringExpenses.userId], references: [users.id] }),
+  group: one(groups, { fields: [recurringExpenses.groupId], references: [groups.id] }),
+  category: one(categories, { fields: [recurringExpenses.categoryId], references: [categories.id] }),
+  executions: many(recurringExecutions),
+}));
+
+export const recurringExecutionsRelations = relations(recurringExecutions, ({ one }) => ({
+  recurringExpense: one(recurringExpenses, { fields: [recurringExecutions.recurringExpenseId], references: [recurringExpenses.id] }),
+  transaction: one(transactions, { fields: [recurringExecutions.transactionId], references: [transactions.id] }),
 }));
 
 // Relations for query builder with `with` syntax

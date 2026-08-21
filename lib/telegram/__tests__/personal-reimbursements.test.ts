@@ -32,6 +32,7 @@ jest.mock("@/lib/utils/dates", () => ({
 
 jest.mock("@/lib/reimbursements/requests", () => ({
   getReimbursementsByUser: jest.fn(),
+  getOpenGroupReimbursements: jest.fn().mockResolvedValue([]),
   markReimbursementAsPaidWithNotifications: jest.fn(),
   createReimbursementWithNotifications: jest.fn(),
 }));
@@ -95,7 +96,10 @@ describe("telegram reimbursements", () => {
     expect(response.text).toContain("🙋 <b>Reintegros solicitados</b>");
     expect(response.text).toContain("$1.800");
     expect(response.replyMarkup).toEqual({
-      inline_keyboard: [[{ text: "✅ Pagado", callback_data: "pay_reimbursement:r-pay" }]],
+      inline_keyboard: [
+        [{ text: "✅ Pagar $2.500", callback_data: "pay_reimbursement:r-pay" }],
+        [{ text: "❌ Cancelar $1.800", callback_data: "cancel_reimbursement:r-requested" }],
+      ],
     });
   });
 

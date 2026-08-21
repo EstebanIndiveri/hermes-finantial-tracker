@@ -13,6 +13,19 @@ import { sendTelegramMessage, buildPersonalKeyboard } from "./send-message";
 import { setConversationState, clearConversationState } from "./splits/conversation-state";
 import { getReimbursementsByUser, getOpenGroupReimbursements, type ReimbursementRequest } from "@/lib/reimbursements/requests";
 import { getGroupMembership, isAdminOrAbove } from "@/lib/groups/permissions";
+import {
+  getUserRecurringExpenses,
+  createRecurringExpense,
+  findRecurringByName,
+  toggleRecurringExpense,
+  getPendingExecutions,
+  confirmExecution,
+  skipExecution,
+  getRecurringStats,
+  type RecurringExpenseWithCategory,
+  type RecurringExecutionWithDetails,
+} from "@/lib/db/recurring-queries";
+import { findSuggestionByName, RECURRING_SUGGESTIONS } from "@/lib/recurring/suggestions";
 
 export interface PersonalBotMessage {
   text: string;
@@ -1225,7 +1238,218 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     return buildReimbursementsMessage(reimbursements, openGroupReimbursements, userId);
   }
 
-  return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]\n/reintegros" };
+  // ── add_recurring → agregar gasto recurrente ──
+  if (parsed.intent === "add_recurring") {
+    const amount_ars = parsed.amount_ars ?? null;
+    const name = parsed.recurring_name ?? parsed.merchant ?? parsed.description ?? null;
+
+    if (!name) {
+      return {
+        text: "Entendí que querés agregar un gasto recurrente pero no detecté el nombre. Ej: \"agregar recurrente 5000 netflix\"",
+      };
+    }
+
+    if (!amount_ars || amount_ars <= 0) {
+      // Try to get suggested amount
+      const suggestion = findSuggestionByName(name);
+      if (suggestion?.suggestedAmount) {
+        return {
+          text: `📅 <b>Agregar gasto recurrente</b>\n\n¿Cuánto es el monto mensual de <b>${escapeHtml(name)}</b>?\n\nSugerido: $${suggestion.suggestedAmount.toLocaleString("es-AR")}`,
+          replyMarkup: buildPersonalKeyboard([
+            [{ text: `✅ $${suggestion.suggestedAmount.toLocaleString("es-AR")}`, callback_data: `recurring:add_confirm:${name}:${suggestion.suggestedAmount}:${suggestion.category}` }],
+            [{ text: "✏️ Otro monto", callback_data: `recurring:add_amount:${name}` }],
+            [{ text: "❌ Cancelar", callback_data: "recurring:cancel" }],
+          ]),
+        };
+      }
+      return {
+        text: `Entendí que querés agregar "${name}" como recurrente pero no detecté el monto. Ej: \"agregar recurrente 5000 ${name}\"`,
+      };
+    }
+
+    // Get category from suggestion or parsed
+    const suggestion = findSuggestionByName(name);
+    const categorySlug = parsed.category ?? suggestion?.category ?? null;
+    
+    let categoryId: string | null = null;
+    let categoryName = "Sin categoría";
+    let categoryEmoji = "📦";
+    
+    if (categorySlug) {
+      const cat = await db.query.categories.findFirst({
+        where: and(eq(categories.slug, categorySlug), eq(categories.group_id, groupId)),
+      });
+      if (cat) {
+        categoryId = cat.id;
+        categoryName = cat.name;
+        categoryEmoji = cat.emoji;
+      }
+    }
+
+    // Create the recurring expense
+    const created = await createRecurringExpense({
+      userId,
+      groupId,
+      name,
+      amountArs: amount_ars,
+      categoryId,
+      merchant: name,
+      frequency: "monthly",
+      dayOfMonth: 1,
+      autoConfirm: false,
+    });
+
+    return {
+      text: [
+        `✅ <b>Gasto recurrente creado</b>`,
+        ``,
+        `📅 <b>Nombre:</b> ${escapeHtml(created.name)}`,
+        `💰 <b>Monto:</b> $${created.amountArs.toLocaleString("es-AR")} ARS`,
+        `📂 <b>Categoría:</b> ${categoryEmoji} ${categoryName}`,
+        `🔄 <b>Frecuencia:</b> Mensual (día ${created.dayOfMonth})`,
+        ``,
+        `El primer día de cada mes te preguntaré si querés confirmar este gasto.`,
+      ].join("\n"),
+      replyMarkup: buildPersonalKeyboard([
+        [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+        [{ text: "➕ Agregar otro", callback_data: "recurring:suggest" }],
+      ]),
+    };
+  }
+
+  // ── list_recurring → ver gastos recurrentes ──
+  if (parsed.intent === "list_recurring") {
+    return await buildRecurringListMessage(userId, groupId);
+  }
+
+  // ── toggle_recurring → pausar/activar recurrente ──
+  if (parsed.intent === "toggle_recurring") {
+    const name = parsed.recurring_name ?? null;
+    if (!name) {
+      return { text: "¿Cuál gasto recurrente querés pausar/activar? Ej: \"pausar netflix\"" };
+    }
+
+    const recurring = await findRecurringByName(userId, name);
+    if (!recurring) {
+      return {
+        text: `No encontré un gasto recurrente llamado "${name}". Usá /recurrentes para ver la lista.`,
+        replyMarkup: buildPersonalKeyboard([[{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }]]),
+      };
+    }
+
+    const toggled = await toggleRecurringExpense(recurring.id);
+    if (!toggled) {
+      return { text: "Error al cambiar el estado del gasto recurrente." };
+    }
+
+    const emoji = toggled.category?.emoji ?? "📦";
+    const status = toggled.isActive ? "✅ Activado" : "⏸️ Pausado";
+
+    return {
+      text: [
+        `${status}`,
+        ``,
+        `${emoji} <b>${escapeHtml(toggled.name)}</b> - $${toggled.amountArs.toLocaleString("es-AR")}`,
+        ``,
+        toggled.isActive
+          ? "Se incluirá en los gastos del próximo mes."
+          : "No se generará hasta que lo actives de nuevo.",
+      ].join("\n"),
+      replyMarkup: buildPersonalKeyboard([[{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }]]),
+    };
+  }
+
+  // ── pending_recurring → ver pendientes del mes ──
+  if (parsed.intent === "pending_recurring") {
+    return await buildPendingRecurringMessage(userId);
+  }
+
+  // ── confirm_recurring → confirmar pago recurrente ──
+  if (parsed.intent === "confirm_recurring") {
+    const name = parsed.recurring_name ?? null;
+    if (!name) {
+      return { text: "¿Cuál gasto recurrente querés confirmar? Ej: \"confirmar netflix\"" };
+    }
+
+    const pending = await getPendingExecutions(userId);
+    const exec = pending.find(
+      (e) =>
+        e.recurringExpense.name.toLowerCase().includes(name.toLowerCase()) ||
+        name.toLowerCase().includes(e.recurringExpense.name.toLowerCase())
+    );
+
+    if (!exec) {
+      return {
+        text: `No encontré "${name}" en tus pendientes de este mes.`,
+        replyMarkup: buildPersonalKeyboard([[{ text: "📋 Ver pendientes", callback_data: "recurring:pending" }]]),
+      };
+    }
+
+    const result = await confirmExecution(exec.id);
+    if (!result.success) {
+      return { text: `Error: ${result.error}` };
+    }
+
+    const emoji = exec.recurringExpense.category?.emoji ?? "📦";
+    const amount = exec.amountArs ?? exec.recurringExpense.amountArs;
+
+    return {
+      text: [
+        `✅ <b>Gasto registrado</b>`,
+        ``,
+        `${emoji} <b>${escapeHtml(exec.recurringExpense.name)}</b>`,
+        `💰 $${amount.toLocaleString("es-AR")} ARS`,
+        ``,
+        `Se creó la transacción correspondiente.`,
+      ].join("\n"),
+      replyMarkup: buildPersonalKeyboard([
+        [{ text: "📋 Ver pendientes", callback_data: "recurring:pending" }],
+        [{ text: "📊 Resumen", callback_data: "summary" }],
+      ]),
+    };
+  }
+
+  // ── skip_recurring → saltar recurrente este mes ──
+  if (parsed.intent === "skip_recurring") {
+    const name = parsed.recurring_name ?? null;
+    if (!name) {
+      return { text: "¿Cuál gasto recurrente querés saltar este mes? Ej: \"saltar netflix este mes\"" };
+    }
+
+    const pending = await getPendingExecutions(userId);
+    const exec = pending.find(
+      (e) =>
+        e.recurringExpense.name.toLowerCase().includes(name.toLowerCase()) ||
+        name.toLowerCase().includes(e.recurringExpense.name.toLowerCase())
+    );
+
+    if (!exec) {
+      return {
+        text: `No encontré "${name}" en tus pendientes de este mes.`,
+        replyMarkup: buildPersonalKeyboard([[{ text: "📋 Ver pendientes", callback_data: "recurring:pending" }]]),
+      };
+    }
+
+    const result = await skipExecution(exec.id);
+    if (!result.success) {
+      return { text: `Error: ${result.error}` };
+    }
+
+    const emoji = exec.recurringExpense.category?.emoji ?? "📦";
+
+    return {
+      text: [
+        `⏭️ <b>Gasto saltado</b>`,
+        ``,
+        `${emoji} <b>${escapeHtml(exec.recurringExpense.name)}</b> no se registrará este mes.`,
+      ].join("\n"),
+      replyMarkup: buildPersonalKeyboard([
+        [{ text: "📋 Ver pendientes", callback_data: "recurring:pending" }],
+      ]),
+    };
+  }
+
+  return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]\n/reintegros\n/recurrentes" };
 }
 
 async function registerTransaction(
@@ -1412,4 +1636,184 @@ async function saveReceiptImport(data: {
   } catch (err) {
     console.error("saveReceiptImport error:", err instanceof Error ? err.message : String(err));
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Recurring Expenses Helpers
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Build message listing all recurring expenses
+ */
+async function buildRecurringListMessage(
+  userId: string,
+  groupId: string
+): Promise<PersonalBotMessage> {
+  const expenses = await getUserRecurringExpenses(userId, { groupId });
+  const stats = await getRecurringStats(userId);
+
+  if (expenses.length === 0) {
+    return {
+      text: [
+        `📅 <b>Gastos Recurrentes</b>`,
+        ``,
+        `No tenés gastos recurrentes configurados.`,
+        ``,
+        `Agregá tus pagos fijos mensuales (Netflix, alquiler, servicios) para que te recuerde pagarlos cada mes.`,
+      ].join("\n"),
+      replyMarkup: buildPersonalKeyboard([
+        [{ text: "➕ Agregar recurrente", callback_data: "recurring:suggest" }],
+      ]),
+    };
+  }
+
+  const active = expenses.filter((e) => e.isActive);
+  const paused = expenses.filter((e) => !e.isActive);
+
+  const lines = [
+    `📅 <b>Gastos Recurrentes</b>`,
+    ``,
+    `💰 Total mensual: <b>$${stats.totalMonthly.toLocaleString("es-AR")}</b>`,
+    `✅ Activos: ${stats.totalActive} | ⏸️ Pausados: ${stats.totalPaused}`,
+    ``,
+  ];
+
+  if (active.length > 0) {
+    lines.push(`<b>Activos:</b>`);
+    active.forEach((e) => {
+      const emoji = e.category?.emoji ?? "📦";
+      lines.push(`${emoji} ${e.name} - $${e.amountArs.toLocaleString("es-AR")} (día ${e.dayOfMonth})`);
+    });
+    lines.push(``);
+  }
+
+  if (paused.length > 0) {
+    lines.push(`<b>⏸️ Pausados:</b>`);
+    paused.forEach((e) => {
+      const emoji = e.category?.emoji ?? "📦";
+      lines.push(`${emoji} <s>${e.name}</s> - $${e.amountArs.toLocaleString("es-AR")}`);
+    });
+  }
+
+  // Build action buttons for first 3 active
+  const actionButtons = active.slice(0, 3).map((e) => ({
+    text: `⏸️ ${e.name}`,
+    callback_data: `recurring:toggle:${e.id}`,
+  }));
+
+  return {
+    text: lines.join("\n"),
+    replyMarkup: buildPersonalKeyboard([
+      actionButtons.length > 0 ? actionButtons : [],
+      [
+        { text: "➕ Agregar", callback_data: "recurring:suggest" },
+        { text: "📋 Pendientes", callback_data: "recurring:pending" },
+      ],
+    ].filter((row) => row.length > 0)),
+  };
+}
+
+/**
+ * Build message showing pending executions for this month
+ */
+async function buildPendingRecurringMessage(
+  userId: string
+): Promise<PersonalBotMessage> {
+  const pending = await getPendingExecutions(userId);
+  const stats = await getRecurringStats(userId);
+
+  if (pending.length === 0) {
+    if (stats.confirmedThisMonth > 0 || stats.skippedThisMonth > 0) {
+      return {
+        text: [
+          `📅 <b>Gastos Recurrentes - Este Mes</b>`,
+          ``,
+          `✅ Confirmados: ${stats.confirmedThisMonth}`,
+          `⏭️ Saltados: ${stats.skippedThisMonth}`,
+          ``,
+          `¡Ya procesaste todos tus gastos recurrentes de este mes!`,
+        ].join("\n"),
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "📋 Ver todos", callback_data: "recurring:list" }],
+        ]),
+      };
+    }
+
+    return {
+      text: [
+        `📅 <b>Gastos Recurrentes - Este Mes</b>`,
+        ``,
+        `No tenés gastos pendientes.`,
+        ``,
+        `Los gastos recurrentes se generan el primer día de cada mes.`,
+      ].join("\n"),
+      replyMarkup: buildPersonalKeyboard([
+        [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+      ]),
+    };
+  }
+
+  const total = pending.reduce(
+    (sum, e) => sum + (e.amountArs ?? e.recurringExpense.amountArs),
+    0
+  );
+
+  const lines = [
+    `📅 <b>Gastos Pendientes del Mes</b>`,
+    ``,
+    `Tienes ${pending.length} gasto${pending.length > 1 ? "s" : ""} por confirmar:`,
+    ``,
+  ];
+
+  pending.forEach((e, i) => {
+    const emoji = e.recurringExpense.category?.emoji ?? "📦";
+    const amount = e.amountArs ?? e.recurringExpense.amountArs;
+    lines.push(`${i + 1}. ${emoji} ${e.recurringExpense.name} - $${amount.toLocaleString("es-AR")}`);
+  });
+
+  lines.push(``);
+  lines.push(`<b>Total pendiente: $${total.toLocaleString("es-AR")}</b>`);
+
+  // Build confirm/skip buttons for each pending
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+  
+  pending.slice(0, 4).forEach((e) => {
+    rows.push([
+      { text: `✅ ${e.recurringExpense.name}`, callback_data: `recurring:confirm:${e.id}` },
+      { text: `⏭️`, callback_data: `recurring:skip:${e.id}` },
+    ]);
+  });
+
+  if (pending.length > 1) {
+    rows.push([{ text: "✅ Confirmar todos", callback_data: "recurring:confirm_all" }]);
+  }
+
+  return {
+    text: lines.join("\n"),
+    replyMarkup: buildPersonalKeyboard(rows),
+  };
+}
+
+/**
+ * Build suggestions keyboard for common recurring expenses
+ */
+export function buildRecurringSuggestionsMessage(): PersonalBotMessage {
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+
+  // Add categories as buttons
+  Object.entries(RECURRING_SUGGESTIONS).slice(0, 4).forEach(([key, cat]) => {
+    rows.push([{ text: `${cat.emoji} ${cat.label}`, callback_data: `recurring:category:${key}` }]);
+  });
+
+  rows.push([{ text: "✏️ Escribir nombre", callback_data: "recurring:custom" }]);
+  rows.push([{ text: "❌ Cancelar", callback_data: "recurring:cancel" }]);
+
+  return {
+    text: [
+      `➕ <b>Agregar Gasto Recurrente</b>`,
+      ``,
+      `Elegí una categoría o escribí el nombre del gasto:`,
+    ].join("\n"),
+    replyMarkup: buildPersonalKeyboard(rows),
+  };
 }

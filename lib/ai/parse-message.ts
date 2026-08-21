@@ -2,7 +2,21 @@ import { getGroqClient } from "./groq";
 import { z } from "zod";
 
 const ParsedMessageSchema = z.object({
-  intent: z.enum(["register_expense", "query_summary", "query_available", "simulate_expense", "delete_last", "query_reimbursements", "unknown"]),
+  intent: z.enum([
+    "register_expense",
+    "query_summary",
+    "query_available",
+    "simulate_expense",
+    "delete_last",
+    "query_reimbursements",
+    "add_recurring",
+    "list_recurring",
+    "toggle_recurring",
+    "pending_recurring",
+    "confirm_recurring",
+    "skip_recurring",
+    "unknown"
+  ]),
   amount_ars: z.number().nullable().optional(),
   category: z.string().nullable().optional(),
   merchant: z.string().nullable().optional(),
@@ -10,6 +24,8 @@ const ParsedMessageSchema = z.object({
   date_text: z.string().nullable().optional(),
   needs_confirmation: z.boolean().default(false),
   requires_reimbursement: z.boolean().default(false),
+  recurring_name: z.string().nullable().optional(),
+  recurring_action: z.enum(["pause", "activate", "confirm", "skip"]).nullable().optional(),
   confidence: z.number().min(0).max(1),
 });
 
@@ -24,6 +40,12 @@ INTENTS disponibles:
 - "simulate_expense": preguntar si PUEDE gastar UNA CANTIDAD ESPECÍFICA (tiene monto propio). Ej: "puedo gastar 36000", "me alcanza para 50000 en restaurante", "tengo para gastar 15000", "conviene gastar 40000 ahora"
 - "delete_last": borrar, deshacer o eliminar el último gasto. Ej: "borrá el último gasto", "deshacer", "me equivoqué borrá"
 - "query_reimbursements": ver reintegros pendientes. Ej: "reintegros", "mis reintegros", "ver reintegros", "qué reintegros tengo", "reembolsos pendientes"
+- "add_recurring": agregar un gasto recurrente (fijo mensual). Ej: "agregar gasto recurrente 15000 netflix", "crear recurrente alquiler 150000", "nuevo gasto fijo spotify 2500", "agregar pago mensual internet"
+- "list_recurring": listar gastos recurrentes configurados. Ej: "mis gastos recurrentes", "recurrentes", "ver gastos fijos", "listar pagos mensuales"
+- "toggle_recurring": pausar o activar un gasto recurrente. Ej: "pausar netflix", "activar alquiler", "desactivar spotify", "reactivar gym"
+- "pending_recurring": ver gastos recurrentes pendientes del mes. Ej: "pendientes del mes", "qué tengo que pagar", "gastos pendientes", "recurrentes sin pagar"
+- "confirm_recurring": confirmar/pagar un gasto recurrente pendiente. Ej: "confirmar netflix", "pagar alquiler", "marcar pagado spotify"
+- "skip_recurring": saltar un gasto recurrente este mes. Ej: "saltar luz este mes", "no pagar netflix este mes", "omitir gym este mes"
 - "unknown": no encaja en ninguna categoría financiera
 
 REGLA CRÍTICA para query_available vs simulate_expense:
@@ -57,6 +79,8 @@ Campos a devolver:
 - date_text: referencia a fecha en texto o null
 - needs_confirmation: true si el usuario pide confirmación antes de registrar
 - requires_reimbursement: true si el usuario necesita reintegro/reembolso del gasto
+- recurring_name: nombre del gasto recurrente mencionado (netflix, spotify, alquiler, etc) o null
+- recurring_action: para toggle/confirm/skip → "pause", "activate", "confirm" o "skip", o null
 - confidence: número entre 0.0 y 1.0 (usar 0.9+ cuando el intent es claro)
 
 Respondé ÚNICAMENTE con el objeto JSON. Sin markdown. Sin bloques de código. Primera línea debe ser { y última }.`;
