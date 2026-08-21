@@ -41,9 +41,9 @@ INTENTS disponibles:
 - "delete_last": borrar, deshacer o eliminar el último gasto. Ej: "borrá el último gasto", "deshacer", "me equivoqué borrá"
 - "query_reimbursements": ver reintegros pendientes. Ej: "reintegros", "mis reintegros", "ver reintegros", "qué reintegros tengo", "reembolsos pendientes"
 - "add_recurring": agregar un gasto recurrente (fijo mensual). Ej: "agregar gasto recurrente 15000 netflix", "crear recurrente alquiler 150000", "nuevo gasto fijo spotify 2500", "agregar pago mensual internet"
-- "list_recurring": listar gastos recurrentes configurados. Ej: "mis gastos recurrentes", "recurrentes", "ver gastos fijos", "listar pagos mensuales"
+- "list_recurring": listar gastos recurrentes configurados. Ej: "mis gastos recurrentes", "recurrentes", "ver gastos fijos", "listar pagos mensuales", "mis recurrentes", "gastos recurrentes", "ver recurrentes"
 - "toggle_recurring": pausar o activar un gasto recurrente. Ej: "pausar netflix", "activar alquiler", "desactivar spotify", "reactivar gym"
-- "pending_recurring": ver gastos recurrentes pendientes del mes. Ej: "pendientes del mes", "qué tengo que pagar", "gastos pendientes", "recurrentes sin pagar"
+- "pending_recurring": ver gastos recurrentes pendientes del mes. Ej: "pendientes del mes", "qué tengo que pagar", "gastos pendientes", "recurrentes sin pagar", "pendientes", "qué debo pagar", "pagos pendientes"
 - "confirm_recurring": confirmar/pagar un gasto recurrente pendiente. Ej: "confirmar netflix", "pagar alquiler", "marcar pagado spotify"
 - "skip_recurring": saltar un gasto recurrente este mes. Ej: "saltar luz este mes", "no pagar netflix este mes", "omitir gym este mes"
 - "unknown": no encaja en ninguna categoría financiera
@@ -82,6 +82,13 @@ Campos a devolver:
 - recurring_name: nombre del gasto recurrente mencionado (netflix, spotify, alquiler, etc) o null
 - recurring_action: para toggle/confirm/skip → "pause", "activate", "confirm" o "skip", o null
 - confidence: número entre 0.0 y 1.0 (usar 0.9+ cuando el intent es claro)
+
+PALABRAS CLAVE IMPORTANTES:
+- "recurrentes" → list_recurring
+- "pendientes" → pending_recurring  
+- "reintegros" → query_reimbursements
+- "resumen" → query_summary
+- "disponible" → query_available
 
 Respondé ÚNICAMENTE con el objeto JSON. Sin markdown. Sin bloques de código. Primera línea debe ser { y última }.`;
 
