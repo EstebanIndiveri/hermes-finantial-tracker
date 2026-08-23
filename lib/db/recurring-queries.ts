@@ -727,3 +727,154 @@ export async function getRecurringStats(userId: string): Promise<RecurringStats>
     })),
   };
 }
+
+/**
+ * Get executions due within N days, grouped by user
+ */
+export async function getUpcomingExecutions(
+  days: number = 3
+): Promise<Array<{ userId: string; telegramUserId: string | null; executions: RecurringExecutionWithDetails[] }>> {
+  const today = new Date();
+  const targetDate = new Date(today);
+  targetDate.setDate(today.getDate() + days);
+  const targetDateStr = targetDate.toISOString().slice(0, 10);
+
+  const results = await db
+    .select({
+      execId: recurringExecutions.id,
+      recurringExpenseId: recurringExecutions.recurringExpenseId,
+      scheduledDate: recurringExecutions.scheduledDate,
+      status: recurringExecutions.status,
+      amountArs: recurringExecutions.amountArs,
+      createdAt: recurringExecutions.createdAt,
+      recurringName: recurringExpenses.name,
+      recurringAmount: recurringExpenses.amountArs,
+      recurringMerchant: recurringExpenses.merchant,
+      recurringCategoryId: recurringExpenses.categoryId,
+      recurringUserId: recurringExpenses.userId,
+      categoryName: categories.name,
+      categoryEmoji: categories.emoji,
+      categorySlug: categories.slug,
+      userTelegramId: users.telegram_user_id,
+    })
+    .from(recurringExecutions)
+    .innerJoin(recurringExpenses, eq(recurringExecutions.recurringExpenseId, recurringExpenses.id))
+    .leftJoin(categories, eq(recurringExpenses.categoryId, categories.id))
+    .innerJoin(users, eq(recurringExpenses.userId, users.id))
+    .where(
+      and(
+        eq(recurringExecutions.status, "pending"),
+        eq(recurringExecutions.scheduledDate, targetDateStr)
+      )
+    );
+
+  const byUser = new Map<string, { telegramUserId: string | null; executions: RecurringExecutionWithDetails[] }>();
+
+  for (const r of results) {
+    if (!byUser.has(r.recurringUserId)) {
+      byUser.set(r.recurringUserId, { telegramUserId: r.userTelegramId, executions: [] });
+    }
+    byUser.get(r.recurringUserId)!.executions.push({
+      id: r.execId,
+      recurringExpenseId: r.recurringExpenseId,
+      transactionId: null,
+      scheduledDate: r.scheduledDate,
+      executedAt: null,
+      status: r.status as "pending",
+      amountArs: r.amountArs,
+      createdAt: r.createdAt,
+      recurringExpense: {
+        id: r.recurringExpenseId,
+        name: r.recurringName,
+        amountArs: r.recurringAmount,
+        merchant: r.recurringMerchant,
+        category: r.categoryName
+          ? {
+              id: r.recurringCategoryId!,
+              name: r.categoryName,
+              emoji: r.categoryEmoji!,
+              slug: r.categorySlug!,
+            }
+          : null,
+      },
+    });
+  }
+
+  return Array.from(byUser.entries()).map(([userId, data]) => ({
+    userId,
+    ...data,
+  }));
+}
+
+/**
+ * Get executions past due date and still pending, grouped by user
+ */
+export async function getOverdueExecutions(): Promise<Array<{ userId: string; telegramUserId: string | null; executions: RecurringExecutionWithDetails[] }>> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const results = await db
+    .select({
+      execId: recurringExecutions.id,
+      recurringExpenseId: recurringExecutions.recurringExpenseId,
+      scheduledDate: recurringExecutions.scheduledDate,
+      status: recurringExecutions.status,
+      amountArs: recurringExecutions.amountArs,
+      createdAt: recurringExecutions.createdAt,
+      recurringName: recurringExpenses.name,
+      recurringAmount: recurringExpenses.amountArs,
+      recurringMerchant: recurringExpenses.merchant,
+      recurringCategoryId: recurringExpenses.categoryId,
+      recurringUserId: recurringExpenses.userId,
+      categoryName: categories.name,
+      categoryEmoji: categories.emoji,
+      categorySlug: categories.slug,
+      userTelegramId: users.telegram_user_id,
+    })
+    .from(recurringExecutions)
+    .innerJoin(recurringExpenses, eq(recurringExecutions.recurringExpenseId, recurringExpenses.id))
+    .leftJoin(categories, eq(recurringExpenses.categoryId, categories.id))
+    .innerJoin(users, eq(recurringExpenses.userId, users.id))
+    .where(
+      and(
+        eq(recurringExecutions.status, "pending"),
+        sql`${recurringExecutions.scheduledDate} < ${today}`
+      )
+    );
+
+  const byUser = new Map<string, { telegramUserId: string | null; executions: RecurringExecutionWithDetails[] }>();
+
+  for (const r of results) {
+    if (!byUser.has(r.recurringUserId)) {
+      byUser.set(r.recurringUserId, { telegramUserId: r.userTelegramId, executions: [] });
+    }
+    byUser.get(r.recurringUserId)!.executions.push({
+      id: r.execId,
+      recurringExpenseId: r.recurringExpenseId,
+      transactionId: null,
+      scheduledDate: r.scheduledDate,
+      executedAt: null,
+      status: r.status as "pending",
+      amountArs: r.amountArs,
+      createdAt: r.createdAt,
+      recurringExpense: {
+        id: r.recurringExpenseId,
+        name: r.recurringName,
+        amountArs: r.recurringAmount,
+        merchant: r.recurringMerchant,
+        category: r.categoryName
+          ? {
+              id: r.recurringCategoryId!,
+              name: r.categoryName,
+              emoji: r.categoryEmoji!,
+              slug: r.categorySlug!,
+            }
+          : null,
+      },
+    });
+  }
+
+  return Array.from(byUser.entries()).map(([userId, data]) => ({
+    userId,
+    ...data,
+  }));
+}
