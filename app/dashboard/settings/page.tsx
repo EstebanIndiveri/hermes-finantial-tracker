@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import SettingsLoading from "./loading";
-import { PaymentInfoForm } from "@/components/settings/payment-info-form";
 
 interface MonthlySettings {
   income_usd: number;
@@ -472,10 +471,6 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Datos de Pago para Reintegros */}
-      <div style={{ marginTop: 32 }}>
-        <PaymentInfoForm />
-      </div>
     </div>
   );
 }
