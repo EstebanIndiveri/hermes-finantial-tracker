@@ -12,6 +12,7 @@ import {
   BarChart3,
   Clock,
   Repeat,
+  Pencil,
 } from "lucide-react";
 import { StatusBadge, getExecutionStatus } from "@/components/ui/status-badge";
 import {
@@ -87,6 +88,14 @@ interface DeleteCandidate {
   name: string;
 }
 
+interface EditCandidate {
+  id: string;
+  name: string;
+  amountArs: number;
+  dayOfMonth: number;
+  categoryId: string | null;
+}
+
 export function RecurringList({ month: _month }: { month?: string } = {}) {
   const [expenses, setExpenses] = useState<RecurringExpense[]>([]);
   const [pending, setPending] = useState<RecurringExecution[]>([]);
@@ -95,6 +104,14 @@ export function RecurringList({ month: _month }: { month?: string } = {}) {
   const [showForm, setShowForm] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteCandidate | null>(null);
+  const [editTarget, setEditTarget] = useState<EditCandidate | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  // Edit form state
+  const [editName, setEditName] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editDay, setEditDay] = useState("1");
+  const [editCategoryId, setEditCategoryId] = useState<string | null>(null);
 
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
@@ -102,7 +119,20 @@ export function RecurringList({ month: _month }: { month?: string } = {}) {
 
   useEffect(() => {
     void fetchData();
+    void fetchCategories();
   }, []);
+
+  async function fetchCategories() {
+    try {
+      const res = await fetch("/api/categories");
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(data);
+      }
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+    }
+  }
 
   async function fetchData() {
     try {
@@ -167,6 +197,48 @@ export function RecurringList({ month: _month }: { month?: string } = {}) {
 
   function handleDeleteClick(expense: RecurringExpense) {
     setDeleteTarget({ id: expense.id, name: expense.name });
+  }
+
+  function handleEditClick(expense: RecurringExpense) {
+    setEditTarget({
+      id: expense.id,
+      name: expense.name,
+      amountArs: expense.amountArs,
+      dayOfMonth: expense.dayOfMonth,
+      categoryId: expense.categoryId,
+    });
+    setEditName(expense.name);
+    setEditAmount(String(expense.amountArs));
+    setEditDay(String(expense.dayOfMonth));
+    setEditCategoryId(expense.categoryId);
+  }
+
+  async function handleEditSave() {
+    if (!editTarget) return;
+
+    setActionId(editTarget.id);
+    try {
+      const res = await fetch(`/api/recurring-expenses/${editTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName,
+          amountArs: parseFloat(editAmount),
+          dayOfMonth: parseInt(editDay),
+          categoryId: editCategoryId,
+        }),
+      });
+      if (res.ok) {
+        setEditTarget(null);
+        await fetchData();
+      } else {
+        console.error("Error updating recurring expense:", await res.text());
+      }
+    } catch (error) {
+      console.error("Error updating:", error);
+    } finally {
+      setActionId(null);
+    }
   }
 
   async function handleConfirm(execId: string) {
@@ -563,6 +635,14 @@ export function RecurringList({ month: _month }: { month?: string } = {}) {
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <button
                       style={btnStyle}
+                      onClick={() => handleEditClick(expense)}
+                      disabled={actionId === expense.id}
+                      title="Editar"
+                    >
+                      <Pencil style={{ width: 16, height: 16 }} />
+                    </button>
+                    <button
+                      style={btnStyle}
                       onClick={() => void handleToggle(expense.id)}
                       disabled={actionId === expense.id}
                       title="Pausar"
@@ -610,6 +690,14 @@ export function RecurringList({ month: _month }: { month?: string } = {}) {
                     </p>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <button
+                      style={btnStyle}
+                      onClick={() => handleEditClick(expense)}
+                      disabled={actionId === expense.id}
+                      title="Editar"
+                    >
+                      <Pencil style={{ width: 16, height: 16 }} />
+                    </button>
                     <button
                       style={{ ...btnStyle, color: "#22c55e" }}
                       onClick={() => void handleToggle(expense.id)}
@@ -666,6 +754,100 @@ export function RecurringList({ month: _month }: { month?: string } = {}) {
               disabled={actionId === deleteTarget?.id}
             >
               {actionId === deleteTarget?.id ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog
+        open={editTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && actionId !== editTarget?.id) {
+            setEditTarget(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar gasto recurrente</DialogTitle>
+            <DialogDescription>
+              Modificá los datos del gasto recurrente
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "16px 0" }}>
+            <div>
+              <label style={{ display: "block", marginBottom: "4px", fontSize: "14px", color: "var(--htext2)" }}>
+                Nombre
+              </label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="h-input"
+                style={{ width: "100%" }}
+                placeholder="Netflix, Alquiler, etc."
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", marginBottom: "4px", fontSize: "14px", color: "var(--htext2)" }}>
+                Monto mensual (ARS)
+              </label>
+              <input
+                type="number"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value)}
+                className="h-input"
+                style={{ width: "100%" }}
+                placeholder="1500"
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", marginBottom: "4px", fontSize: "14px", color: "var(--htext2)" }}>
+                Día de vencimiento (1-31)
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={31}
+                value={editDay}
+                onChange={(e) => setEditDay(e.target.value)}
+                className="h-input"
+                style={{ width: "100%" }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", marginBottom: "4px", fontSize: "14px", color: "var(--htext2)" }}>
+                Categoría
+              </label>
+              <select
+                value={editCategoryId || ""}
+                onChange={(e) => setEditCategoryId(e.target.value || null)}
+                className="h-input"
+                style={{ width: "100%" }}
+              >
+                <option value="">Sin categoría</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.emoji} {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditTarget(null)}
+              disabled={actionId === editTarget?.id}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => void handleEditSave()}
+              disabled={actionId === editTarget?.id || !editName || !editAmount}
+            >
+              {actionId === editTarget?.id ? "Guardando…" : "Guardar"}
             </Button>
           </DialogFooter>
         </DialogContent>
