@@ -14,6 +14,15 @@ import {
   Repeat,
 } from "lucide-react";
 import { StatusBadge, getExecutionStatus } from "@/components/ui/status-badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface Category {
   id: string;
@@ -73,15 +82,20 @@ interface Stats {
   }>;
 }
 
-export function RecurringList() {
+interface DeleteCandidate {
+  id: string;
+  name: string;
+}
+
+export function RecurringList({ month: _month }: { month?: string } = {}) {
   const [expenses, setExpenses] = useState<RecurringExpense[]>([]);
   const [pending, setPending] = useState<RecurringExecution[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteCandidate | null>(null);
 
-  // Form state
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [newDay, setNewDay] = useState("1");
@@ -130,21 +144,29 @@ export function RecurringList() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("¿Eliminar este gasto recurrente?")) return;
-    setActionId(id);
+  async function handleDelete() {
+    if (!deleteTarget) return;
+
+    setActionId(deleteTarget.id);
     try {
-      const res = await fetch(`/api/recurring-expenses/${id}`, {
+      const res = await fetch(`/api/recurring-expenses/${deleteTarget.id}`, {
         method: "DELETE",
       });
       if (res.ok) {
+        setDeleteTarget(null);
         await fetchData();
+      } else {
+        console.error("Error deleting recurring expense:", await res.text());
       }
     } catch (error) {
       console.error("Error deleting:", error);
     } finally {
       setActionId(null);
     }
+  }
+
+  function handleDeleteClick(expense: RecurringExpense) {
+    setDeleteTarget({ id: expense.id, name: expense.name });
   }
 
   async function handleConfirm(execId: string) {
@@ -317,7 +339,6 @@ export function RecurringList() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      {/* Stats Section */}
       {stats && (
         <div className="h-card h-animate">
           <div className="h-card-header">
@@ -348,7 +369,6 @@ export function RecurringList() {
         </div>
       )}
 
-      {/* Pending This Month */}
       {pendingThisMonth.length > 0 && (
         <div className="h-card h-animate">
           <div className="h-card-header">
@@ -365,7 +385,7 @@ export function RecurringList() {
               const emoji = exec.recurringExpense.category?.emoji ?? "📦";
               const amount = exec.amountArs ?? exec.recurringExpense.amountArs;
               const executionStatus = getExecutionStatus(exec.scheduledDate, "pending");
-              
+
               return (
                 <div key={exec.id} style={itemStyle}>
                   <div>
@@ -441,7 +461,6 @@ export function RecurringList() {
         </div>
       )}
 
-      {/* Add New Form */}
       <div className="h-card h-animate">
         <div className="h-card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={cardTitleStyle}>
@@ -518,7 +537,6 @@ export function RecurringList() {
         )}
       </div>
 
-      {/* Active Recurring */}
       {active.length > 0 && (
         <div className="h-card h-animate">
           <div className="h-card-header">
@@ -530,7 +548,7 @@ export function RecurringList() {
           <div className="h-card-body">
             {active.map((expense) => {
               const emoji = expense.category?.emoji ?? "📦";
-              
+
               return (
                 <div key={expense.id} style={itemStyle}>
                   <div>
@@ -553,9 +571,10 @@ export function RecurringList() {
                     </button>
                     <button
                       style={{ ...btnStyle, color: "#ef4444" }}
-                      onClick={() => void handleDelete(expense.id)}
+                      onClick={() => handleDeleteClick(expense)}
                       disabled={actionId === expense.id}
                       title="Eliminar"
+                      aria-label={`Eliminar ${expense.name}`}
                     >
                       <Trash2 style={{ width: 16, height: 16 }} />
                     </button>
@@ -567,7 +586,6 @@ export function RecurringList() {
         </div>
       )}
 
-      {/* Paused Recurring */}
       {paused.length > 0 && (
         <div className="h-card h-animate">
           <div className="h-card-header">
@@ -579,7 +597,7 @@ export function RecurringList() {
           <div className="h-card-body">
             {paused.map((expense) => {
               const emoji = expense.category?.emoji ?? "📦";
-              
+
               return (
                 <div key={expense.id} style={{ ...itemStyle, opacity: 0.6 }}>
                   <div>
@@ -602,9 +620,10 @@ export function RecurringList() {
                     </button>
                     <button
                       style={{ ...btnStyle, color: "#ef4444" }}
-                      onClick={() => void handleDelete(expense.id)}
+                      onClick={() => handleDeleteClick(expense)}
                       disabled={actionId === expense.id}
                       title="Eliminar"
+                      aria-label={`Eliminar ${expense.name}`}
                     >
                       <Trash2 style={{ width: 16, height: 16 }} />
                     </button>
@@ -616,7 +635,42 @@ export function RecurringList() {
         </div>
       )}
 
-      {/* Empty State */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && actionId !== deleteTarget?.id) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminar gasto recurrente</DialogTitle>
+            <DialogDescription>
+              {deleteTarget
+                ? `¿Eliminar ${deleteTarget.name}? Esta acción no se puede deshacer`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={actionId === deleteTarget?.id}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void handleDelete()}
+              disabled={actionId === deleteTarget?.id}
+            >
+              {actionId === deleteTarget?.id ? "Eliminando…" : "Eliminar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {expenses.length === 0 && pendingThisMonth.length === 0 && paidThisMonth.length === 0 && !showForm && (
         <div className="h-card h-animate">
           <div className="h-card-body" style={{ padding: "3rem", textAlign: "center", color: "var(--htext2)" }}>
