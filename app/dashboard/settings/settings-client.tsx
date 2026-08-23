@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import SettingsLoading from "./loading";
+import { MonthSelectorGeneric } from "@/components/dashboard/MonthSelectorGeneric";
 
 interface MonthlySettings {
   income_usd: number;
@@ -194,12 +195,15 @@ export function SettingsPageClient() {
   return (
     <div style={{ width: "100%" }}>
 
-      {/* Page title */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 26, fontWeight: 400, color: "var(--htext1)", marginBottom: 4 }}>
-          Ajustes
-        </h1>
-        <p style={{ fontSize: 13, color: "var(--htext3)" }}>Editando {monthLabel} · configuración mensual y presupuestos</p>
+      {/* Page title with month selector */}
+      <div style={{ marginBottom: 28, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
+        <div>
+          <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 26, fontWeight: 400, color: "var(--htext1)", marginBottom: 4 }}>
+            Ajustes
+          </h1>
+          <p style={{ fontSize: 13, color: "var(--htext3)" }}>Editando {monthLabel} · configuración mensual y presupuestos</p>
+        </div>
+        <MonthSelectorGeneric basePath="/dashboard/settings" month={month ?? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`} />
       </div>
 
       {isReadOnly && (
