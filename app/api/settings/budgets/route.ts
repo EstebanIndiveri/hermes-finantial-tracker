@@ -28,7 +28,12 @@ export async function GET(req: NextRequest) {
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     if (!groupId) return NextResponse.json({ error: "No active group" }, { status: 401 });
 
-    const month = getActiveMonthArgentina();
+    const monthParam = req.nextUrl.searchParams.get("month");
+    if (monthParam && !monthRegex.test(monthParam)) {
+      return NextResponse.json({ error: "Invalid month format, expected YYYY-MM" }, { status: 400 });
+    }
+
+    const month = monthParam ?? getActiveMonthArgentina();
     const rows = await db.select().from(budgets).where(
       and(eq(budgets.group_id, groupId), eq(budgets.month, month))
     );

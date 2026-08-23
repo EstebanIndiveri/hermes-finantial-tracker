@@ -41,6 +41,12 @@ describe("GET /api/settings/budgets", () => {
     jest.clearAllMocks();
   });
 
+  test("returns 400 for invalid month format", async () => {
+    const req = makeReq("http://localhost:3000/api/settings/budgets?month=05-2025");
+    const response = await GET(req);
+    expect(response.status).toBe(400);
+  });
+
   test("returns 401 when x-user-id header is missing", async () => {
     const req = makeReq("http://localhost:3000/api/settings/budgets", {}, { "x-user-id": null });
     const response = await GET(req);

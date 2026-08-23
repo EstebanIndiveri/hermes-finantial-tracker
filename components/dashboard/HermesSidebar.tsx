@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { GroupSwitcher } from "./GroupSwitcher";
 
 export function HermesSidebar() {
@@ -10,6 +10,11 @@ export function HermesSidebar() {
   const [mounted, setMounted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const month = searchParams.get("month");
+  const settingsHref = month
+    ? { pathname: "/dashboard/settings", query: { month } }
+    : "/dashboard/settings";
 
   useEffect(() => setMounted(true), []);
   const isDark = mounted && theme === "dark";
@@ -127,7 +132,7 @@ export function HermesSidebar() {
 
           <div className="h-nav-label" style={{ marginTop: 16 }}>Configuración</div>
           <Link
-            href="/dashboard/settings"
+            href={settingsHref}
             className={`h-nav-item${pathname === "/dashboard/settings" ? " active" : ""}`}
             onClick={() => setMobileOpen(false)}
           >

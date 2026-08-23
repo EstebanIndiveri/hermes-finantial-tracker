@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import SettingsLoading from "./loading";
 
@@ -12,7 +13,26 @@ interface MonthlySettings {
 interface Category { id: string; name: string; emoji: string; }
 interface BudgetItem { budget_ars: number; hard_limit: boolean; }
 
+function formatMonthLabel(month: string | null): string {
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    return "Mes activo";
+  }
+
+  const [year, monthNumber] = month.split("-");
+  const parsedMonth = Number.parseInt(monthNumber, 10);
+  const date = new Date(Number.parseInt(year, 10), parsedMonth - 1, 1);
+
+  return new Intl.DateTimeFormat("es-AR", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  const month = searchParams.get("month");
+  const monthQuery = month ? `?month=${encodeURIComponent(month)}` : "";
+  const monthLabel = formatMonthLabel(month);
   const [settings, setSettings] = useState<MonthlySettings | null>(null);
   const [cats, setCats] = useState<Category[]>([]);
   const [budgets, setBudgets] = useState<Record<string, BudgetItem>>({});
@@ -41,7 +61,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/settings/monthly").then(r => r.ok ? r.json() : null),
+      fetch(`/api/settings/monthly${monthQuery}`).then(r => r.ok ? r.json() : null),
       fetch("/api/categories").then(r => r.ok ? r.json() : null),
       fetch("/api/groups/active").then(r => r.ok ? r.json() : null),
     ]).then(([s, c, activeGroup]) => {
@@ -57,13 +77,13 @@ export default function SettingsPage() {
       if (activeGroup?.role) setUserRole(activeGroup.role);
     }).catch(() => toast.error("Error al cargar configuración"));
 
-    fetch("/api/settings/budgets").then(r => r.json()).then((data: { category_id: string; budget_ars: number; hard_limit: boolean }[]) => {
+    fetch(`/api/settings/budgets${monthQuery}`).then(r => r.json()).then((data: { category_id: string; budget_ars: number; hard_limit: boolean }[]) => {
       if (!Array.isArray(data)) return;
       const map: Record<string, BudgetItem> = {};
       data.forEach(b => { map[b.category_id] = { budget_ars: b.budget_ars, hard_limit: b.hard_limit }; });
       setBudgets(map);
     }).catch(() => {});
-  }, []);
+  }, [monthQuery]);
 
   function parseNum(raw: string): number {
     const n = parseFloat(raw.replace(/,/g, "."));
@@ -98,7 +118,7 @@ export default function SettingsPage() {
     try {
       const res = await fetch("/api/settings/monthly", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ income_usd: income, exchange_rate: exchange }),
+        body: JSON.stringify({ income_usd: income, exchange_rate: exchange, month: month ?? undefined }),
       });
       if (res.ok) {
         setSettings({ ...settings, income_usd: income, exchange_rate: exchange });
@@ -130,7 +150,7 @@ export default function SettingsPage() {
     try {
       const res = await fetch("/api/settings/thresholds", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ saving_goal_usd: green, saving_goal_yellow: yellow }),
+        body: JSON.stringify({ saving_goal_usd: green, saving_goal_yellow: yellow, month: month ?? undefined }),
       });
       if (res.ok) {
         setSettings({ ...settings, saving_goal_usd: green, saving_goal_yellow: yellow });
@@ -151,7 +171,7 @@ export default function SettingsPage() {
     try {
       const res = await fetch("/api/settings/budgets", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, month: month ?? undefined }),
       });
       if (res.ok) toast.success("Presupuestos guardados ✅");
       else toast.error("Error al guardar");
@@ -179,7 +199,7 @@ export default function SettingsPage() {
         <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 26, fontWeight: 400, color: "var(--htext1)", marginBottom: 4 }}>
           Ajustes
         </h1>
-        <p style={{ fontSize: 13, color: "var(--htext3)" }}>Mes activo · configuración mensual y presupuestos</p>
+        <p style={{ fontSize: 13, color: "var(--htext3)" }}>Editando {monthLabel} · configuración mensual y presupuestos</p>
       </div>
 
       {isReadOnly && (
