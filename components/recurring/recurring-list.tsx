@@ -13,6 +13,7 @@ import {
   Clock,
   Repeat,
 } from "lucide-react";
+import { StatusBadge, getExecutionStatus } from "@/components/ui/status-badge";
 
 interface Category {
   id: string;
@@ -91,9 +92,9 @@ export function RecurringList() {
 
   async function fetchData() {
     try {
-      const [expensesRes, pendingRes] = await Promise.all([
+      const [expensesRes, executionsRes] = await Promise.all([
         fetch("/api/recurring-expenses?stats=true"),
-        fetch("/api/recurring-expenses/executions?pending=true"),
+        fetch("/api/recurring-expenses/executions"),
       ]);
 
       if (expensesRes.ok) {
@@ -102,8 +103,8 @@ export function RecurringList() {
         setStats(data.stats);
       }
 
-      if (pendingRes.ok) {
-        const data = await pendingRes.json();
+      if (executionsRes.ok) {
+        const data = await executionsRes.json();
         setPending(data.executions);
       }
     } catch (error) {
@@ -219,6 +220,10 @@ export function RecurringList() {
 
   const active = expenses.filter((e) => e.isActive);
   const paused = expenses.filter((e) => !e.isActive);
+  const paidThisMonth = pending.filter(
+    (execution) => execution.status === "confirmed" || execution.status === "auto_executed"
+  );
+  const pendingThisMonth = pending.filter((execution) => execution.status === "pending");
 
   const cardTitleStyle: React.CSSProperties = {
     display: "flex",
@@ -344,7 +349,7 @@ export function RecurringList() {
       )}
 
       {/* Pending This Month */}
-      {pending.length > 0 && (
+      {pendingThisMonth.length > 0 && (
         <div className="h-card h-animate">
           <div className="h-card-header">
             <h2 style={cardTitleStyle}>
@@ -356,9 +361,10 @@ export function RecurringList() {
             </p>
           </div>
           <div className="h-card-body">
-            {pending.map((exec) => {
+            {pendingThisMonth.map((exec) => {
               const emoji = exec.recurringExpense.category?.emoji ?? "📦";
               const amount = exec.amountArs ?? exec.recurringExpense.amountArs;
+              const executionStatus = getExecutionStatus(exec.scheduledDate, "pending");
               
               return (
                 <div key={exec.id} style={itemStyle}>
@@ -369,6 +375,12 @@ export function RecurringList() {
                     <p style={nameStyle}>
                       {emoji} {exec.recurringExpense.name}
                     </p>
+                    <div style={{ marginTop: "8px" }}>
+                      <StatusBadge
+                        status={executionStatus.status}
+                        daysOverdue={executionStatus.daysOverdue}
+                      />
+                    </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <button
@@ -388,6 +400,39 @@ export function RecurringList() {
                     >
                       <SkipForward style={{ width: 16, height: 16 }} />
                     </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {paidThisMonth.length > 0 && (
+        <div className="h-card h-animate">
+          <div className="h-card-header">
+            <h2 style={cardTitleStyle}>
+              <CheckCircle style={{ width: 20, height: 20 }} />
+              Pagados este mes
+            </h2>
+            <p style={cardDescStyle}>Ejecuciones ya confirmadas o auto-pagadas</p>
+          </div>
+          <div className="h-card-body">
+            {paidThisMonth.map((exec) => {
+              const emoji = exec.recurringExpense.category?.emoji ?? "📦";
+              const amount = exec.amountArs ?? exec.recurringExpense.amountArs;
+              const executionStatus = getExecutionStatus(exec.scheduledDate, "executed");
+
+              return (
+                <div key={exec.id} style={itemStyle}>
+                  <div>
+                    <p style={amountStyle}>${amount.toLocaleString("es-AR")}</p>
+                    <p style={nameStyle}>
+                      {emoji} {exec.recurringExpense.name}
+                    </p>
+                    <div style={{ marginTop: "8px" }}>
+                      <StatusBadge status={executionStatus.status} />
+                    </div>
                   </div>
                 </div>
               );
@@ -572,7 +617,7 @@ export function RecurringList() {
       )}
 
       {/* Empty State */}
-      {expenses.length === 0 && pending.length === 0 && !showForm && (
+      {expenses.length === 0 && pendingThisMonth.length === 0 && paidThisMonth.length === 0 && !showForm && (
         <div className="h-card h-animate">
           <div className="h-card-body" style={{ padding: "3rem", textAlign: "center", color: "var(--htext2)" }}>
             <CalendarClock style={{ width: 48, height: 48, marginBottom: "1rem", opacity: 0.5 }} />
