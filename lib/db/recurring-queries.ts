@@ -655,11 +655,26 @@ async function createTransactionFromRecurring(
   // Get exchange rate for USD conversion
   const exchangeRate = 1200; // Default, should be fetched from settings
 
+  // Get category ID - fallback to "imprevistos" category if not set
+  let categoryId = recurring.categoryId;
+  if (!categoryId) {
+    const fallbackCategory = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.slug, "imprevistos"))
+      .limit(1);
+    categoryId = fallbackCategory[0]?.id ?? null;
+  }
+
+  if (!categoryId) {
+    throw new Error("No se encontró categoría para la transacción");
+  }
+
   await db.insert(transactions).values({
     id: transactionId,
     user_id: recurring.userId,
     group_id: recurring.groupId,
-    category_id: recurring.categoryId ?? "imprevistos",
+    category_id: categoryId,
     amount_ars: finalAmount,
     amount_usd: finalAmount / exchangeRate,
     merchant: recurring.merchant ?? recurring.name,
