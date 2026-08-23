@@ -1301,6 +1301,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   if (parsed.intent === "add_recurring") {
     const amount_ars = parsed.amount_ars ?? null;
     const name = parsed.recurring_name ?? parsed.merchant ?? parsed.description ?? null;
+    const dayOfMonth = parsed.recurring_day ?? null;
 
     if (!name) {
       return {
@@ -1345,33 +1346,64 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       }
     }
 
-    // Create the recurring expense
-    const created = await createRecurringExpense({
-      userId,
-      groupId,
-      name,
-      amountArs: amount_ars,
-      categoryId,
-      merchant: name,
-      frequency: "monthly",
-      dayOfMonth: 1,
-      autoConfirm: false,
-    });
+    // If day is provided, create directly
+    if (dayOfMonth && dayOfMonth >= 1 && dayOfMonth <= 31) {
+      const created = await createRecurringExpense({
+        userId,
+        groupId,
+        name,
+        amountArs: amount_ars,
+        categoryId,
+        merchant: name,
+        frequency: "monthly",
+        dayOfMonth,
+        autoConfirm: false,
+      });
 
+      return {
+        text: [
+          `✅ <b>Gasto recurrente creado</b>`,
+          ``,
+          `📅 <b>Nombre:</b> ${escapeHtml(created.name)}`,
+          `💰 <b>Monto:</b> $${created.amountArs.toLocaleString("es-AR")} ARS`,
+          `📂 <b>Categoría:</b> ${categoryEmoji} ${categoryName}`,
+          `🔄 <b>Frecuencia:</b> Mensual (día ${created.dayOfMonth})`,
+          ``,
+          `Te recordaré este gasto el día ${created.dayOfMonth} de cada mes.`,
+        ].join("\n"),
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+          [{ text: "➕ Agregar otro", callback_data: "recurring:suggest" }],
+        ]),
+      };
+    }
+
+    // No day provided, ask with buttons
     return {
       text: [
-        `✅ <b>Gasto recurrente creado</b>`,
+        `➕ <b>Agregar ${escapeHtml(name)}</b>`,
         ``,
-        `📅 <b>Nombre:</b> ${escapeHtml(created.name)}`,
-        `💰 <b>Monto:</b> $${created.amountArs.toLocaleString("es-AR")} ARS`,
-        `📂 <b>Categoría:</b> ${categoryEmoji} ${categoryName}`,
-        `🔄 <b>Frecuencia:</b> Mensual (día ${created.dayOfMonth})`,
+        `💰 Monto: $${amount_ars.toLocaleString("es-AR")}`,
+        `📂 Categoría: ${categoryEmoji} ${categoryName}`,
         ``,
-        `El primer día de cada mes te preguntaré si querés confirmar este gasto.`,
+        `¿Qué día del mes vence este gasto?`,
       ].join("\n"),
       replyMarkup: buildPersonalKeyboard([
-        [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
-        [{ text: "➕ Agregar otro", callback_data: "recurring:suggest" }],
+        [
+          { text: "1", callback_data: `recurring:add_final:${name}:${amount_ars}:${categorySlug}:1` },
+          { text: "5", callback_data: `recurring:add_final:${name}:${amount_ars}:${categorySlug}:5` },
+          { text: "10", callback_data: `recurring:add_final:${name}:${amount_ars}:${categorySlug}:10` },
+        ],
+        [
+          { text: "15", callback_data: `recurring:add_final:${name}:${amount_ars}:${categorySlug}:15` },
+          { text: "20", callback_data: `recurring:add_final:${name}:${amount_ars}:${categorySlug}:20` },
+          { text: "25", callback_data: `recurring:add_final:${name}:${amount_ars}:${categorySlug}:25` },
+        ],
+        [
+          { text: "28", callback_data: `recurring:add_final:${name}:${amount_ars}:${categorySlug}:28` },
+          { text: "Fin de mes", callback_data: `recurring:add_final:${name}:${amount_ars}:${categorySlug}:31` },
+        ],
+        [{ text: "❌ Cancelar", callback_data: "recurring:cancel" }],
       ]),
     };
   }

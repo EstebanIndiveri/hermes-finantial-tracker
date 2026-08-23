@@ -25,6 +25,7 @@ const ParsedMessageSchema = z.object({
   needs_confirmation: z.boolean().default(false),
   requires_reimbursement: z.boolean().default(false),
   recurring_name: z.string().nullable().optional(),
+  recurring_day: z.number().nullable().optional(),
   recurring_action: z.enum(["pause", "activate", "confirm", "skip"]).nullable().optional(),
   confidence: z.number().min(0).max(1),
 });
@@ -40,7 +41,7 @@ INTENTS disponibles:
 - "simulate_expense": preguntar si PUEDE gastar UNA CANTIDAD ESPECÍFICA (tiene monto propio). Ej: "puedo gastar 36000", "me alcanza para 50000 en restaurante", "tengo para gastar 15000", "conviene gastar 40000 ahora"
 - "delete_last": borrar, deshacer o eliminar el último gasto. Ej: "borrá el último gasto", "deshacer", "me equivoqué borrá"
 - "query_reimbursements": ver reintegros pendientes. Ej: "reintegros", "mis reintegros", "ver reintegros", "qué reintegros tengo", "reembolsos pendientes"
-- "add_recurring": agregar un gasto recurrente (fijo mensual). Ej: "agregar gasto recurrente 15000 netflix", "crear recurrente alquiler 150000", "nuevo gasto fijo spotify 2500", "agregar pago mensual internet"
+- "add_recurring": agregar un gasto recurrente (fijo mensual). Ej: "agregar gasto recurrente 15000 netflix", "crear recurrente alquiler 150000", "nuevo gasto fijo spotify 2500", "agregar pago mensual internet", "agregar recurrente netflix 1500 día 15", "recurrente prime video 1500 el 24"
 - "list_recurring": listar gastos recurrentes configurados. Ej: "mis gastos recurrentes", "recurrentes", "ver gastos fijos", "listar pagos mensuales", "mis recurrentes", "gastos recurrentes", "ver recurrentes"
 - "toggle_recurring": pausar o activar un gasto recurrente. Ej: "pausar netflix", "activar alquiler", "desactivar spotify", "reactivar gym"
 - "pending_recurring": ver gastos recurrentes pendientes del mes. Ej: "pendientes del mes", "qué tengo que pagar", "gastos pendientes", "recurrentes sin pagar", "pendientes", "qué debo pagar", "pagos pendientes"
@@ -80,6 +81,7 @@ Campos a devolver:
 - needs_confirmation: true si el usuario pide confirmación antes de registrar
 - requires_reimbursement: true si el usuario necesita reintegro/reembolso del gasto
 - recurring_name: nombre del gasto recurrente mencionado (netflix, spotify, alquiler, etc) o null
+- recurring_day: día del mes para el gasto recurrente (1-31) o null. Ej: "día 15" → 15, "el 24" → 24, "fin de mes" → 31
 - recurring_action: para toggle/confirm/skip → "pause", "activate", "confirm" o "skip", o null
 - confidence: número entre 0.0 y 1.0 (usar 0.9+ cuando el intent es claro)
 

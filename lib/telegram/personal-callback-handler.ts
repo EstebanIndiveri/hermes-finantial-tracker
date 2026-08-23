@@ -961,6 +961,43 @@ export async function handlePersonalCallback(
       const amount = parseFloat(parts[3]);
       const categorySlug = parts[4] || null;
 
+      // Ask for day of month before creating
+      return {
+        text: [
+          `➕ <b>Agregar ${escapeHtml(name)}</b>`,
+          ``,
+          `💰 Monto: $${amount.toLocaleString("es-AR")}`,
+          ``,
+          `¿Qué día del mes vence este gasto?`,
+        ].join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [
+            { text: "1", callback_data: `recurring:add_final:${name}:${amount}:${categorySlug}:1` },
+            { text: "5", callback_data: `recurring:add_final:${name}:${amount}:${categorySlug}:5` },
+            { text: "10", callback_data: `recurring:add_final:${name}:${amount}:${categorySlug}:10` },
+          ],
+          [
+            { text: "15", callback_data: `recurring:add_final:${name}:${amount}:${categorySlug}:15` },
+            { text: "20", callback_data: `recurring:add_final:${name}:${amount}:${categorySlug}:20` },
+            { text: "25", callback_data: `recurring:add_final:${name}:${amount}:${categorySlug}:25` },
+          ],
+          [
+            { text: "28", callback_data: `recurring:add_final:${name}:${amount}:${categorySlug}:28` },
+            { text: "Fin de mes", callback_data: `recurring:add_final:${name}:${amount}:${categorySlug}:31` },
+          ],
+          [{ text: "❌ Cancelar", callback_data: "recurring:suggest" }],
+        ]),
+      };
+    }
+
+    if (data.startsWith("recurring:add_final:")) {
+      const parts = data.split(":");
+      const name = parts[2];
+      const amount = parseFloat(parts[3]);
+      const categorySlug = parts[4] === "null" ? null : parts[4];
+      const dayOfMonth = parseInt(parts[5]) || 1;
+
       let categoryId: string | null = null;
       let categoryName = "Sin categoría";
       let categoryEmoji = "📦";
@@ -984,7 +1021,7 @@ export async function handlePersonalCallback(
         categoryId,
         merchant: name,
         frequency: "monthly",
-        dayOfMonth: 1,
+        dayOfMonth,
       });
 
       return {
@@ -994,8 +1031,9 @@ export async function handlePersonalCallback(
           `📅 <b>${escapeHtml(created.name)}</b>`,
           `💰 $${created.amountArs.toLocaleString("es-AR")} / mes`,
           `📂 ${categoryEmoji} ${categoryName}`,
+          `📆 Día ${dayOfMonth} de cada mes`,
           ``,
-          `Te recordaré este gasto el día 1 de cada mes.`,
+          `Te recordaré este gasto el día ${dayOfMonth} de cada mes.`,
         ].join("\n"),
         edit: true,
         replyMarkup: buildPersonalKeyboard([
