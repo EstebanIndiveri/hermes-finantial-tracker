@@ -83,12 +83,14 @@ Campos a devolver:
 - recurring_action: para toggle/confirm/skip → "pause", "activate", "confirm" o "skip", o null
 - confidence: número entre 0.0 y 1.0 (usar 0.9+ cuando el intent es claro)
 
-PALABRAS CLAVE IMPORTANTES:
-- "recurrentes" → list_recurring
-- "pendientes" → pending_recurring  
-- "reintegros" → query_reimbursements
-- "resumen" → query_summary
-- "disponible" → query_available
+PALABRAS CLAVE - MAPEO DIRECTO (usar siempre):
+- Mensaje es SOLO "recurrentes" o "Recurrentes" → intent: list_recurring
+- Mensaje es SOLO "pendientes" o "Pendientes" → intent: pending_recurring
+- Mensaje es SOLO "reintegros" o "Reintegros" → intent: query_reimbursements
+- Mensaje es SOLO "resumen" o "Resumen" → intent: query_summary
+- Mensaje contiene "disponible" sin monto → intent: query_available
+
+Si el mensaje es una sola palabra de las anteriores, usá el intent correspondiente con confidence 0.95.
 
 Respondé ÚNICAMENTE con el objeto JSON. Sin markdown. Sin bloques de código. Primera línea debe ser { y última }.`;
 

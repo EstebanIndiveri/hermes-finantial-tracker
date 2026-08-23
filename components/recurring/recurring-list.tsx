@@ -442,12 +442,12 @@ export function RecurringList() {
                   type="number"
                   value={newDay}
                   onChange={(e) => {
-                    const val = Math.max(1, Math.min(28, parseInt(e.target.value) || 1));
+                    const val = Math.max(1, Math.min(31, parseInt(e.target.value) || 1));
                     setNewDay(val.toString());
                   }}
                   style={{ ...inputStyle, width: "80px", textAlign: "center" }}
                   min="1"
-                  max="28"
+                  max="31"
                 />
                 <span style={{ color: "var(--htext3)", fontSize: "13px" }}>de cada mes</span>
               </div>

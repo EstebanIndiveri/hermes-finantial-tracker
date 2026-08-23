@@ -16,7 +16,7 @@ const CreateRecurringSchema = z.object({
   categoryId: z.string().nullable().optional(),
   merchant: z.string().nullable().optional(),
   frequency: z.enum(["monthly", "weekly", "yearly"]).default("monthly"),
-  dayOfMonth: z.number().min(1).max(28).default(1),
+  dayOfMonth: z.number().min(1).max(31).default(1),
   autoConfirm: z.boolean().default(false),
   notes: z.string().nullable().optional(),
 });

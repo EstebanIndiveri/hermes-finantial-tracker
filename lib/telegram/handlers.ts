@@ -22,6 +22,7 @@ import {
   confirmExecution,
   skipExecution,
   getRecurringStats,
+  createMonthlyExecutions,
   type RecurringExpenseWithCategory,
   type RecurringExecutionWithDetails,
 } from "@/lib/db/recurring-queries";
@@ -1719,6 +1720,9 @@ async function buildRecurringListMessage(
 async function buildPendingRecurringMessage(
   userId: string
 ): Promise<PersonalBotMessage> {
+  // Auto-generate executions for this month if needed
+  await createMonthlyExecutions(userId);
+  
   const pending = await getPendingExecutions(userId);
   const stats = await getRecurringStats(userId);
 
