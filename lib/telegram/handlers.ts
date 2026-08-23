@@ -41,9 +41,67 @@ interface PendingExpenseReimbursementState {
   group_id: string;
 }
 
+interface RecurringExecutionStatusDescriptor {
+  badge: string;
+  dueLabel: string;
+}
 
 function escapeHtml(text: string): string {
   return text.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
+}
+
+function formatRecurringScheduledDate(date: string): string {
+  const [year, month, day] = date.split("-");
+  if (!year || !month || !day) {
+    return date;
+  }
+
+  return `${day}/${month}`;
+}
+
+function getDaysFromToday(date: string): number {
+  const today = getArgentinaDate();
+  const [year, month, day] = date.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return 0;
+  }
+
+  const target = new Date(year, month - 1, day);
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diffMs = target.getTime() - todayStart.getTime();
+
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
+}
+
+function getRecurringExecutionStatus(execution: RecurringExecutionWithDetails): RecurringExecutionStatusDescriptor {
+  if (execution.status !== "pending") {
+    return {
+      badge: "✅ Pagado",
+      dueLabel: `pagado • vencía ${formatRecurringScheduledDate(execution.scheduledDate)}`,
+    };
+  }
+
+  const daysUntilDue = getDaysFromToday(execution.scheduledDate);
+
+  if (daysUntilDue > 0) {
+    return {
+      badge: "⏳ Pendiente",
+      dueLabel: `vence ${formatRecurringScheduledDate(execution.scheduledDate)}`,
+    };
+  }
+
+  if (daysUntilDue === 0) {
+    return {
+      badge: "⚠️ Vence hoy",
+      dueLabel: `vence ${formatRecurringScheduledDate(execution.scheduledDate)}`,
+    };
+  }
+
+  return {
+    badge: `🚨 Vencido (${Math.abs(daysUntilDue)} día${Math.abs(daysUntilDue) === 1 ? "" : "s"})`,
+    dueLabel: `vencía ${formatRecurringScheduledDate(execution.scheduledDate)}`,
+  };
 }
 
 function buildExpenseConfirmationMessage(
@@ -1683,7 +1741,7 @@ async function buildRecurringListMessage(
     lines.push(`<b>Activos:</b>`);
     active.forEach((e) => {
       const emoji = e.category?.emoji ?? "📦";
-      lines.push(`${emoji} ${e.name} - $${e.amountArs.toLocaleString("es-AR")} (día ${e.dayOfMonth})`);
+      lines.push(`🟢 ${emoji} ${e.name} - $${e.amountArs.toLocaleString("es-AR")} (día ${e.dayOfMonth})`);
     });
     lines.push(``);
   }
@@ -1692,7 +1750,7 @@ async function buildRecurringListMessage(
     lines.push(`<b>⏸️ Pausados:</b>`);
     paused.forEach((e) => {
       const emoji = e.category?.emoji ?? "📦";
-      lines.push(`${emoji} <s>${e.name}</s> - $${e.amountArs.toLocaleString("es-AR")}`);
+      lines.push(`⏸️ ${emoji} <s>${e.name}</s> - $${e.amountArs.toLocaleString("es-AR")} (día ${e.dayOfMonth})`);
     });
   }
 
@@ -1772,7 +1830,9 @@ async function buildPendingRecurringMessage(
   pending.forEach((e, i) => {
     const emoji = e.recurringExpense.category?.emoji ?? "📦";
     const amount = e.amountArs ?? e.recurringExpense.amountArs;
+    const status = getRecurringExecutionStatus(e);
     lines.push(`${i + 1}. ${emoji} ${e.recurringExpense.name} - $${amount.toLocaleString("es-AR")}`);
+    lines.push(`   ${status.badge} • ${status.dueLabel}`);
   });
 
   lines.push(``);
