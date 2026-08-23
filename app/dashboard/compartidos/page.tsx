@@ -4,6 +4,8 @@ import { split_sessions, splits, split_session_members } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { CompartidosClient } from "./CompartidosClient";
 
+export const dynamic = "force-dynamic";
+
 async function getSessions() {
   try {
     const hdrs = await headers();

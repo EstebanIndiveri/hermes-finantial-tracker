@@ -11,6 +11,8 @@ import { MonthSelector } from "@/components/dashboard/MonthSelector";
 import { TransactionList } from "@/components/dashboard/TransactionList";
 import { ExportPanel } from "@/components/dashboard/ExportPanel";
 
+export const dynamic = "force-dynamic";
+
 const MONTH_REGEX = /^\d{4}-\d{2}$/;
 
 export default async function DashboardPage({

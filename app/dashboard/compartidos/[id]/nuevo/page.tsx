@@ -1,5 +1,6 @@
 // app/dashboard/compartidos/[id]/nuevo/page.tsx
 "use client";
+export const dynamic = "force-dynamic";
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
