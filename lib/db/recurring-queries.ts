@@ -3,6 +3,7 @@
  * Handles CRUD operations, execution management, and statistics.
  */
 
+import { getArgentinaDate } from "@/lib/utils/dates";
 import { db } from "./client";
 import { recurringExpenses, recurringExecutions, transactions, categories, users } from "./schema";
 import { eq, and, desc, sql, gte, lte, isNull, or } from "drizzle-orm";
@@ -734,10 +735,14 @@ export async function getRecurringStats(userId: string): Promise<RecurringStats>
 export async function getUpcomingExecutions(
   days: number = 3
 ): Promise<Array<{ userId: string; telegramUserId: string | null; executions: RecurringExecutionWithDetails[] }>> {
-  const today = new Date();
+  const today = getArgentinaDate();
   const targetDate = new Date(today);
   targetDate.setDate(today.getDate() + days);
-  const targetDateStr = targetDate.toISOString().slice(0, 10);
+  const targetDateStr = [
+    targetDate.getFullYear(),
+    String(targetDate.getMonth() + 1).padStart(2, "0"),
+    String(targetDate.getDate()).padStart(2, "0"),
+  ].join("-");
 
   const results = await db
     .select({
@@ -810,7 +815,12 @@ export async function getUpcomingExecutions(
  * Get executions past due date and still pending, grouped by user
  */
 export async function getOverdueExecutions(): Promise<Array<{ userId: string; telegramUserId: string | null; executions: RecurringExecutionWithDetails[] }>> {
-  const today = new Date().toISOString().slice(0, 10);
+  const argentinaToday = getArgentinaDate();
+  const today = [
+    argentinaToday.getFullYear(),
+    String(argentinaToday.getMonth() + 1).padStart(2, "0"),
+    String(argentinaToday.getDate()).padStart(2, "0"),
+  ].join("-");
 
   const results = await db
     .select({
