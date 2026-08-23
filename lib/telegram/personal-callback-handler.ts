@@ -740,6 +740,147 @@ export async function handlePersonalCallback(
             { text: "➕ Agregar", callback_data: "recurring:suggest" },
             { text: "📋 Pendientes", callback_data: "recurring:pending" },
           ],
+          [{ text: "⚙️ Gestionar", callback_data: "recurring:manage" }],
+        ]),
+      };
+    }
+
+    // Manage recurring expenses (edit, delete, toggle)
+    if (data === "recurring:manage") {
+      const expenses = await getUserRecurringExpenses(userId, { groupId });
+
+      if (expenses.length === 0) {
+        return {
+          text: "No tenés gastos recurrentes para gestionar.",
+          edit: true,
+          replyMarkup: buildPersonalKeyboard([
+            [{ text: "➕ Agregar recurrente", callback_data: "recurring:suggest" }],
+          ]),
+        };
+      }
+
+      const lines = [
+        `⚙️ <b>Gestionar Recurrentes</b>`,
+        ``,
+        `Seleccioná un gasto para ver opciones:`,
+        ``,
+      ];
+
+      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+
+      expenses.forEach((e) => {
+        const emoji = e.category?.emoji ?? "📦";
+        const status = e.isActive ? "" : " ⏸️";
+        rows.push([{
+          text: `${emoji} ${e.name}${status}`,
+          callback_data: `recurring:actions:${e.id}`,
+        }]);
+      });
+
+      rows.push([{ text: "⬅️ Volver", callback_data: "recurring:list" }]);
+
+      return {
+        text: lines.join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard(rows),
+      };
+    }
+
+    // Show actions for a specific recurring expense
+    if (data.startsWith("recurring:actions:")) {
+      const expenseId = data.split(":")[2];
+      const expenses = await getUserRecurringExpenses(userId, { groupId });
+      const expense = expenses.find((e) => e.id === expenseId);
+
+      if (!expense) {
+        return { text: "❌ Gasto no encontrado.", edit: true };
+      }
+
+      const emoji = expense.category?.emoji ?? "📦";
+      const statusText = expense.isActive ? "Activo" : "Pausado";
+      const toggleText = expense.isActive ? "⏸️ Pausar" : "▶️ Activar";
+
+      return {
+        text: [
+          `${emoji} <b>${expense.name}</b>`,
+          ``,
+          `💰 Monto: $${expense.amountArs.toLocaleString("es-AR")}/mes`,
+          `📅 Día: ${expense.dayOfMonth}`,
+          `📊 Estado: ${statusText}`,
+          ``,
+          `¿Qué querés hacer?`,
+        ].join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: toggleText, callback_data: `recurring:toggle:${expenseId}` }],
+          [{ text: "🗑️ Eliminar", callback_data: `recurring:delete_ask:${expenseId}` }],
+          [{ text: "⬅️ Volver", callback_data: "recurring:manage" }],
+        ]),
+      };
+    }
+
+    // Toggle recurring expense (pause/activate)
+    if (data.startsWith("recurring:toggle:")) {
+      const expenseId = data.split(":")[2];
+      const result = await toggleRecurringExpense(expenseId);
+
+      if (!result) {
+        return { text: "❌ Gasto no encontrado.", edit: true };
+      }
+
+      const newStatus = result.isActive ? "activado ▶️" : "pausado ⏸️";
+
+      return {
+        text: `✅ Gasto ${newStatus}.`,
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "⚙️ Gestionar", callback_data: "recurring:manage" }],
+          [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+        ]),
+      };
+    }
+
+    // Ask for delete confirmation
+    if (data.startsWith("recurring:delete_ask:")) {
+      const expenseId = data.split(":")[2];
+      const expenses = await getUserRecurringExpenses(userId, { groupId });
+      const expense = expenses.find((e) => e.id === expenseId);
+
+      if (!expense) {
+        return { text: "❌ Gasto no encontrado.", edit: true };
+      }
+
+      return {
+        text: [
+          `🗑️ <b>Eliminar gasto recurrente</b>`,
+          ``,
+          `¿Seguro que querés eliminar <b>${expense.name}</b>?`,
+          ``,
+          `Esta acción no se puede deshacer.`,
+        ].join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "🗑️ Sí, eliminar", callback_data: `recurring:delete_confirm:${expenseId}` }],
+          [{ text: "❌ Cancelar", callback_data: `recurring:actions:${expenseId}` }],
+        ]),
+      };
+    }
+
+    // Confirm delete
+    if (data.startsWith("recurring:delete_confirm:")) {
+      const expenseId = data.split(":")[2];
+      const deleted = await deleteRecurringExpense(expenseId);
+
+      if (!deleted) {
+        return { text: "❌ No se pudo eliminar el gasto.", edit: true };
+      }
+
+      return {
+        text: "✅ Gasto recurrente eliminado.",
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "⚙️ Gestionar", callback_data: "recurring:manage" }],
+          [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
         ]),
       };
     }
