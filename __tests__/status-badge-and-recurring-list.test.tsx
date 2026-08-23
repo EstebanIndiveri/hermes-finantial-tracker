@@ -59,4 +59,13 @@ describe("RecurringList", () => {
     expect(source).toContain("StatusBadge");
     expect(source).toContain("getExecutionStatus");
   });
+
+  it("includes edit recurring expense controls in the source", () => {
+    const source = RecurringList.toString();
+
+    expect(source).toContain("Editar recurrente");
+    expect(source).toContain("/api/recurring-expenses/${editingExpense.id}");
+    expect(source).toContain("Guardar cambios");
+    expect(source).toContain("/api/categories?all=true");
+  });
 });
