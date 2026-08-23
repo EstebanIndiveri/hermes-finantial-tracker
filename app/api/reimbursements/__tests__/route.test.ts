@@ -20,6 +20,12 @@ function makeReq(url: string, options?: RequestInit): NextRequest {
   return new NextRequest(url, options);
 }
 
+function makeAuthedReq(url: string, options?: RequestInit): NextRequest {
+  const headers = new Headers(options?.headers);
+  headers.set("cookie", "hermes_session=session-token");
+  return new NextRequest(url, { ...options, headers });
+}
+
 describe("GET /api/reimbursements", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -35,10 +41,10 @@ describe("GET /api/reimbursements", () => {
   });
 
   it("returns reimbursements for the authenticated user", async () => {
-    verifySession.mockResolvedValue({ userId: "user-1" });
+    verifySession.mockResolvedValue("user-1");
     getReimbursementsByUser.mockResolvedValue([{ id: "reimb-1" }]);
 
-    const response = await GET(makeReq("http://localhost/api/reimbursements"));
+    const response = await GET(makeAuthedReq("http://localhost/api/reimbursements"));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual([{ id: "reimb-1" }]);
@@ -66,10 +72,10 @@ describe("POST /api/reimbursements", () => {
   });
 
   it("returns 400 when transactionId is missing", async () => {
-    verifySession.mockResolvedValue({ userId: "user-1" });
+    verifySession.mockResolvedValue("user-1");
 
     const response = await POST(
-      makeReq("http://localhost/api/reimbursements", {
+      makeAuthedReq("http://localhost/api/reimbursements", {
         method: "POST",
         body: JSON.stringify({ amount: 100 }),
       }),
@@ -82,10 +88,10 @@ describe("POST /api/reimbursements", () => {
   });
 
   it("returns 400 when amount is not a positive number", async () => {
-    verifySession.mockResolvedValue({ userId: "user-1" });
+    verifySession.mockResolvedValue("user-1");
 
     const response = await POST(
-      makeReq("http://localhost/api/reimbursements", {
+      makeAuthedReq("http://localhost/api/reimbursements", {
         method: "POST",
         body: JSON.stringify({ transactionId: "tx-1", amount: 0 }),
       }),
@@ -98,11 +104,11 @@ describe("POST /api/reimbursements", () => {
   });
 
   it("creates a reimbursement request for the authenticated user", async () => {
-    verifySession.mockResolvedValue({ userId: "user-1" });
+    verifySession.mockResolvedValue("user-1");
     createReimbursementWithNotifications.mockResolvedValue({ id: "reimb-1", amount: 100 });
 
     const response = await POST(
-      makeReq("http://localhost/api/reimbursements", {
+      makeAuthedReq("http://localhost/api/reimbursements", {
         method: "POST",
         body: JSON.stringify({ transactionId: "tx-1", amount: 100, payerId: "payer-1" }),
       }),
