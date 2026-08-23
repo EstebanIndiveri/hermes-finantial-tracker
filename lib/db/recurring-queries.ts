@@ -5,7 +5,7 @@
 
 import { db } from "./client";
 import { recurringExpenses, recurringExecutions, transactions, categories, users } from "./schema";
-import { eq, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte, isNull, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 // ─────────────────────────────────────────────────────────────
@@ -115,8 +115,15 @@ export async function getUserRecurringExpenses(
     conditions.push(eq(recurringExpenses.isActive, true));
   }
 
+  // Include both matching groupId AND null groupId (for backwards compatibility)
+  // This ensures recurrents created without groupId are still visible
   if (options?.groupId) {
-    conditions.push(eq(recurringExpenses.groupId, options.groupId));
+    conditions.push(
+      or(
+        eq(recurringExpenses.groupId, options.groupId),
+        isNull(recurringExpenses.groupId)
+      )!
+    );
   }
 
   const results = await db

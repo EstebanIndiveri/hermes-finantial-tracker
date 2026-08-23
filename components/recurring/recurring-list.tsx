@@ -434,17 +434,23 @@ export function RecurringList() {
                 required
                 min="1"
               />
-              <select
-                value={newDay}
-                onChange={(e) => setNewDay(e.target.value)}
-                style={inputStyle}
-              >
-                {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                  <option key={d} value={d}>
-                    Día {d} del mes
-                  </option>
-                ))}
-              </select>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <label style={{ color: "var(--htext2)", fontSize: "14px", minWidth: "fit-content" }}>
+                  Día de pago:
+                </label>
+                <input
+                  type="number"
+                  value={newDay}
+                  onChange={(e) => {
+                    const val = Math.max(1, Math.min(28, parseInt(e.target.value) || 1));
+                    setNewDay(val.toString());
+                  }}
+                  style={{ ...inputStyle, width: "80px", textAlign: "center" }}
+                  min="1"
+                  max="28"
+                />
+                <span style={{ color: "var(--htext3)", fontSize: "13px" }}>de cada mes</span>
+              </div>
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
                   type="submit"
