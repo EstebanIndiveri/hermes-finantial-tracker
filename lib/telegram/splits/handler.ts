@@ -11,6 +11,7 @@ import { handlePague } from "./commands/pague";
 import { handleGroupPhoto } from "./commands/ocr-handler";
 import { handleOcrEditInput } from "./callback-handler";
 import type { OcrExpenseState } from "./callback-handler";
+import { handlePaguePartialAmountInput } from "./commands/pague";
 import { getConversationState } from "./conversation-state";
 import type { TelegramResponse } from "./telegram-api";
 
@@ -148,8 +149,12 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
       const convState = await getConversationState(chatId, telegramUserId);
       if (
         convState?.step === "ocr_expense_edit_amount" ||
-        convState?.step === "ocr_expense_edit_desc"
+        convState?.step === "ocr_expense_edit_desc" ||
+        convState?.step === "pague_partial_amount"
       ) {
+        if (convState.step === "pague_partial_amount") {
+          return handlePaguePartialAmountInput(chatId, telegramUserId, text, convState.data);
+        }
         return handleOcrEditInput(
           chatId,
           telegramUserId,

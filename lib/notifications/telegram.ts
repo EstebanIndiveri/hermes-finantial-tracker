@@ -152,3 +152,32 @@ Usa /reintegros para ver y pagar pendientes.`;
 
   await sendTelegramMessage(payer.telegram_user_id, message);
 }
+
+/**
+ * Notifies a creditor when someone pays them (splits/shared expenses)
+ */
+export async function notifySplitPaymentReceived(
+  payeeUserId: string,
+  payerName: string,
+  amount: number,
+  remainingDebt: number,
+  sessionName?: string,
+): Promise<void> {
+  const payee = await getUserById(payeeUserId);
+
+  if (!payee?.telegram_user_id) {
+    return;
+  }
+
+  const sessionText = sessionName ? `\n📁 Sesión: ${sessionName}` : "";
+  const remainingText =
+    remainingDebt > 0
+      ? `\n💰 Deuda restante: <b>$${remainingDebt.toLocaleString("es-AR")}</b>`
+      : "\n✅ ¡Deuda saldada!";
+
+  const message = `💸 <b>Recibiste un Pago</b>
+
+${payerName} te pagó <b>$${amount.toLocaleString("es-AR")}</b>${sessionText}${remainingText}`;
+
+  await sendTelegramMessage(payee.telegram_user_id, message);
+}

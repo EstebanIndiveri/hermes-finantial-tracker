@@ -18,6 +18,32 @@ const getTempDisplayName = (tempUser: TempDisplayUser): string => {
   return tempUser.first_name;
 };
 
+interface PagueState {
+  step: "pague_payment_type" | "pague_partial_amount" | "pague_confirm";
+  debt_amount: number;
+  payment_amount?: number;
+  remaining_amount?: number;
+  creditor_user_id?: string;
+  creditor_temp_id?: string;
+  creditor_name: string;
+  session_id: string;
+  payer_temp_id?: string;
+}
+
+const formatCurrency = (amount: number): string =>
+  amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
+
+const parsePaymentAmount = (input: string): number => {
+  const cleaned = input.replace(/^\$\s*/, "").replace(/\s/g, "");
+  if (cleaned.includes(",")) {
+    return parseFloat(cleaned.replace(/\./g, "").replace(",", "."));
+  }
+  if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) {
+    return parseInt(cleaned.replace(/\./g, ""), 10);
+  }
+  return parseFloat(cleaned);
+};
+
 /**
  * Handles /pague command.
  * Shows list of debts and allows the user to confirm payment.
@@ -209,8 +235,8 @@ export async function handlePagueSelect(
     creditorName = getTempDisplayName(creditor);
   }
 
-  const state = {
-    step: "pague_confirm" as const,
+  const state: PagueState = {
+    step: "pague_payment_type",
     debt_amount: debt.amount,
     creditor_user_id: creditorUserId,
     creditor_temp_id: creditorTempId,
@@ -221,15 +247,71 @@ export async function handlePagueSelect(
 
   await setConversationState(chatId, telegramUserId, { step: state.step, data: state });
 
-  const formattedAmount = debt.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
+  const formattedAmount = formatCurrency(debt.amount);
   const keyboard = buildInlineKeyboard([
-    [{ text: "✅ Confirmar", callback_data: "pague_confirm:yes" }],
+    [{ text: `💰 Pago total: $${formattedAmount}`, callback_data: "pague_confirm:full" }],
+    [{ text: "📝 Pago parcial", callback_data: "pague_partial:start" }],
     [{ text: "❌ Cancelar", callback_data: "pague_confirm:cancel" }],
   ]);
 
   return {
-    text: `¿Confirmás que pagaste $${formattedAmount} a ${creditorName}?`,
+    text: `¿Cómo querés registrar este pago a ${creditorName}?`,
     replyMarkup: keyboard,
     edit: true,
+  };
+}
+
+export async function startPaguePartialAmount(
+  chatId: string,
+  telegramUserId: string,
+  state: PagueState
+): Promise<TelegramResponse> {
+  await setConversationState(chatId, telegramUserId, {
+    step: "pague_partial_amount",
+    data: {
+      ...state,
+      step: "pague_partial_amount",
+    },
+  });
+
+  return {
+    text: `¿Cuánto le pagaste a ${state.creditor_name}? (máximo: $${formatCurrency(state.debt_amount)})`,
+    edit: true,
+  };
+}
+
+export async function handlePaguePartialAmountInput(
+  chatId: string,
+  telegramUserId: string,
+  text: string,
+  state: PagueState
+): Promise<TelegramResponse | string> {
+  const amount = parsePaymentAmount(text.trim());
+  const maxAmount = formatCurrency(state.debt_amount);
+
+  if (Number.isNaN(amount) || amount <= 0 || amount > state.debt_amount) {
+    return {
+      text: `❌ El monto debe ser mayor a 0 y no superar $${maxAmount}.\n\n¿Cuánto le pagaste a ${state.creditor_name}? (máximo: $${maxAmount})`,
+    };
+  }
+
+  const paymentState: PagueState = {
+    ...state,
+    step: "pague_confirm",
+    payment_amount: amount,
+    remaining_amount: state.debt_amount - amount,
+  };
+
+  await setConversationState(chatId, telegramUserId, { step: "pague_confirm", data: paymentState });
+
+  const formattedAmount = formatCurrency(amount);
+  const remainingAmount = formatCurrency(paymentState.remaining_amount ?? 0);
+
+  return {
+    text: `¿Confirmás que pagaste $${formattedAmount} a ${state.creditor_name}? (Quedaría pendiente: $${remainingAmount})`,
+    replyMarkup: buildInlineKeyboard([
+      [{ text: "✅ Confirmar", callback_data: "pague_confirm:yes" }],
+      [{ text: "❌ Cancelar", callback_data: "pague_confirm:cancel" }],
+    ]),
   };
 }

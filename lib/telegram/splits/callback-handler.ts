@@ -15,7 +15,8 @@ import { randomUUID } from "crypto";
 import { getConversationState, setConversationState, clearConversationState } from "./conversation-state";
 import type { TelegramResponse } from "./telegram-api";
 import { buildInlineKeyboard } from "./telegram-api";
-import { handlePagueSelect } from "./commands/pague";
+import { handlePagueSelect, handlePaguePartialAmountInput, startPaguePartialAmount } from "./commands/pague";
+import { notifySplitPaymentReceived } from "@/lib/notifications/telegram";
 
 interface CompartidoState {
   step: "who_paid" | "participants";
@@ -28,11 +29,13 @@ interface CompartidoState {
 }
 
 interface PagueState {
-  step: "pague_confirm";
+  step: "pague_payment_type" | "pague_partial_amount" | "pague_confirm";
   debt_amount: number;
+  payment_amount?: number;
+  remaining_amount?: number;
   creditor_user_id?: string;
   creditor_temp_id?: string;
-  creditor_name?: string;
+  creditor_name: string;
   session_id: string;
   payer_temp_id?: string; // set when the debtor is a temp_user (not a Hermes user)
 }
@@ -71,6 +74,16 @@ export async function handleSplitCallback(
       };
     }
     return handlePagueSelect(chatId, telegramUserId, data);
+  }
+
+  if (data.startsWith("pague_partial:")) {
+    if (!state || state.step !== "pague_payment_type") {
+      return {
+        text: "⏱️ Esta conversación expiró o no es tuya. Usá /pague para comenzar.",
+        edit: false,
+      };
+    }
+    return startPaguePartialAmount(chatId, telegramUserId, state.data as PagueState);
   }
 
   if (!state) {
@@ -371,6 +384,26 @@ async function handlePagueConfirmCallback(
 ): Promise<TelegramResponse> {
   const action = data.replace("pague_confirm:", "");
 
+  if (action === "full") {
+    const fullState = {
+      ...state,
+      step: "pague_confirm" as const,
+      payment_amount: state.debt_amount,
+      remaining_amount: 0,
+    };
+    await setConversationState(chatId, telegramUserId, { step: "pague_confirm", data: fullState });
+
+    const formattedAmount = fullState.payment_amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
+    return {
+      text: `¿Confirmás que pagaste $${formattedAmount} a ${fullState.creditor_name}?`,
+      replyMarkup: buildInlineKeyboard([
+        [{ text: "✅ Confirmar", callback_data: "pague_confirm:yes" }],
+        [{ text: "❌ Cancelar", callback_data: "pague_confirm:cancel" }],
+      ]),
+      edit: true,
+    };
+  }
+
   if (action === "cancel") {
     await clearConversationState(chatId, telegramUserId);
     return {
@@ -428,7 +461,7 @@ async function handlePagueConfirmCallback(
     payer_temp_id: tempUser?.id ?? null,
     payee_user_id: state.creditor_user_id ?? null,
     payee_temp_id: state.creditor_temp_id ?? null,
-    amount: state.debt_amount,
+    amount: state.payment_amount ?? state.debt_amount,
     method: "manual",
     receipt_image_url: null,
     ocr_raw_text: null,
@@ -443,15 +476,27 @@ async function handlePagueConfirmCallback(
       ? getHermesDisplayName(await db.query.users.findFirst({ where: eq(users.id, state.creditor_user_id) }))
       : getTempDisplayName(await db.query.temp_users.findFirst({ where: eq(temp_users.id, state.creditor_temp_id!) })));
 
-  const formattedAmount = state.debt_amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
+  const paidAmount = state.payment_amount ?? state.debt_amount;
+  const formattedAmount = paidAmount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
+  const remainingAmount = (state.remaining_amount ?? 0).toLocaleString("es-AR", { minimumFractionDigits: 0 });
+  const payerName = hermesUser
+    ? getHermesDisplayName(hermesUser)
+    : getTempDisplayName(tempUser);
+
+  if (state.creditor_user_id) {
+    await notifySplitPaymentReceived(
+      state.creditor_user_id,
+      payerName,
+      paidAmount,
+      state.remaining_amount ?? 0,
+      session.name,
+    );
+  }
 
   return {
     text: [
-      `✅ Pago registrado`,
-      ``,
-      `💰 <b>$${formattedAmount}</b> a <b>${creditorName}</b>`,
-      ``,
-      `Usá /balances para ver el estado actualizado.`,
+      `✅ Registrado: Pagaste $${formattedAmount} a ${creditorName}`,
+      `💰 Tu deuda restante con ${creditorName}: $${remainingAmount}`,
     ].join("\n"),
     edit: true,
   };

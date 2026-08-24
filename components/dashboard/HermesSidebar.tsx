@@ -97,6 +97,29 @@ export function HermesSidebar() {
             Compartidos
           </Link>
           <Link
+            href="/dashboard/balances"
+            className={`h-nav-item${pathname.startsWith("/dashboard/balances") && !pathname.startsWith("/dashboard/balances/historial") ? " active" : ""}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path d="M4 12h16" />
+              <path d="M7 16l-3-4 3-4" />
+              <path d="M17 8l3 4-3 4" />
+            </svg>
+            Balances
+          </Link>
+          <Link
+            href="/dashboard/balances/historial"
+            className={`h-nav-item${pathname.startsWith("/dashboard/balances/historial") ? " active" : ""}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path d="M3 3v18h18" />
+              <path d="M8 13l3-3 3 2 4-5" />
+            </svg>
+            Historial
+          </Link>
+          <Link
             href="/dashboard/reimbursements"
             className={`h-nav-item${pathname === "/dashboard/reimbursements" ? " active" : ""}`}
             onClick={() => setMobileOpen(false)}

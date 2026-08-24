@@ -2,6 +2,8 @@ import { handleSplitCallback } from "../callback-handler";
 import { db } from "@/lib/db/client";
 import { getConversationState, setConversationState, clearConversationState } from "../conversation-state";
 import { splits, split_payers, split_items, split_payments } from "@/lib/db/schema";
+import { handlePagueSelect, startPaguePartialAmount } from "../commands/pague";
+import { notifySplitPaymentReceived } from "@/lib/notifications/telegram";
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -25,6 +27,12 @@ jest.mock("../conversation-state", () => ({
 
 jest.mock("../commands/pague", () => ({
   handlePagueSelect: jest.fn(),
+  handlePaguePartialAmountInput: jest.fn(),
+  startPaguePartialAmount: jest.fn(),
+}));
+
+jest.mock("@/lib/notifications/telegram", () => ({
+  notifySplitPaymentReceived: jest.fn(),
 }));
 
 function makeInsertMock() {
@@ -163,6 +171,8 @@ describe("handleSplitCallback", () => {
       data: {
         step: "pague_confirm",
         debt_amount: 450,
+        payment_amount: 450,
+        remaining_amount: 0,
         creditor_temp_id: "temp-1",
         session_id: "session-1",
       },
@@ -193,5 +203,72 @@ describe("handleSplitCallback", () => {
     }));
     expect(clearConversationState).toHaveBeenCalledWith("chat-1", "telegram-1");
     expect(response?.text).toContain("@sabri");
+    expect(notifySplitPaymentReceived).not.toHaveBeenCalled();
+  });
+
+  it("delegates partial payment callback start to pague command handler", async () => {
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "pague_payment_type",
+      data: {
+        step: "pague_payment_type",
+        debt_amount: 450,
+        creditor_temp_id: "temp-1",
+        creditor_name: "@sabri",
+        session_id: "session-1",
+      },
+    });
+    (startPaguePartialAmount as jest.Mock).mockResolvedValue({ text: "ok" });
+
+    await handleSplitCallback("chat-1", "telegram-1", "pague_partial:start");
+
+    expect(startPaguePartialAmount).toHaveBeenCalledWith("chat-1", "telegram-1", expect.objectContaining({
+      step: "pague_payment_type",
+    }));
+  });
+
+  it("rejects partial payment callbacks when state is expired", async () => {
+    (getConversationState as jest.Mock).mockResolvedValue(null);
+
+    const response = await handleSplitCallback("chat-1", "telegram-1", "pague_partial:start");
+
+    expect(response).toEqual({
+      text: "⏱️ Esta conversación expiró o no es tuya. Usá /pague para comenzar.",
+      edit: false,
+    });
+  });
+
+  it("notifies Hermes creditors with remaining debt after payment", async () => {
+    const paymentInsert = makeInsertMock();
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "pague_confirm",
+      data: {
+        step: "pague_confirm",
+        debt_amount: 5000,
+        payment_amount: 2000,
+        remaining_amount: 3000,
+        creditor_user_id: "user-2",
+        creditor_name: "Maria",
+        session_id: "session-1",
+      },
+    });
+    (db.insert as jest.Mock).mockReturnValue(paymentInsert);
+    (db.query.users.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: "user-1",
+        telegram_user_id: "telegram-1",
+        username: "esteban",
+        name: "Esteban",
+      })
+      .mockResolvedValueOnce({
+        id: "user-2",
+        telegram_user_id: "telegram-2",
+        username: "maria",
+        name: "Maria",
+      });
+    (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue({ id: "session-1", name: "Viaje" });
+
+    await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:yes");
+
+    expect(notifySplitPaymentReceived).toHaveBeenCalledWith("user-2", "esteban", 2000, 3000, "Viaje");
   });
 });
