@@ -409,6 +409,59 @@ export function RecurringList({ month: _month }: { month?: string } = {}) {
     marginBottom: "12px",
   };
 
+  const categoryItemStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "1rem",
+    borderRadius: "8px",
+    border: "1px solid var(--hborder)",
+    background: "var(--hbg2)",
+    marginBottom: "0.75rem",
+    gap: "1rem",
+  };
+
+  const categoryHeaderStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: "0.5rem",
+  };
+
+  const categoryNameStyle: React.CSSProperties = {
+    fontSize: "0.95rem",
+    fontWeight: 500,
+    color: "var(--htext1)",
+  };
+
+  const categoryPercentStyle: React.CSSProperties = {
+    fontSize: "0.85rem",
+    fontWeight: 600,
+    color: "var(--haccent)",
+  };
+
+  const progressBarContainerStyle: React.CSSProperties = {
+    width: "100%",
+    height: "6px",
+    borderRadius: "3px",
+    background: "var(--hborder)",
+    overflow: "hidden",
+  };
+
+  const progressBarStyle: React.CSSProperties = {
+    height: "100%",
+    background: "linear-gradient(90deg, var(--haccent), #06b6d4)",
+    borderRadius: "3px",
+    transition: "width 0.3s ease",
+  };
+
+  const categoryAmountStyle: React.CSSProperties = {
+    fontSize: "1rem",
+    fontWeight: 600,
+    color: "var(--htext1)",
+    whiteSpace: "nowrap",
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       {stats && (
@@ -437,6 +490,57 @@ export function RecurringList({ month: _month }: { month?: string } = {}) {
               <span style={statValueStyle}>{stats.pendingThisMonth}</span>
               <span style={statLabelStyle}>Pendientes</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {stats && stats.byCategory && stats.byCategory.length > 0 && (
+        <div className="h-card h-animate">
+          <div className="h-card-header">
+            <h2 style={cardTitleStyle}>
+              <BarChart3 style={{ width: 20, height: 20 }} />
+              Por Categoría
+            </h2>
+          </div>
+          <div className="h-card-body">
+            {(() => {
+              // Sort categories by total (descending) and calculate percentage
+              const sortedCategories = [...stats.byCategory].sort(
+                (a, b) => b.total - a.total
+              );
+              const categoryRows = sortedCategories.map((cat) => {
+                const percentage = Math.round(
+                  (cat.total / stats.totalMonthly) * 100
+                );
+                const barWidth = Math.max(percentage, 5); // min 5% for visibility
+
+                return (
+                  <div key={cat.categoryName} style={categoryItemStyle}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={categoryHeaderStyle}>
+                        <span style={categoryNameStyle}>
+                          {cat.categoryEmoji} {cat.categoryName}
+                        </span>
+                        <span style={categoryPercentStyle}>{percentage}%</span>
+                      </div>
+                      <div style={progressBarContainerStyle}>
+                        <div
+                          style={{
+                            ...progressBarStyle,
+                            width: `${barWidth}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div style={categoryAmountStyle}>
+                      ${cat.total.toLocaleString("es-AR")}
+                    </div>
+                  </div>
+                );
+              });
+
+              return categoryRows;
+            })()}
           </div>
         </div>
       )}

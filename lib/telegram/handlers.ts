@@ -816,6 +816,39 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         ]),
       };
     }
+
+    if (editState?.step === "recurring_edit_amount") {
+      const ed = editState.data as { expense_id: string };
+      const newAmount = parseFloat(text.replace(/[$\s.]/g, "").replace(",", ".").trim());
+      
+      if (isNaN(newAmount) || newAmount <= 0) {
+        return { text: "❌ Monto inválido. Escribí solo el número, ej: <code>15000</code>" };
+      }
+
+      try {
+        // Update amount in DB
+        const { recurringExpenses } = await import("@/lib/db/schema");
+        await db
+          .update(recurringExpenses)
+          .set({ amountArs: newAmount, updatedAt: Date.now() })
+          .where(eq(recurringExpenses.id, ed.expense_id));
+
+        // Clear conversation state
+        const { clearConversationState } = await import("./splits/conversation-state");
+        await clearConversationState(chatId, String(msg.from.id));
+
+        return {
+          text: `✅ Monto actualizado a <b>$${newAmount.toLocaleString("es-AR")}</b>/mes.`,
+          replyMarkup: buildPersonalKeyboard([
+            [{ text: "⚙️ Gestionar", callback_data: "recurring:manage" }],
+            [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+          ]),
+        };
+      } catch (err) {
+        console.error("Failed to update recurring expense amount:", err);
+        return { text: "❌ Error al guardar. Intentá nuevamente." };
+      }
+    }
   }
 
   if (text.startsWith("/gasto")) {
@@ -1179,12 +1212,14 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       const name = recurringMatch[1];
       const amount = parseFloat(recurringMatch[2].replace(",", "."));
       const day = dayMatch ? parseInt(dayMatch[1] || dayMatch[2]) : null;
+      const suggestion = findSuggestionByName(name);
       
       // Override parsed with our regex extraction
       parsed.intent = "add_recurring";
       parsed.recurring_name = name;
       parsed.amount_ars = amount;
       parsed.recurring_day = day;
+      parsed.category = suggestion?.category ?? null;
       parsed.confidence = 0.85;
     }
   }

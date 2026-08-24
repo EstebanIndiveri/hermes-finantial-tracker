@@ -7,6 +7,7 @@ import {
   budgets,
   monthly_settings,
   groups,
+  recurringExecutions,
 } from "@/lib/db/schema";
 import { eq, and, sum, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -812,6 +813,8 @@ export async function handlePersonalCallback(
         ].join("\n"),
         edit: true,
         replyMarkup: buildPersonalKeyboard([
+          [{ text: "📜 Historial", callback_data: `recurring:history:${expenseId}` }],
+          [{ text: "💰 Cambiar monto", callback_data: `recurring:edit_amount:${expenseId}` }],
           [{ text: "📅 Cambiar día", callback_data: `recurring:edit_day:${expenseId}` }],
           [{ text: toggleText, callback_data: `recurring:toggle:${expenseId}` }],
           [{ text: "🗑️ Eliminar", callback_data: `recurring:delete_ask:${expenseId}` }],
@@ -880,6 +883,145 @@ export async function handlePersonalCallback(
           [{ text: "⚙️ Gestionar", callback_data: "recurring:manage" }],
           [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
         ]),
+      };
+    }
+
+    // Show payment history for recurring expense
+    if (data.startsWith("recurring:history:")) {
+      const expenseId = data.split(":")[2];
+      const expenses = await getUserRecurringExpenses(userId, { groupId });
+      const expense = expenses.find((e) => e.id === expenseId);
+
+      if (!expense) {
+        return { text: "❌ Gasto no encontrado.", edit: true };
+      }
+
+      // Get the 6 most recent executions
+      const executions = await db
+        .select()
+        .from(recurringExecutions)
+        .where(eq(recurringExecutions.recurringExpenseId, expenseId))
+        .orderBy(desc(recurringExecutions.scheduledDate))
+        .limit(6);
+
+      if (executions.length === 0) {
+        return {
+          text: [
+            `${expense.category?.emoji ?? "📦"} <b>${expense.name}</b>`,
+            ``,
+            `📜 <b>Historial de Pagos</b>`,
+            ``,
+            `Sin historial aún.`,
+          ].join("\n"),
+          edit: true,
+          replyMarkup: buildPersonalKeyboard([
+            [{ text: "⬅️ Volver", callback_data: `recurring:actions:${expenseId}` }],
+          ]),
+        };
+      }
+
+      // Group executions by month and format them
+      const monthGroups: Record<string, typeof executions> = {};
+      executions.forEach((exec) => {
+        const monthKey = exec.scheduledDate.substring(0, 7); // "YYYY-MM"
+        if (!monthGroups[monthKey]) monthGroups[monthKey] = [];
+        monthGroups[monthKey].push(exec);
+      });
+
+      const monthNames: Record<number, string> = {
+        1: "Enero",
+        2: "Febrero",
+        3: "Marzo",
+        4: "Abril",
+        5: "Mayo",
+        6: "Junio",
+        7: "Julio",
+        8: "Agosto",
+        9: "Septiembre",
+        10: "Octubre",
+        11: "Noviembre",
+        12: "Diciembre",
+      };
+
+      const historyLines: string[] = [
+        `${expense.category?.emoji ?? "📦"} <b>${expense.name}</b>`,
+        ``,
+        `📜 <b>Historial de Pagos (últimos 6 meses)</b>`,
+        ``,
+      ];
+
+      // Sort months in descending order
+      const sortedMonths = Object.keys(monthGroups).sort().reverse();
+
+      sortedMonths.forEach((monthKey) => {
+        const [yearStr, monthStr] = monthKey.split("-");
+        const monthNum = parseInt(monthStr, 10);
+        const year = parseInt(yearStr, 10);
+        const monthName = monthNames[monthNum] || monthKey;
+
+        const monthExecutions = monthGroups[monthKey];
+
+        // Get the most recent execution for this month to show status
+        const latestExecution = monthExecutions[0]; // Already sorted by scheduledDate desc
+
+        let statusEmoji = "⏳"; // Pending
+        if (latestExecution.status === "confirmed" || latestExecution.status === "auto_executed") {
+          statusEmoji = "✅"; // Confirmed/Paid
+        } else if (latestExecution.status === "skipped") {
+          statusEmoji = "⏭️"; // Skipped
+        }
+
+        // Format: "Agosto 2026: ✅ Pagado el 15/08"
+        const dayOfMonth = latestExecution.scheduledDate.split("-")[2];
+        const dateStr = `${dayOfMonth}/${monthStr}`;
+        let statusText = `${statusEmoji} `;
+
+        if (latestExecution.status === "confirmed" || latestExecution.status === "auto_executed") {
+          statusText += `Pagado el ${dateStr}`;
+        } else if (latestExecution.status === "skipped") {
+          statusText += `Saltado el ${dateStr}`;
+        } else {
+          statusText += `Pendiente desde el ${dateStr}`;
+        }
+
+        historyLines.push(`${monthName} ${year}: ${statusText}`);
+      });
+
+      return {
+        text: historyLines.join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "⬅️ Volver", callback_data: `recurring:actions:${expenseId}` }],
+        ]),
+      };
+    }
+
+    // Edit amount of recurring expense
+    if (data.startsWith("recurring:edit_amount:")) {
+      const expenseId = data.split(":")[2];
+      const expenses = await getUserRecurringExpenses(userId, { groupId });
+      const expense = expenses.find((e) => e.id === expenseId);
+
+      if (!expense) {
+        return { text: "❌ Gasto no encontrado.", edit: true };
+      }
+
+      const { setConversationState } = await import("./splits/conversation-state");
+      await setConversationState(chatId, telegramUserId, {
+        step: "recurring_edit_amount",
+        data: { expense_id: expenseId },
+      });
+
+      return {
+        text: [
+          `💰 <b>Cambiar monto</b>`,
+          ``,
+          `${expense.category?.emoji ?? "📦"} ${expense.name}`,
+          `Monto actual: <b>$${expense.amountArs.toLocaleString("es-AR")}</b>`,
+          ``,
+          `Escribí el nuevo monto:`,
+        ].join("\n"),
+        edit: true,
       };
     }
 
