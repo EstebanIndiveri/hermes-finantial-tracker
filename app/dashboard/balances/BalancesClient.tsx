@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { PagarModal } from "./PagarModal";
 import type { GlobalBalanceSummary, PartnerBalance } from "@/lib/splits/types";
 
@@ -61,11 +60,40 @@ export function BalancesClient({ initialSummary }: BalancesClientProps) {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant="outline" onClick={() => void refreshBalances()} disabled={refreshing}>
+          <button
+            onClick={() => void refreshBalances()}
+            disabled={refreshing}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "1px solid var(--hborder)",
+              background: "var(--hsurface)",
+              color: "var(--htext1)",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: refreshing ? "not-allowed" : "pointer",
+              opacity: refreshing ? 0.6 : 1,
+              transition: "all 0.15s ease"
+            }}
+          >
             {refreshing ? "Actualizando..." : "Actualizar"}
-          </Button>
+          </button>
           <Link href="/dashboard/balances/historial" style={{ textDecoration: "none" }}>
-            <Button variant="outline">Ver historial</Button>
+            <button
+              style={{
+                padding: "8px 16px",
+                borderRadius: 8,
+                border: "1px solid var(--hborder)",
+                background: "var(--hsurface)",
+                color: "var(--htext1)",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.15s ease"
+              }}
+            >
+              Ver historial
+            </button>
           </Link>
         </div>
       </div>
@@ -182,7 +210,23 @@ function BalanceColumn({
                 >
                   {isExpanded ? "Ocultar desglose" : "Ver desglose"}
                 </button>
-                {onAction && actionLabel ? <Button onClick={() => onAction(partner)}>{actionLabel}</Button> : null}
+                {onAction && actionLabel ? (
+                  <button
+                    onClick={() => onAction(partner)}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 6,
+                      border: "none",
+                      background: "var(--haccent)",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer"
+                    }}
+                  >
+                    {actionLabel}
+                  </button>
+                ) : null}
               </div>
 
               {isExpanded ? (
