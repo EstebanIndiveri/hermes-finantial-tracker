@@ -1104,6 +1104,26 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
   const parsed = await parseFinancialMessage(text);
 
+  // Fallback: detect recurring expense pattern with regex if AI missed it
+  if ((parsed.intent === "unknown" || parsed.confidence < 0.4) && /recurrente/i.test(text)) {
+    // Pattern: "agregar recurrente NOMBRE MONTO [día X]"
+    const recurringMatch = text.match(/recurrente\s+([a-zA-Z0-9+\-_áéíóúñÁÉÍÓÚÑ]+)\s+(\d+(?:[.,]\d+)?)/i);
+    const dayMatch = text.match(/d[ií]a\s*(\d{1,2})|el\s+(\d{1,2})/i);
+    
+    if (recurringMatch) {
+      const name = recurringMatch[1];
+      const amount = parseFloat(recurringMatch[2].replace(",", "."));
+      const day = dayMatch ? parseInt(dayMatch[1] || dayMatch[2]) : null;
+      
+      // Override parsed with our regex extraction
+      parsed.intent = "add_recurring";
+      parsed.recurring_name = name;
+      parsed.amount_ars = amount;
+      parsed.recurring_day = day;
+      parsed.confidence = 0.85;
+    }
+  }
+
   if (parsed.intent === "unknown" || parsed.confidence < 0.4) {
     return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible categoria\n/reintegros\n/borrar_ultimo" };
   }

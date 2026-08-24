@@ -41,7 +41,7 @@ INTENTS disponibles:
 - "simulate_expense": preguntar si PUEDE gastar UNA CANTIDAD ESPECÍFICA (tiene monto propio). Ej: "puedo gastar 36000", "me alcanza para 50000 en restaurante", "tengo para gastar 15000", "conviene gastar 40000 ahora"
 - "delete_last": borrar, deshacer o eliminar el último gasto. Ej: "borrá el último gasto", "deshacer", "me equivoqué borrá"
 - "query_reimbursements": ver reintegros pendientes. Ej: "reintegros", "mis reintegros", "ver reintegros", "qué reintegros tengo", "reembolsos pendientes"
-- "add_recurring": agregar un gasto recurrente (fijo mensual). Ej: "agregar gasto recurrente 15000 netflix", "crear recurrente alquiler 150000", "nuevo gasto fijo spotify 2500", "agregar pago mensual internet", "agregar recurrente netflix 1500 día 15", "recurrente prime video 1500 el 24"
+- "add_recurring": agregar un gasto recurrente (fijo mensual). DETECTAR cuando el mensaje contiene "recurrente" + nombre de servicio + monto. Ej: "agregar gasto recurrente 15000 netflix", "crear recurrente alquiler 150000", "nuevo gasto fijo spotify 2500", "agregar pago mensual internet", "agregar recurrente netflix 1500 día 15", "recurrente prime video 1500 el 24", "Agregar recurrente Spotify 2500 el día 10", "nuevo recurrente disney+ 1500 el 10"
 - "list_recurring": listar gastos recurrentes configurados. Ej: "mis gastos recurrentes", "recurrentes", "ver gastos fijos", "listar pagos mensuales", "mis recurrentes", "gastos recurrentes", "ver recurrentes"
 - "toggle_recurring": pausar o activar un gasto recurrente. Ej: "pausar netflix", "activar alquiler", "desactivar spotify", "reactivar gym"
 - "pending_recurring": ver gastos recurrentes pendientes del mes. Ej: "pendientes del mes", "qué tengo que pagar", "gastos pendientes", "recurrentes sin pagar", "pendientes", "qué debo pagar", "pagos pendientes"
@@ -91,6 +91,9 @@ PALABRAS CLAVE - MAPEO DIRECTO (usar siempre):
 - Mensaje es SOLO "reintegros" o "Reintegros" → intent: query_reimbursements
 - Mensaje es SOLO "resumen" o "Resumen" → intent: query_summary
 - Mensaje contiene "disponible" sin monto → intent: query_available
+- Mensaje contiene "recurrente" + nombre de servicio + número (monto) → intent: add_recurring (SIEMPRE)
+  - Ej: "agregar recurrente spotify 2500 día 10" → add_recurring, recurring_name: "spotify", amount_ars: 2500, recurring_day: 10
+  - Ej: "nuevo recurrente disney+ 1500 el 10" → add_recurring, recurring_name: "disney+", amount_ars: 1500, recurring_day: 10
 
 Si el mensaje es una sola palabra de las anteriores, usá el intent correspondiente con confidence 0.95.
 
