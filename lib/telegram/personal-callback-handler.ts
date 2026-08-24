@@ -812,9 +812,73 @@ export async function handlePersonalCallback(
         ].join("\n"),
         edit: true,
         replyMarkup: buildPersonalKeyboard([
+          [{ text: "📅 Cambiar día", callback_data: `recurring:edit_day:${expenseId}` }],
           [{ text: toggleText, callback_data: `recurring:toggle:${expenseId}` }],
           [{ text: "🗑️ Eliminar", callback_data: `recurring:delete_ask:${expenseId}` }],
           [{ text: "⬅️ Volver", callback_data: "recurring:manage" }],
+        ]),
+      };
+    }
+
+    // Edit day of recurring expense
+    if (data.startsWith("recurring:edit_day:")) {
+      const expenseId = data.split(":")[2];
+      const expenses = await getUserRecurringExpenses(userId, { groupId });
+      const expense = expenses.find((e) => e.id === expenseId);
+
+      if (!expense) {
+        return { text: "❌ Gasto no encontrado.", edit: true };
+      }
+
+      return {
+        text: [
+          `📅 <b>Cambiar día de vencimiento</b>`,
+          ``,
+          `${expense.category?.emoji ?? "📦"} ${expense.name}`,
+          `Día actual: <b>${expense.dayOfMonth}</b>`,
+          ``,
+          `Seleccioná el nuevo día:`,
+        ].join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [
+            { text: "1", callback_data: `recurring:set_day:${expenseId}:1` },
+            { text: "5", callback_data: `recurring:set_day:${expenseId}:5` },
+            { text: "10", callback_data: `recurring:set_day:${expenseId}:10` },
+          ],
+          [
+            { text: "15", callback_data: `recurring:set_day:${expenseId}:15` },
+            { text: "20", callback_data: `recurring:set_day:${expenseId}:20` },
+            { text: "25", callback_data: `recurring:set_day:${expenseId}:25` },
+          ],
+          [
+            { text: "28", callback_data: `recurring:set_day:${expenseId}:28` },
+            { text: "Fin de mes", callback_data: `recurring:set_day:${expenseId}:31` },
+          ],
+          [{ text: "⬅️ Volver", callback_data: `recurring:actions:${expenseId}` }],
+        ]),
+      };
+    }
+
+    // Set day of recurring expense
+    if (data.startsWith("recurring:set_day:")) {
+      const parts = data.split(":");
+      const expenseId = parts[2];
+      const newDay = parseInt(parts[3]);
+
+      // Update day using PATCH API logic (direct DB update)
+      const { recurringExpenses } = await import("@/lib/db/schema");
+      await db
+        .update(recurringExpenses)
+        .set({ dayOfMonth: newDay, updatedAt: Date.now() })
+        .where(eq(recurringExpenses.id, expenseId));
+
+      return {
+        text: `✅ Día de vencimiento actualizado a <b>${newDay}</b>.`,
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "⚙️ Gestionar", callback_data: "recurring:manage" }],
+          [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
         ]),
       };
     }
@@ -1191,6 +1255,67 @@ export async function handlePersonalCallback(
         replyMarkup: buildPersonalKeyboard([
           [{ text: "📊 Resumen", callback_data: "summary" }],
           [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+        ]),
+      };
+    }
+
+    // Day selection during conversational flow (after name and amount)
+    if (data.startsWith("recurring:day_select:")) {
+      const dayOfMonth = parseInt(data.split(":")[2]);
+      
+      // Get conversation state to retrieve name and amount
+      const state = await getConversationState(chatId, telegramUserId);
+      if (!state || state.step !== "recurring_day") {
+        return { text: "❌ Sesión expirada. Empezá de nuevo.", edit: true };
+      }
+
+      const { name, amount, category_slug } = state.data as { name: string; amount: number; category_slug?: string };
+
+      // Get category if available
+      let categoryId: string | null = null;
+      let categoryName = "Sin categoría";
+      let categoryEmoji = "📦";
+
+      if (category_slug) {
+        const cat = await db.query.categories.findFirst({
+          where: and(eq(categories.slug, category_slug), eq(categories.group_id, groupId)),
+        });
+        if (cat) {
+          categoryId = cat.id;
+          categoryName = cat.name;
+          categoryEmoji = cat.emoji;
+        }
+      }
+
+      // Create the recurring expense
+      const created = await createRecurringExpense({
+        userId,
+        groupId,
+        name,
+        amountArs: amount,
+        categoryId,
+        merchant: name,
+        frequency: "monthly",
+        dayOfMonth,
+      });
+
+      await clearConversationState(chatId, telegramUserId);
+
+      return {
+        text: [
+          `✅ <b>Gasto recurrente creado</b>`,
+          ``,
+          `📅 <b>${escapeHtml(created.name)}</b>`,
+          `💰 $${created.amountArs.toLocaleString("es-AR")} / mes`,
+          `📂 ${categoryEmoji} ${categoryName}`,
+          `📆 Día ${dayOfMonth} de cada mes`,
+          ``,
+          `Te recordaré este gasto el día ${dayOfMonth} de cada mes.`,
+        ].join("\n"),
+        edit: true,
+        replyMarkup: buildPersonalKeyboard([
+          [{ text: "📋 Ver recurrentes", callback_data: "recurring:list" }],
+          [{ text: "➕ Agregar otro", callback_data: "recurring:suggest" }],
         ]),
       };
     }

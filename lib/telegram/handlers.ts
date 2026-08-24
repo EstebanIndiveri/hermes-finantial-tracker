@@ -751,6 +751,71 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
       return buildExpenseEditedMessage(updatedData);
     }
+
+    // ── Recurring expense conversational flow handlers ────────────────────────
+    if (editState?.step === "recurring_name") {
+      const name = text.trim().slice(0, 50);
+      if (!name) {
+        return { text: "❌ Nombre inválido. Escribí el nombre del gasto (ej: Netflix, Alquiler):" };
+      }
+
+      const { setConversationState } = await import("./splits/conversation-state");
+      await setConversationState(chatId, String(msg.from.id), {
+        step: "recurring_amount",
+        data: { name },
+      });
+
+      return {
+        text: [
+          `✏️ <b>${escapeHtml(name)}</b>`,
+          ``,
+          `¿Cuál es el monto mensual?`,
+          ``,
+          `Escribí el monto (ej: 15000):`,
+        ].join("\n"),
+      };
+    }
+
+    if (editState?.step === "recurring_amount") {
+      const ed = editState.data as { name: string; category_slug?: string };
+      const amount = parseFloat(text.replace(/[$\s.]/g, "").replace(",", ".").trim());
+      
+      if (isNaN(amount) || amount <= 0) {
+        return { text: "❌ Monto inválido. Escribí solo el número, ej: <code>15000</code>" };
+      }
+
+      const { setConversationState } = await import("./splits/conversation-state");
+      await setConversationState(chatId, String(msg.from.id), {
+        step: "recurring_day",
+        data: { name: ed.name, amount, category_slug: ed.category_slug },
+      });
+
+      return {
+        text: [
+          `✏️ <b>${escapeHtml(ed.name)}</b>`,
+          `💰 $${amount.toLocaleString("es-AR")}`,
+          ``,
+          `¿Qué día del mes vence?`,
+        ].join("\n"),
+        replyMarkup: buildPersonalKeyboard([
+          [
+            { text: "1", callback_data: `recurring:day_select:1` },
+            { text: "5", callback_data: `recurring:day_select:5` },
+            { text: "10", callback_data: `recurring:day_select:10` },
+          ],
+          [
+            { text: "15", callback_data: `recurring:day_select:15` },
+            { text: "20", callback_data: `recurring:day_select:20` },
+            { text: "25", callback_data: `recurring:day_select:25` },
+          ],
+          [
+            { text: "28", callback_data: `recurring:day_select:28` },
+            { text: "Fin de mes", callback_data: `recurring:day_select:31` },
+          ],
+          [{ text: "❌ Cancelar", callback_data: "recurring:cancel" }],
+        ]),
+      };
+    }
   }
 
   if (text.startsWith("/gasto")) {
