@@ -285,6 +285,21 @@ export async function handlePersonalCallback(
     if (data === "expense:confirm") {
       const state = await getConversationState(chatId, telegramUserId);
       if (state?.step !== "expense_confirm") {
+        // State expired - check if user has a recent transaction (within 2 minutes) to avoid duplicate
+        const recentTx = await db.query.transactions.findFirst({
+          where: and(
+            eq(transactions.user_id, userId),
+            eq(transactions.group_id, groupId),
+            eq(transactions.status, "active"),
+          ),
+          orderBy: (t, { desc }) => desc(t.created_at),
+        });
+        
+        // If a transaction was created very recently, it's likely a retry - silently confirm
+        if (recentTx && (Date.now() - recentTx.created_at) < 2 * 60 * 1000) {
+          return { text: "✅ Gasto ya registrado.", edit: true };
+        }
+        
         return { text: "⏱️ Confirmación expirada. Volvé a escribir el gasto.", edit: true };
       }
       const s = state.data as PendingExpenseState;
