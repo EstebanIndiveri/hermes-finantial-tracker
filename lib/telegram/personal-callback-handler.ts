@@ -284,6 +284,12 @@ export async function handlePersonalCallback(
     // ── expense:* — /gasto + NL expense confirmation ──────────────────
     if (data === "expense:confirm") {
       const state = await getConversationState(chatId, telegramUserId);
+      
+      // Check if already processing (clicked multiple times)
+      if (state?.step === "expense_processing") {
+        return { text: "⏳ Registrando gasto...", edit: true };
+      }
+      
       if (state?.step !== "expense_confirm") {
         // State expired - check if user has a recent transaction (within 2 minutes) to avoid duplicate
         const recentTx = await db.query.transactions.findFirst({
@@ -302,18 +308,26 @@ export async function handlePersonalCallback(
         
         return { text: "⏱️ Confirmación expirada. Volvé a escribir el gasto.", edit: true };
       }
+      
       const s = state.data as PendingExpenseState;
-      await clearConversationState(chatId, telegramUserId);
+      
+      // Mark as processing immediately to prevent duplicates
+      await setConversationState(chatId, telegramUserId, {
+        step: "expense_processing",
+        data: s,
+      });
 
       const result = await registerPersonalTransaction(
         s.user_id, s.group_id, s.category_id, s.amount_ars, s.merchant, s.is_exception
       );
       if (!result.transactionId) {
+        await clearConversationState(chatId, telegramUserId);
         return { text: result.text, edit: true };
       }
 
       // If requires_reimbursement was detected from NL, create it automatically
       if (s.requires_reimbursement) {
+        await clearConversationState(chatId, telegramUserId);
         const reimbResult = await createReimbursementWithNotifications(
           result.transactionId,
           s.user_id,

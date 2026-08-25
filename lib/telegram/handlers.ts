@@ -752,6 +752,45 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       return buildExpenseEditedMessage(updatedData);
     }
 
+    // ── Expense pending amount (when user said category but no amount) ────────
+    if (editState?.step === "expense_pending_amount") {
+      const ed = editState.data as {
+        category_id: string;
+        category_name: string;
+        category_emoji: string;
+        merchant?: string;
+        group_id: string;
+        user_id: string;
+        requires_reimbursement?: boolean;
+      };
+      
+      const amount = parseFloat(text.replace(/[$\s.]/g, "").replace(",", ".").trim());
+      if (isNaN(amount) || amount <= 0) {
+        return { text: `❌ Monto inválido. Escribí solo el número, ej: <code>15000</code>` };
+      }
+
+      const cat = await db.query.categories.findFirst({
+        where: and(eq(categories.id, ed.category_id), eq(categories.group_id, groupId)),
+      });
+      if (!cat) {
+        const { clearConversationState } = await import("./splits/conversation-state");
+        await clearConversationState(chatId, String(msg.from.id));
+        return { text: "❌ Categoría no encontrada. Volvé a empezar." };
+      }
+
+      return buildExpenseOrExceptionMessage(
+        chatId,
+        String(msg.from.id),
+        userId,
+        groupId,
+        month,
+        cat,
+        amount,
+        ed.merchant,
+        ed.requires_reimbursement ?? false
+      );
+    }
+
     // ── Recurring expense conversational flow handlers ────────────────────────
     if (editState?.step === "recurring_name") {
       const name = text.trim().slice(0, 50);
@@ -1371,7 +1410,50 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     const slug = parsed.category?.toLowerCase() ?? null;
 
     if (!amount_ars || amount_ars <= 0) {
-      return { text: "Entendí que querés registrar un gasto pero no detecté el monto. Ej: \"gasté 47000 en supermercado\"" };
+      // If we detected a category but no amount, start conversational flow
+      if (slug) {
+        const cat = await db.query.categories.findFirst({
+          where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+        });
+        
+        if (cat) {
+          const { setConversationState } = await import("./splits/conversation-state");
+          await setConversationState(chatId, String(msg.from.id), {
+            step: "expense_pending_amount",
+            data: {
+              category_id: cat.id,
+              category_name: cat.name,
+              category_emoji: cat.emoji ?? "📦",
+              merchant: parsed.merchant ?? parsed.description ?? undefined,
+              group_id: groupId,
+              user_id: userId,
+              requires_reimbursement: parsed.requires_reimbursement ?? false,
+            },
+          });
+          
+          return {
+            text: [
+              `${cat.emoji ?? "📦"} <b>${cat.name}</b>`,
+              ``,
+              `¿Cuánto gastaste?`,
+              ``,
+              `Escribí el monto (ej: <code>15000</code>):`,
+            ].join("\n"),
+          };
+        }
+      }
+      
+      // No category detected either - friendly message
+      return { 
+        text: [
+          "🤔 Detecté que querés registrar un gasto pero me falta el monto.",
+          "",
+          "Ejemplos:",
+          "• <code>Gasté 15000 en supermercado</code>",
+          "• <code>47000 verdulería</code>",
+          "• <code>Súper 13000</code>",
+        ].join("\n"),
+      };
     }
     if (!slug) {
       // Show category selection buttons instead of plain text
