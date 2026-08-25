@@ -3,7 +3,7 @@ import { db } from "@/lib/db/client";
 import { bot_conversation_state } from "@/lib/db/schema";
 import { and, eq, lt } from "drizzle-orm";
 
-const TTL_MS = 5 * 60 * 1000; // 5 minutes
+const TTL_MS = 30 * 60 * 1000; // 30 minutes - longer TTL to prevent "Confirmación expirada" errors
 
 export interface ConversationState {
   step: string;

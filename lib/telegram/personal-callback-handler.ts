@@ -19,7 +19,7 @@ import { getConversationState, setConversationState, clearConversationState } fr
 import type { InlineKeyboardMarkup } from "./send-message";
 import { buildPersonalKeyboard } from "./send-message";
 import { buildReceiptProposalMessage, buildRecurringSuggestionsMessage } from "./handlers";
-import { createReimbursementWithNotifications, markReimbursementAsPaidWithNotifications, cancelReimbursementWithNotifications } from "@/lib/reimbursements/requests";
+import { createReimbursementWithNotifications, markReimbursementAsPaidWithNotifications, cancelReimbursementWithNotifications, getReimbursementByTransactionId } from "@/lib/reimbursements/requests";
 import { getGroupMembership, isAdminOrAbove } from "@/lib/groups/permissions";
 import {
   getUserRecurringExpenses,
@@ -618,8 +618,41 @@ export async function handlePersonalCallback(
       const reimbursementState = state?.data as PendingExpenseReimbursementState | undefined;
       const transactionId = data.split(":")[2] ?? "";
 
+      // Idempotent check: if reimbursement already exists for this transaction, confirm it
+      const existingReimbursement = await getReimbursementByTransactionId(transactionId);
+      if (existingReimbursement) {
+        await clearConversationState(chatId, telegramUserId);
+        if (existingReimbursement.status === "pending") {
+          return { text: "✅ El reintegro ya fue solicitado. Esperando pago.", edit: true };
+        } else if (existingReimbursement.status === "paid") {
+          return { text: "✅ El reintegro ya fue pagado.", edit: true };
+        }
+        return { text: "✅ Reintegro ya procesado.", edit: true };
+      }
+
+      // If state expired but transaction exists, try to create reimbursement directly
       if (state?.step !== "expense_reimbursement_confirm" || !reimbursementState || reimbursementState.transaction_id !== transactionId) {
-        return { text: "⏱️ Confirmación expirada.", edit: true };
+        // Verify transaction exists and get details
+        const [tx] = await db
+          .select({ id: transactions.id, amount_ars: transactions.amount_ars })
+          .from(transactions)
+          .where(eq(transactions.id, transactionId));
+        
+        if (!tx) {
+          return { text: "⏱️ Confirmación expirada. Volvé a registrar el gasto.", edit: true };
+        }
+        
+        // Create reimbursement directly using transaction data
+        const reimbResult = await createReimbursementWithNotifications(
+          transactionId,
+          userId,
+          tx.amount_ars,
+          undefined,
+        );
+        if ("error" in reimbResult) {
+          return { text: `⚠️ ${reimbResult.error}`, edit: true };
+        }
+        return { text: "✅ Reintegro solicitado. Ya avisamos al grupo.", edit: true };
       }
 
       const reimbResult = await createReimbursementWithNotifications(

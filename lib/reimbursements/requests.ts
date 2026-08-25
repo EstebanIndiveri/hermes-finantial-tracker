@@ -403,3 +403,20 @@ export async function getReimbursementById(id: string): Promise<ReimbursementReq
 
   return row ? mapReimbursementRequestRow(row) : null;
 }
+
+/**
+ * Retrieves a reimbursement request by transaction ID.
+ * Useful for checking if a reimbursement already exists for a transaction.
+ *
+ * @param transactionId - Transaction identifier.
+ * @returns The reimbursement request when found, otherwise null.
+ */
+export async function getReimbursementByTransactionId(transactionId: string): Promise<ReimbursementRequest | null> {
+  const [row] = await db
+    .select()
+    .from(reimbursementRequests)
+    .where(eq(reimbursementRequests.transactionId, transactionId))
+    .orderBy(desc(reimbursementRequests.createdAt));
+
+  return row ? mapReimbursementRequestRow(row) : null;
+}
