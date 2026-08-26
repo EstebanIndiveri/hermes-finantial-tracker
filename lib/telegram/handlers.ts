@@ -46,6 +46,88 @@ interface RecurringExecutionStatusDescriptor {
   dueLabel: string;
 }
 
+/**
+ * Parses a number from text, supporting:
+ * - Standard numbers: "1500", "1.500", "1,500"
+ * - Spanish words: "mil quinientos", "dos mil", "quince mil"
+ * - Mixed: "15 mil", "1500 pesos"
+ */
+function parseAmountFromText(text: string): number | null {
+  const normalized = text.toLowerCase().trim();
+  
+  // Remove common suffixes
+  const cleaned = normalized
+    .replace(/\s*pesos?\s*/gi, "")
+    .replace(/\s*ars?\s*/gi, "")
+    .replace(/\$\s*/g, "")
+    .trim();
+  
+  // Try standard number parsing first (handles 1500, 1.500, etc.)
+  const numStr = cleaned.replace(/\./g, "").replace(",", ".");
+  const directNum = parseFloat(numStr);
+  if (!isNaN(directNum) && directNum > 0) {
+    return directNum;
+  }
+  
+  // Spanish number words
+  const units: Record<string, number> = {
+    cero: 0, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
+    seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
+    once: 11, doce: 12, trece: 13, catorce: 14, quince: 15,
+    dieciséis: 16, dieciseis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19,
+    veinte: 20, veintiuno: 21, veintidós: 22, veintidos: 22, veintitrés: 23, veintitres: 23,
+    veinticuatro: 24, veinticinco: 25, veintiséis: 26, veintiseis: 26,
+    veintisiete: 27, veintiocho: 28, veintinueve: 29,
+    treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90,
+  };
+  const multipliers: Record<string, number> = {
+    cien: 100, ciento: 100, doscientos: 200, trescientos: 300, cuatrocientos: 400,
+    quinientos: 500, seiscientos: 600, setecientos: 700, ochocientos: 800, novecientos: 900,
+    mil: 1000, millón: 1000000, millon: 1000000,
+  };
+  
+  // Pattern: "X mil" (e.g., "15 mil", "quince mil", "1 mil")
+  const milPattern = /(\d+|[a-záéíóúü]+)\s*mil/i;
+  const milMatch = cleaned.match(milPattern);
+  if (milMatch) {
+    const prefix = milMatch[1];
+    let prefixNum = parseFloat(prefix);
+    if (isNaN(prefixNum)) {
+      prefixNum = units[prefix] ?? 0;
+    }
+    if (prefixNum > 0) {
+      return prefixNum * 1000;
+    }
+  }
+  
+  // Try to parse full Spanish number
+  let total = 0;
+  let current = 0;
+  const words = cleaned.split(/\s+/);
+  
+  for (const word of words) {
+    if (units[word] !== undefined) {
+      current += units[word];
+    } else if (multipliers[word] !== undefined) {
+      if (word === "mil") {
+        current = current === 0 ? 1000 : current * 1000;
+        total += current;
+        current = 0;
+      } else {
+        current += multipliers[word];
+      }
+    } else {
+      const num = parseFloat(word.replace(/\./g, "").replace(",", "."));
+      if (!isNaN(num)) {
+        current += num;
+      }
+    }
+  }
+  total += current;
+  
+  return total > 0 ? total : null;
+}
+
 function escapeHtml(text: string): string {
   return text.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
 }
@@ -764,9 +846,18 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         requires_reimbursement?: boolean;
       };
       
-      const amount = parseFloat(text.replace(/[$\s.]/g, "").replace(",", ".").trim());
-      if (isNaN(amount) || amount <= 0) {
-        return { text: `❌ Monto inválido. Escribí solo el número, ej: <code>15000</code>` };
+      const amount = parseAmountFromText(text);
+      if (!amount || amount <= 0) {
+        return { 
+          text: [
+            `❌ No entendí el monto.`,
+            ``,
+            `Escribí o decí el número, ej:`,
+            `• <code>15000</code>`,
+            `• <code>15 mil</code>`,
+            `• <code>quince mil</code>`,
+          ].join("\n"),
+        };
       }
 
       const cat = await db.query.categories.findFirst({
