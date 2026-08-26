@@ -891,24 +891,63 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   }
 
   if (text.startsWith("/gasto")) {
-    const parts = text.split(" ");
+    const parts = text.split(" ").filter(p => p.length > 0);
     if (parts.length < 3) {
       return { text: "Uso: /gasto monto categoria descripcion\nEjemplo: /gasto 47000 supermercado Cordiez" };
     }
 
-    const amount_ars = parseFloat(parts[1].replace(",", "."));
-    if (isNaN(amount_ars) || amount_ars <= 0) {
-      return { text: "Monto inválido. Usá un número positivo, ej: /gasto 47000 supermercado" };
+    // Flexible parsing: detect amount and category regardless of order
+    let amount_ars: number | null = null;
+    let slugCandidate: string | null = null;
+    let merchantParts: string[] = [];
+    
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      // Try to parse as number (remove dots as thousands separator, replace comma with dot)
+      const numStr = part.replace(/\./g, "").replace(",", ".");
+      const num = parseFloat(numStr);
+      
+      if (!isNaN(num) && num > 0 && amount_ars === null) {
+        amount_ars = num;
+      } else if (slugCandidate === null) {
+        // Normalize: remove accents and convert to lowercase
+        slugCandidate = part.toLowerCase()
+          .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
+          .replace(/\s+/g, "_");
+      } else {
+        merchantParts.push(part);
+      }
     }
 
-    const slug = parts[2].toLowerCase();
-    const merchant = parts.slice(3).join(" ") || undefined;
+    if (amount_ars === null || amount_ars <= 0) {
+      return { text: "Monto inválido. Usá un número positivo, ej: /gasto 47000 supermercado" };
+    }
+    
+    if (!slugCandidate) {
+      return { text: "Falta la categoría. Ej: /gasto 47000 supermercado" };
+    }
 
-    const cat = await db.query.categories.findFirst({
+    const slug = slugCandidate;
+    const merchant = merchantParts.join(" ") || undefined;
+
+    // Try exact match first, then fuzzy match
+    let cat = await db.query.categories.findFirst({
       where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
     });
+    
+    // Fuzzy match if exact fails
     if (!cat) {
-      return { text: `Categoría "${slug}" no encontrada.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos` };
+      const allCats = await db.select().from(categories).where(eq(categories.group_id, groupId));
+      cat = allCats.find(c => {
+        const catSlugNorm = c.slug.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const catNameNorm = c.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return catSlugNorm === slug || catNameNorm === slug || 
+               catSlugNorm.includes(slug) || slug.includes(catSlugNorm);
+      });
+    }
+    
+    if (!cat) {
+      return { text: `Categoría "${slugCandidate}" no encontrada.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos` };
     }
 
     const settings = await db.query.monthly_settings.findFirst({
@@ -1412,9 +1451,25 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     if (!amount_ars || amount_ars <= 0) {
       // If we detected a category but no amount, start conversational flow
       if (slug) {
-        const cat = await db.query.categories.findFirst({
-          where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+        // Normalize slug: remove accents
+        const normalizedSlug = slug.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        
+        // Try exact match first
+        let cat = await db.query.categories.findFirst({
+          where: and(eq(categories.slug, normalizedSlug), eq(categories.group_id, groupId)),
         });
+        
+        // Fuzzy match if exact fails
+        if (!cat) {
+          const allCats = await db.select().from(categories).where(eq(categories.group_id, groupId));
+          const fuzzyMatch = allCats.find(c => {
+            const catSlugNorm = c.slug.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const catNameNorm = c.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return catSlugNorm === normalizedSlug || catNameNorm === normalizedSlug || 
+                   catSlugNorm.includes(normalizedSlug) || normalizedSlug.includes(catSlugNorm);
+          });
+          if (fuzzyMatch) cat = fuzzyMatch;
+        }
         
         if (cat) {
           const { setConversationState } = await import("./splits/conversation-state");
@@ -1468,11 +1523,36 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       );
     }
 
-    const cat = await db.query.categories.findFirst({
-      where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+    // Normalize slug: remove accents
+    const normalizedSlug = slug.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    // Try exact match first
+    let cat = await db.query.categories.findFirst({
+      where: and(eq(categories.slug, normalizedSlug), eq(categories.group_id, groupId)),
     });
+    
+    // Fuzzy match if exact fails
     if (!cat) {
-      return { text: `No encontré la categoría "${slug}".\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos` };
+      const allCats = await db.select().from(categories).where(eq(categories.group_id, groupId));
+      cat = allCats.find(c => {
+        const catSlugNorm = c.slug.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const catNameNorm = c.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return catSlugNorm === normalizedSlug || catNameNorm === normalizedSlug || 
+               catSlugNorm.includes(normalizedSlug) || normalizedSlug.includes(catSlugNorm);
+      });
+    }
+    
+    if (!cat) {
+      // Try conversational flow - ask for category with buttons
+      return await buildExpenseCategoryKeyboard(
+        groupId,
+        amount_ars,
+        parsed.merchant ?? parsed.description ?? null,
+        chatId,
+        String(msg.from.id),
+        userId,
+        parsed.requires_reimbursement ?? false,
+      );
     }
 
     const merchant = parsed.merchant ?? parsed.description ?? undefined;

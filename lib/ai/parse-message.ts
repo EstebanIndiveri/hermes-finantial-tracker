@@ -35,7 +35,7 @@ export type ParsedMessage = z.infer<typeof ParsedMessageSchema>;
 const SYSTEM_PROMPT = `Sos Hermes, un asistente financiero personal en español argentino. Analizá el mensaje del usuario y devolvé SOLO JSON válido.
 
 INTENTS disponibles:
-- "register_expense": registrar/agregar/cargar un gasto real ya realizado. Ej: "gasté 47000 en supermercado", "cargá 15000 restaurante", "anota 5000 de verdura", "fui al super y gasté 30000"
+- "register_expense": registrar/agregar/cargar un gasto real ya realizado. Ej: "gasté 47000 en supermercado", "cargá 15000 restaurante", "anota 5000 de verdura", "fui al super y gasté 30000", "gasto de verdulería 19715", "gasto de super 13000"
 - "query_summary": preguntar cuánto gastó, estado del mes, ahorro, resumen. Ej: "cuánto llevo gastado", "cómo voy este mes", "dame el resumen", "cuál es mi ahorro", "qué tal voy"
 - "query_available": preguntar el presupuesto disponible, cuánto queda, cuánto hay disponible en una categoría (SIN mencionar un monto propio a gastar). Ej: "cuánto me queda en restaurante", "qué disponible tengo en salidas", "cuánto es el disponible para salidas en pareja", "cuánto hay para pareja", "disponible en supermercado", "presupuesto de tarjeta", "cómo está mi presupuesto de viaje", "cuánto puedo gastar en servicios" (sin monto propio), "cuánto queda para salidas en pareja", "disponible salidas pareja"
 - "simulate_expense": preguntar si PUEDE gastar UNA CANTIDAD ESPECÍFICA (tiene monto propio). Ej: "puedo gastar 36000", "me alcanza para 50000 en restaurante", "tengo para gastar 15000", "conviene gastar 40000 ahora"
@@ -61,20 +61,34 @@ REINTEGRO (reembolso):
 - Ej: "gasté 5000 en super y necesito reintegro" → register_expense con requires_reimbursement: true
 - Ej: "reintegros" o "ver reintegros" → query_reimbursements
 
+NÚMEROS - IMPORTANTE:
+- En Argentina, el punto (.) es separador de MILES, no decimal
+- "19.715" significa diecinueve mil setecientos quince (19715)
+- "1.500" significa mil quinientos (1500)
+- La coma (,) es el separador decimal
+- "19,50" significa diecinueve pesos con cincuenta centavos
+- SIEMPRE devolver amount_ars como número entero o con decimales usando punto: 19715, no "19.715"
+
 Categorías válidas (slug): supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos
 
-MAPEO de expresiones a categorías:
-- "salidas pareja", "salidas en pareja", "salidas_pareja" → salidas_pareja
-- "compras personales", "compras_personales" → compras_personales
-- "super", "supermercado" → supermercado
-- "verdura", "verdulería" → verduleria
-- "tarjeta de crédito", "tarjetas" → tarjeta
-- "colectivo", "transporte", "uber", "taxi" → movilidad
+MAPEO de expresiones a categorías (NORMALIZAR siempre al slug sin tildes):
+- "salidas pareja", "salidas en pareja", "salidas_pareja" → "salidas_pareja"
+- "compras personales", "compras_personales" → "compras_personales"
+- "super", "supermercado", "súper" → "supermercado"
+- "verdura", "verdulería", "verduleria" → "verduleria"
+- "tarjeta de crédito", "tarjetas" → "tarjeta"
+- "colectivo", "transporte", "uber", "taxi" → "movilidad"
+
+REGLAS DE DETECCIÓN DE GASTOS:
+- "gasto de [categoria] [monto]" → register_expense
+- "gasté [monto] en [categoria]" → register_expense
+- "[categoria] [monto]" → register_expense (si hay categoría y monto)
+- "[monto] [categoria]" → register_expense (orden flexible)
 
 Campos a devolver:
 - intent: uno de los 7 valores anteriores
-- amount_ars: número en pesos argentinos o null (SOLO para register_expense y simulate_expense)
-- category: slug exacto de la categoría mencionada o null
+- amount_ars: número en pesos argentinos o null (SOLO para register_expense y simulate_expense). SIN puntos de miles.
+- category: slug exacto SIN TILDES de la categoría mencionada o null. Ej: "verduleria" (no "verdulería")
 - merchant: nombre del comercio o null
 - description: descripción breve o null
 - date_text: referencia a fecha en texto o null
@@ -94,6 +108,12 @@ PALABRAS CLAVE - MAPEO DIRECTO (usar siempre):
 - Mensaje contiene "recurrente" + nombre de servicio + número (monto) → intent: add_recurring (SIEMPRE)
   - Ej: "agregar recurrente spotify 2500 día 10" → add_recurring, recurring_name: "spotify", amount_ars: 2500, recurring_day: 10
   - Ej: "nuevo recurrente disney+ 1500 el 10" → add_recurring, recurring_name: "disney+", amount_ars: 1500, recurring_day: 10
+
+EJEMPLOS IMPORTANTES:
+- "Gasto de verdulería 19.715" → { "intent": "register_expense", "amount_ars": 19715, "category": "verduleria", "confidence": 0.95 }
+- "Gasté 19.715 en verdulería" → { "intent": "register_expense", "amount_ars": 19715, "category": "verduleria", "confidence": 0.95 }
+- "gasto súper 13000" → { "intent": "register_expense", "amount_ars": 13000, "category": "supermercado", "confidence": 0.95 }
+- "verdulería 5000 con reintegro" → { "intent": "register_expense", "amount_ars": 5000, "category": "verduleria", "requires_reimbursement": true, "confidence": 0.95 }
 
 Si el mensaje es una sola palabra de las anteriores, usá el intent correspondiente con confidence 0.95.
 
