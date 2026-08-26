@@ -1280,6 +1280,83 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
   const parsed = await parseFinancialMessage(text);
 
+  // ── Fallback: detect expense patterns WITHOUT amount for conversational flow ──
+  if ((parsed.intent === "unknown" || parsed.confidence < 0.4)) {
+    // Category keyword mapping
+    const categoryKeywords: Record<string, string[]> = {
+      supermercado: ["super", "súper", "supermercado", "mercado"],
+      verduleria: ["verdulería", "verduleria", "verdura", "verduras"],
+      restaurante: ["restaurante", "restaurant", "resto", "comida"],
+      servicios: ["servicios", "servicio", "luz", "gas", "agua", "internet"],
+      movilidad: ["movilidad", "transporte", "uber", "taxi", "colectivo", "nafta"],
+      tarjeta: ["tarjeta", "tarjetas", "credito", "crédito"],
+      salidas_pareja: ["salida", "salidas", "pareja", "cita"],
+      viaje: ["viaje", "viajes", "vacaciones"],
+      compras_personales: ["compras", "personal", "personales", "ropa"],
+      imprevistos: ["imprevisto", "imprevistos", "emergencia"],
+    };
+    
+    // Pattern: "gasto de X", "gasté en X", "un gasto de X", "gasto X"
+    const expensePatterns = [
+      /(?:gasto|gasté|gastar)\s+(?:de\s+|en\s+)?(\w+)/i,
+      /(?:un\s+)?gasto\s+(?:de\s+|en\s+)?(\w+)/i,
+      /(\w+)\s+(?:gasto|gasté)/i,
+    ];
+    
+    let detectedCategory: string | null = null;
+    let detectedSlug: string | null = null;
+    
+    for (const pattern of expensePatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const keyword = match[1].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        
+        for (const [slug, keywords] of Object.entries(categoryKeywords)) {
+          const normalizedKeywords = keywords.map(k => k.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase());
+          if (normalizedKeywords.some(k => k.includes(keyword) || keyword.includes(k))) {
+            detectedSlug = slug;
+            detectedCategory = slug;
+            break;
+          }
+        }
+        if (detectedCategory) break;
+      }
+    }
+    
+    // If we detected a category but no amount, start conversational flow
+    if (detectedSlug) {
+      const cat = await db.query.categories.findFirst({
+        where: and(eq(categories.slug, detectedSlug), eq(categories.group_id, groupId)),
+      });
+      
+      if (cat) {
+        const { setConversationState } = await import("./splits/conversation-state");
+        await setConversationState(chatId, String(msg.from.id), {
+          step: "expense_pending_amount",
+          data: {
+            category_id: cat.id,
+            category_name: cat.name,
+            category_emoji: cat.emoji ?? "📦",
+            merchant: undefined,
+            group_id: groupId,
+            user_id: userId,
+            requires_reimbursement: false,
+          },
+        });
+        
+        return {
+          text: [
+            `${cat.emoji ?? "📦"} <b>${cat.name}</b>`,
+            ``,
+            `¿Cuánto gastaste?`,
+            ``,
+            `Escribí el monto (ej: <code>15000</code>):`,
+          ].join("\n"),
+        };
+      }
+    }
+  }
+
   // Fallback: detect recurring expense pattern with regex if AI missed it
   if ((parsed.intent === "unknown" || parsed.confidence < 0.4) && /recurrente/i.test(text)) {
     // Pattern: "agregar recurrente NOMBRE MONTO [día X]"
