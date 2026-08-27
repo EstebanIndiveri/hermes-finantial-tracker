@@ -449,10 +449,12 @@ async function buildExpenseOrExceptionMessage(
     const catStatus = calculateCategoryStatus({ gastado_ars: gastado, budget_ars: budget.budget_ars });
 
     if (catStatus === "CLOSED" && budget.hard_limit) {
+      await clearConversationState(chatId, telegramUserId);
       return { text: `🔴 ${cat.name} está CERRADA con límite duro. No se puede registrar.` };
     }
 
     if (gastado + amount_ars > budget.budget_ars && budget.hard_limit) {
+      await clearConversationState(chatId, telegramUserId);
       return { text: `🔴 Este gasto excede el presupuesto de ${cat.name} (límite duro). No se puede registrar.` };
     }
 
