@@ -62,14 +62,49 @@ function parseAmountFromText(text: string): number | null {
     .replace(/\$\s*/g, "")
     .trim();
   
-  // Try standard number parsing first (handles 1500, 1.500, etc.)
-  const numStr = cleaned.replace(/\./g, "").replace(",", ".");
-  const directNum = parseFloat(numStr);
-  if (!isNaN(directNum) && directNum > 0) {
-    return directNum;
+  // Check for "X mil" pattern FIRST (e.g., "15 mil", "quince mil")
+  // This must come before direct number parsing because parseFloat("15 mil") returns 15
+  if (/mil/i.test(cleaned)) {
+    const units: Record<string, number> = {
+      cero: 0, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
+      seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
+      once: 11, doce: 12, trece: 13, catorce: 14, quince: 15,
+      dieciséis: 16, dieciseis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19,
+      veinte: 20, veintiuno: 21, veintidós: 22, veintidos: 22, veintitrés: 23, veintitres: 23,
+      veinticuatro: 24, veinticinco: 25, veintiséis: 26, veintiseis: 26,
+      veintisiete: 27, veintiocho: 28, veintinueve: 29,
+      treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90,
+    };
+    
+    const milPattern = /(\d+|[a-záéíóúü]+)\s*mil/i;
+    const milMatch = cleaned.match(milPattern);
+    if (milMatch) {
+      const prefix = milMatch[1];
+      let prefixNum = parseFloat(prefix);
+      if (isNaN(prefixNum)) {
+        prefixNum = units[prefix] ?? 0;
+      }
+      if (prefixNum > 0) {
+        return prefixNum * 1000;
+      }
+    }
+    // Just "mil" alone = 1000
+    if (/^\s*mil\s*$/i.test(cleaned)) {
+      return 1000;
+    }
   }
   
-  // Spanish number words
+  // Try standard number parsing (handles 1500, 1.500, etc.)
+  // Only if it's JUST a number (no text mixed in)
+  const numStr = cleaned.replace(/\./g, "").replace(",", ".");
+  if (/^[\d,.]+$/.test(cleaned)) {
+    const directNum = parseFloat(numStr);
+    if (!isNaN(directNum) && directNum > 0) {
+      return directNum;
+    }
+  }
+  
+  // Spanish number words for full parsing (e.g., "mil quinientos")
   const units: Record<string, number> = {
     cero: 0, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
     seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
@@ -86,21 +121,7 @@ function parseAmountFromText(text: string): number | null {
     mil: 1000, millón: 1000000, millon: 1000000,
   };
   
-  // Pattern: "X mil" (e.g., "15 mil", "quince mil", "1 mil")
-  const milPattern = /(\d+|[a-záéíóúü]+)\s*mil/i;
-  const milMatch = cleaned.match(milPattern);
-  if (milMatch) {
-    const prefix = milMatch[1];
-    let prefixNum = parseFloat(prefix);
-    if (isNaN(prefixNum)) {
-      prefixNum = units[prefix] ?? 0;
-    }
-    if (prefixNum > 0) {
-      return prefixNum * 1000;
-    }
-  }
-  
-  // Try to parse full Spanish number
+  // Try to parse full Spanish number (e.g., "mil quinientos", "dos mil trescientos")
   let total = 0;
   let current = 0;
   const words = cleaned.split(/\s+/);
