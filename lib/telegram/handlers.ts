@@ -1411,10 +1411,11 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     // Pattern: "gasto de X", "gasté en X", "un gasto de X", "gasto X", "gasto es X" (voice transcription)
     // Note: "es" is added because voice transcription often mishears "de" as "es"
     // Note: "gato" is added because voice transcription often mishears "gasto" as "gato"
+    // Note: Using [^\s.,!?]+ instead of \w+ to match accented characters (súper, verdulería, etc.)
     const expensePatterns = [
-      /(?:gasto|gasté|gastar|gato)\s+(?:de\s+|en\s+|es\s+)?(\w+)/i,
-      /(?:un\s+)?(?:gasto|gato)\s+(?:de\s+|en\s+|es\s+)?(\w+)/i,
-      /(\w+)\s+(?:gasto|gasté|gato)/i,
+      /(?:gasto|gasté|gastar|gato)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
+      /(?:un\s+)?(?:gasto|gato)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
+      /([^\s.,!?"]+)\s+(?:gasto|gasté|gato)/i,
     ];
     
     let detectedCategory: string | null = null;
