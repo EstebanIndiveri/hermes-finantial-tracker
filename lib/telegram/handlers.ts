@@ -1408,11 +1408,13 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       imprevistos: ["imprevisto", "imprevistos", "emergencia"],
     };
     
-    // Pattern: "gasto de X", "gasté en X", "un gasto de X", "gasto X"
+    // Pattern: "gasto de X", "gasté en X", "un gasto de X", "gasto X", "gasto es X" (voice transcription)
+    // Note: "es" is added because voice transcription often mishears "de" as "es"
+    // Note: "gato" is added because voice transcription often mishears "gasto" as "gato"
     const expensePatterns = [
-      /(?:gasto|gasté|gastar)\s+(?:de\s+|en\s+)?(\w+)/i,
-      /(?:un\s+)?gasto\s+(?:de\s+|en\s+)?(\w+)/i,
-      /(\w+)\s+(?:gasto|gasté)/i,
+      /(?:gasto|gasté|gastar|gato)\s+(?:de\s+|en\s+|es\s+)?(\w+)/i,
+      /(?:un\s+)?(?:gasto|gato)\s+(?:de\s+|en\s+|es\s+)?(\w+)/i,
+      /(\w+)\s+(?:gasto|gasté|gato)/i,
     ];
     
     let detectedCategory: string | null = null;
@@ -1422,6 +1424,9 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       const match = text.match(pattern);
       if (match) {
         const keyword = match[1].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        
+        // Skip very short keywords that could cause false matches (e.g., "es" matching "restaurante")
+        if (keyword.length < 3) continue;
         
         for (const [slug, keywords] of Object.entries(categoryKeywords)) {
           const normalizedKeywords = keywords.map(k => k.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase());
