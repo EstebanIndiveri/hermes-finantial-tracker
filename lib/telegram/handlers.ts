@@ -869,6 +869,14 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         requires_reimbursement?: boolean;
       };
       
+      // Check for cancel keywords
+      const cancelKeywords = ["cancelar", "cancela", "cancel", "salir", "no", "nada", "olvidar", "olvídalo", "olvidalo"];
+      const normalizedText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      if (cancelKeywords.some(k => normalizedText.includes(k))) {
+        await clearConversationState(chatId, String(msg.from.id));
+        return { text: "❌ Gasto cancelado." };
+      }
+      
       const amount = parseAmountFromText(text);
       if (!amount || amount <= 0) {
         return { 
@@ -879,6 +887,8 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
             `• <code>15000</code>`,
             `• <code>15 mil</code>`,
             `• <code>quince mil</code>`,
+            ``,
+            `O decí <b>cancelar</b> para salir.`,
           ].join("\n"),
         };
       }
