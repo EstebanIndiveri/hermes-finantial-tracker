@@ -11,6 +11,92 @@ const ReceiptSchema = z.object({
 
 export type ParsedReceipt = z.infer<typeof ReceiptSchema>;
 
+/**
+ * Parse Argentine number format (dots for thousands, comma for decimals)
+ * "22.215,50" -> 22215.50
+ */
+function parseArgentineAmount(str: string): number | null {
+  if (!str || str.length < 2) return null;
+  
+  // Remove currency symbols and spaces
+  let cleaned = str.replace(/[$\s]/g, '');
+  
+  // Check if it has Argentine format (dots for thousands)
+  const hasThousandsDot = /\d{1,3}(\.\d{3})+/.test(cleaned);
+  const hasDecimalComma = /,\d{1,2}$/.test(cleaned);
+  
+  if (hasThousandsDot || hasDecimalComma) {
+    // Argentine format: remove dots (thousands), replace comma (decimal) with dot
+    cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+  } else {
+    // Try international format: remove commas (thousands)
+    cleaned = cleaned.replace(/,/g, '');
+  }
+  
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+}
+
+/**
+ * Fallback regex extraction when AI fails to parse receipt.
+ * Searches for common patterns like "TOTAL 22215,50" or "Total: $22.215"
+ */
+function extractAmountWithRegex(ocrText: string): number | null {
+  // Normalize text: uppercase, collapse whitespace
+  const text = ocrText.toUpperCase().replace(/\s+/g, ' ');
+  
+  // Pattern 1: "TOTAL" followed by amount (with optional separators)
+  // Matches: TOTAL 22215,50 | TOTAL: $22.215,50 | TOTAL A PAGAR 22215.50
+  const totalPatterns = [
+    /TOTAL\s*(?:A\s*PAGAR)?[:\s]*\$?\s*([\d.,]+)/,
+    /IMPORTE\s*TOTAL[:\s]*\$?\s*([\d.,]+)/,
+    /TOTAL\s*FACTURA[:\s]*\$?\s*([\d.,]+)/,
+  ];
+  
+  for (const pattern of totalPatterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      const amount = parseArgentineAmount(match[1]);
+      if (amount && amount > 100 && amount < 10000000) {
+        return amount;
+      }
+    }
+  }
+  
+  // Pattern 2: Look for the largest reasonable amount near "TOTAL" keyword
+  const totalIndex = text.lastIndexOf('TOTAL');
+  if (totalIndex !== -1) {
+    // Search in a window of 150 chars after TOTAL
+    const window = text.slice(totalIndex, totalIndex + 150);
+    const amounts = window.match(/[\d.,]+/g) || [];
+    
+    let maxAmount = 0;
+    for (const amtStr of amounts) {
+      const amt = parseArgentineAmount(amtStr);
+      if (amt && amt > maxAmount && amt > 100 && amt < 10000000) {
+        maxAmount = amt;
+      }
+    }
+    if (maxAmount > 0) {
+      return maxAmount;
+    }
+  }
+  
+  // Pattern 3: Find all large numbers and take the largest (last resort)
+  const allAmounts = text.match(/[\d.,]+/g) || [];
+  let maxAmount = 0;
+  for (const amtStr of allAmounts) {
+    if (amtStr.length >= 4) { // At least 4 digits for reasonable total
+      const amt = parseArgentineAmount(amtStr);
+      if (amt && amt > maxAmount && amt > 1000 && amt < 10000000) {
+        maxAmount = amt;
+      }
+    }
+  }
+  
+  return maxAmount > 0 ? maxAmount : null;
+}
+
 const RECEIPT_SYSTEM_PROMPT = `Sos un extractor de datos de tickets y facturas en pesos argentinos.
 Analizá el texto del ticket y devolvé SOLO JSON válido. Sin markdown. Sin bloques de código.
 
@@ -56,18 +142,43 @@ function extractJson(raw: string): string {
 }
 
 /**
- * Extracts structured expense data from OCR text using Groq.
- * Returns null if Groq is not configured or parsing fails.
+ * Extracts structured expense data from OCR text using Groq with regex fallback.
+ * Returns null if all parsing methods fail.
  */
 export async function parseReceiptText(ocrText: string): Promise<ParsedReceipt | null> {
   const client = getGroqClient();
-  if (!client) return null;
+  
+  // If no Groq client, try regex fallback only
+  if (!client) {
+    const regexAmount = extractAmountWithRegex(ocrText);
+    if (regexAmount) {
+      return {
+        amount_ars: regexAmount,
+        category_slug: null,
+        merchant: null,
+        date_text: null,
+        confidence: 0.3, // Low confidence for regex-only
+      };
+    }
+    return null;
+  }
 
   let raw: string;
   try {
     raw = await client.complete(RECEIPT_SYSTEM_PROMPT, ocrText.slice(0, 2000));
   } catch (err) {
     console.error("Groq receipt parse error:", err instanceof Error ? err.message : String(err));
+    // Try regex fallback on AI error
+    const regexAmount = extractAmountWithRegex(ocrText);
+    if (regexAmount) {
+      return {
+        amount_ars: regexAmount,
+        category_slug: null,
+        merchant: null,
+        date_text: null,
+        confidence: 0.3,
+      };
+    }
     return null;
   }
 
@@ -77,13 +188,47 @@ export async function parseReceiptText(ocrText: string): Promise<ParsedReceipt |
     parsed = JSON.parse(cleaned);
   } catch {
     console.error("Groq receipt JSON parse error. Raw:", raw.slice(0, 300));
+    // Try regex fallback on JSON parse error
+    const regexAmount = extractAmountWithRegex(ocrText);
+    if (regexAmount) {
+      return {
+        amount_ars: regexAmount,
+        category_slug: null,
+        merchant: null,
+        date_text: null,
+        confidence: 0.3,
+      };
+    }
     return null;
   }
 
   const result = ReceiptSchema.safeParse(parsed);
   if (!result.success) {
     console.error("Groq receipt Zod error:", result.error.message);
+    // Try regex fallback on schema error
+    const regexAmount = extractAmountWithRegex(ocrText);
+    if (regexAmount) {
+      return {
+        amount_ars: regexAmount,
+        category_slug: null,
+        merchant: null,
+        date_text: null,
+        confidence: 0.3,
+      };
+    }
     return null;
+  }
+
+  // If AI returned null amount, try regex fallback
+  if (result.data.amount_ars === null) {
+    const regexAmount = extractAmountWithRegex(ocrText);
+    if (regexAmount) {
+      return {
+        ...result.data,
+        amount_ars: regexAmount,
+        confidence: Math.min(result.data.confidence, 0.4), // Lower confidence
+      };
+    }
   }
 
   return result.data;
