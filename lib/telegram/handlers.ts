@@ -915,6 +915,78 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       );
     }
 
+    // ── Receipt manual amount entry (when OCR couldn't detect amount) ────────
+    if (editState?.step === "receipt_manual_amount") {
+      const rd = editState.data as {
+        receipt_id: string;
+        ocr_text: string;
+        merchant: string | null;
+        category_slug: string | null;
+      };
+      
+      // Check for cancel
+      const cancelKeywords = ["cancelar", "cancela", "cancel", "salir", "no", "nada"];
+      const normalizedText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      if (cancelKeywords.some(k => normalizedText.includes(k))) {
+        await clearConversationState(chatId, String(msg.from.id));
+        return { text: "❌ Registro de ticket cancelado." };
+      }
+      
+      const amount = parseAmountFromText(text);
+      if (!amount || amount <= 0) {
+        return { 
+          text: [
+            `❌ No entendí el monto.`,
+            ``,
+            `Escribí o decí el número, ej:`,
+            `• <code>22000</code>`,
+            `• <code>22 mil</code>`,
+            ``,
+            `O decí <b>cancelar</b> para salir.`,
+          ].join("\n"),
+        };
+      }
+
+      // Update the receipt import with the manual amount
+      try {
+        await db.update(receipt_imports)
+          .set({ 
+            parsed_amount_ars: amount,
+            status: "pending",
+            fail_reason: null,
+          })
+          .where(eq(receipt_imports.id, rd.receipt_id));
+      } catch (err) {
+        console.error("Failed to update receipt with manual amount:", err);
+        await clearConversationState(chatId, String(msg.from.id));
+        return { text: "❌ Error al guardar. Intentá nuevamente con /gasto." };
+      }
+
+      // Clear conversation state
+      await clearConversationState(chatId, String(msg.from.id));
+
+      // If we have a category, show confirmation
+      if (rd.category_slug) {
+        const cat = await db.query.categories.findFirst({
+          where: and(eq(categories.slug, rd.category_slug), eq(categories.group_id, groupId)),
+        });
+        
+        if (cat) {
+          return buildReceiptProposalMessage({
+            amount_ars: amount,
+            categoryName: cat.name,
+            categoryEmoji: cat.emoji,
+            merchant: rd.merchant ?? undefined,
+            date: getArgentinaDate().toISOString().slice(0, 10),
+            source: "ocr",
+          });
+        }
+      }
+
+      // No category - show category selection
+      return buildCategoryKeyboard(groupId, amount, rd.merchant ?? null, rd.receipt_id, chatId, String(msg.from.id));
+    }
+
     // ── Recurring expense conversational flow handlers ────────────────────────
     if (editState?.step === "recurring_name") {
       const name = text.trim().slice(0, 50);
@@ -1296,16 +1368,30 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       parsed_date: parsedDate,
       groq_raw_response: groqResult ? JSON.stringify(groqResult) : null,
       status: amount_ars ? "pending" : "failed",
-      fail_reason: amount_ars ? null : "Groq could not extract amount",
+      fail_reason: amount_ars ? null : "Could not extract amount",
     });
 
     if (!amount_ars) {
+      // Start conversational flow for manual amount input
+      await setConversationState(chatId, String(msg.from.id), {
+        step: "receipt_manual_amount",
+        data: {
+          receipt_id: receiptId,
+          ocr_text: ocrText.slice(0, 500),
+          merchant: merchant ?? null,
+          category_slug: slug ?? null,
+        },
+      });
+
       return {
         text: [
           `📷 <b>Texto del ticket (OCR):</b>`,
-          `<code>${escapeHtml(ocrText.slice(0, 400))}</code>`,
+          `<code>${escapeHtml(ocrText.slice(0, 300))}</code>`,
           ``,
-          `No pude detectar el monto. Usá /gasto monto categoria descripción.`,
+          `❌ No pude detectar el monto automáticamente.`,
+          ``,
+          `📝 <b>Escribí o decí el monto</b> (ej: 22000, 22 mil)`,
+          `O decí <b>cancelar</b> para salir.`,
         ].join("\n"),
       };
     }
