@@ -104,7 +104,7 @@ function parseAmountFromText(text: string): number | null {
     }
   }
   
-  // Spanish number words for full parsing (e.g., "mil quinientos")
+  // Spanish number words for full parsing (e.g., "mil quinientos", "cien", "doscientos")
   const units: Record<string, number> = {
     cero: 0, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
     seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
@@ -115,27 +115,41 @@ function parseAmountFromText(text: string): number | null {
     veintisiete: 27, veintiocho: 28, veintinueve: 29,
     treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90,
   };
-  const multipliers: Record<string, number> = {
+  const hundreds: Record<string, number> = {
     cien: 100, ciento: 100, doscientos: 200, trescientos: 300, cuatrocientos: 400,
     quinientos: 500, seiscientos: 600, setecientos: 700, ochocientos: 800, novecientos: 900,
+  };
+  const multipliers: Record<string, number> = {
     mil: 1000, millón: 1000000, millon: 1000000,
   };
+  
+  // Filter out "y" connector (e.g., "quinientos y cincuenta" → "quinientos cincuenta")
+  const words = cleaned.split(/\s+/).filter(w => w !== "y");
+  
+  // Single word check for hundreds (e.g., "cien" → 100, "doscientos" → 200)
+  if (words.length === 1 && hundreds[words[0]] !== undefined) {
+    return hundreds[words[0]];
+  }
   
   // Try to parse full Spanish number (e.g., "mil quinientos", "dos mil trescientos")
   let total = 0;
   let current = 0;
-  const words = cleaned.split(/\s+/);
   
   for (const word of words) {
     if (units[word] !== undefined) {
       current += units[word];
+    } else if (hundreds[word] !== undefined) {
+      current += hundreds[word];
     } else if (multipliers[word] !== undefined) {
       if (word === "mil") {
         current = current === 0 ? 1000 : current * 1000;
         total += current;
         current = 0;
       } else {
-        current += multipliers[word];
+        // millón
+        current = current === 0 ? multipliers[word] : current * multipliers[word];
+        total += current;
+        current = 0;
       }
     } else {
       const num = parseFloat(word.replace(/\./g, "").replace(",", "."));
@@ -1492,35 +1506,42 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
 
   // ── Fallback: detect expense patterns WITHOUT amount for conversational flow ──
   if ((parsed.intent === "unknown" || parsed.confidence < 0.4)) {
-    // Category keyword mapping
+    // Category keyword mapping (for BOT intent detection only, actual category comes from DB)
     const categoryKeywords: Record<string, string[]> = {
-      supermercado: ["super", "súper", "supermercado", "mercado"],
-      verduleria: ["verdulería", "verduleria", "verdura", "verduras"],
-      restaurante: ["restaurante", "restaurant", "resto", "comida"],
-      servicios: ["servicios", "servicio", "luz", "gas", "agua", "internet"],
-      movilidad: ["movilidad", "transporte", "uber", "taxi", "colectivo", "nafta"],
+      supermercado: ["super", "súper", "supermercado", "mercado", "chino", "almacén", "almacen", "carrefour", "disco", "coto", "jumbo"],
+      verduleria: ["verdulería", "verduleria", "verdura", "verduras", "frutería", "fruteria", "fruta", "frutas"],
+      restaurante: ["restaurante", "restaurant", "resto", "comida", "almuerzo", "cena", "pizzería", "pizzeria", "bar"],
+      servicios: ["servicios", "servicio", "luz", "gas", "agua", "internet", "cable", "celular", "teléfono", "telefono", "electricidad"],
+      movilidad: ["movilidad", "transporte", "uber", "taxi", "colectivo", "nafta", "combustible", "bondi", "subte"],
       tarjeta: ["tarjeta", "tarjetas", "credito", "crédito"],
-      salidas_pareja: ["salida", "salidas", "pareja", "cita"],
-      viaje: ["viaje", "viajes", "vacaciones"],
-      compras_personales: ["compras", "personal", "personales", "ropa"],
-      imprevistos: ["imprevisto", "imprevistos", "emergencia"],
+      salidas_pareja: ["salida", "salidas", "pareja", "cita", "novio", "novia"],
+      viaje: ["viaje", "viajes", "vacaciones", "pasaje", "pasajes"],
+      compras_personales: ["compras", "personal", "personales", "ropa", "farmacia", "remedios", "medicamentos", "perfumería", "perfumeria"],
+      imprevistos: ["imprevisto", "imprevistos", "emergencia", "urgencia"],
     };
     
     // Pattern: "gasto de X", "gasté en X", "un gasto de X", "gasto X", "gasto es X" (voice transcription)
-    // Note: "es" is added because voice transcription often mishears "de" as "es"
-    // Note: "gato" is added because voice transcription often mishears "gasto" as "gato"
-    // Note: Using [^\s.,!?]+ instead of \w+ to match accented characters (súper, verdulería, etc.)
+    // Voice transcription error variants:
+    // - "gato" = "gasto" (common)
+    // - "gota" = "gasto" (less common)
+    // - "gacho" = "gasto" (less common)
+    // - "gastos" = "gasto" (plural confusion)
+    // - "es" = "de" (common)
+    // Using [^\s.,!?"]+ instead of \w+ to match accented characters (súper, verdulería, etc.)
     const expensePatterns = [
-      /(?:gasto|gasté|gastar|gato)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
-      /(?:un\s+)?(?:gasto|gato)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
-      /([^\s.,!?"]+)\s+(?:gasto|gasté|gato)/i,
+      /(?:gasto|gasté|gastar|gato|gota|gacho|gastos)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
+      /(?:un\s+)?(?:gasto|gato|gota|gacho|gastos)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
+      /([^\s.,!?"]+)\s+(?:gasto|gasté|gato|gota|gacho|gastos)/i,
     ];
     
     let detectedCategory: string | null = null;
     let detectedSlug: string | null = null;
     
+    // Normalize the full text for matching (lowercase, remove accents)
+    const normalizedText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
     for (const pattern of expensePatterns) {
-      const match = text.match(pattern);
+      const match = normalizedText.match(pattern);
       if (match) {
         const keyword = match[1].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         
@@ -1546,7 +1567,19 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       });
       
       if (cat) {
-        const { setConversationState } = await import("./splits/conversation-state");
+        const { setConversationState, getConversationState, clearConversationState } = await import("./splits/conversation-state");
+        
+        // Check if there's a pending expense and notify user
+        const existingState = await getConversationState(chatId, String(msg.from.id));
+        let replacedNotice = "";
+        if (existingState?.step === "expense_pending_amount") {
+          const prevData = existingState.data as { category_name?: string };
+          if (prevData?.category_name && prevData.category_name !== cat.name) {
+            replacedNotice = `\n<i>ℹ️ Reemplazaste el gasto pendiente de ${prevData.category_name}.</i>\n`;
+          }
+          await clearConversationState(chatId, String(msg.from.id));
+        }
+        
         await setConversationState(chatId, String(msg.from.id), {
           step: "expense_pending_amount",
           data: {
@@ -1563,11 +1596,11 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         return {
           text: [
             `${cat.emoji ?? "📦"} <b>${cat.name}</b>`,
-            ``,
+            replacedNotice,
             `¿Cuánto gastaste?`,
             ``,
             `Escribí el monto (ej: <code>15000</code>):`,
-          ].join("\n"),
+          ].filter(Boolean).join("\n"),
         };
       }
     }
@@ -1596,7 +1629,22 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   }
 
   if (parsed.intent === "unknown" || parsed.confidence < 0.4) {
-    return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible categoria\n/reintegros\n/borrar_ultimo" };
+    // Provide more helpful error with examples
+    const helpMessage = [
+      "🤔 No pude interpretar tu mensaje.",
+      "",
+      "<b>Para registrar gastos:</b>",
+      "• <code>Gasté 15000 en super</code>",
+      "• <code>Gasto de verdulería 5000</code>",
+      "• <code>47000 restaurante</code>",
+      "• O enviá una foto del ticket 📷",
+      "",
+      "<b>Otros comandos:</b>",
+      "• <code>/resumen</code> — ver estado del mes",
+      "• <code>/disponible super</code> — presupuesto disponible",
+      "• <code>/reintegros</code> — ver reintegros pendientes",
+    ].join("\n");
+    return { text: helpMessage };
   }
 
   // ── query_summary → /resumen ──
@@ -2115,7 +2163,23 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     };
   }
 
-  return { text: "No entendí el mensaje. Podés usar:\n/gasto monto categoria\n/resumen\n/disponible categoria\n/puedo monto [categoria]\n/reintegros\n/recurrentes" };
+  // Final fallback with helpful examples
+  const helpMessage = [
+    "🤔 No pude interpretar tu mensaje.",
+    "",
+    "<b>Para registrar gastos:</b>",
+    "• <code>Gasté 15000 en super</code>",
+    "• <code>Gasto de verdulería 5000</code>",
+    "• <code>47000 restaurante</code>",
+    "• O enviá una foto del ticket 📷",
+    "",
+    "<b>Otros comandos:</b>",
+    "• <code>/resumen</code> — ver estado del mes",
+    "• <code>/disponible super</code> — presupuesto disponible",
+    "• <code>/reintegros</code> — ver reintegros pendientes",
+    "• <code>/recurrentes</code> — ver gastos fijos",
+  ].join("\n");
+  return { text: helpMessage };
 }
 
 async function registerTransaction(

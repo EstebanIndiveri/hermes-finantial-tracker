@@ -69,6 +69,26 @@ NÚMEROS - IMPORTANTE:
 - "19,50" significa diecinueve pesos con cincuenta centavos
 - SIEMPRE devolver amount_ars como número entero o con decimales usando punto: 19715, no "19.715"
 
+NÚMEROS EN PALABRAS - PARSEAR CORRECTAMENTE:
+- "quince mil" → 15000
+- "mil quinientos" → 1500
+- "dos mil" → 2000
+- "cien" → 100
+- "doscientos" → 200
+- "quinientos" → 500
+- "cien pesos" → 100
+- "quinientos y cincuenta" → 550
+- "mil" → 1000
+- "treinta mil" → 30000
+
+ERRORES DE TRANSCRIPCIÓN DE VOZ - INTERPRETAR CORRECTAMENTE:
+- "gato de super" → interpretar como "gasto de super" (register_expense)
+- "gacho de supermercado" → interpretar como "gasto de supermercado"
+- "gota en restaurante" → interpretar como "gasto en restaurante"
+- "gastos de verdulería" → interpretar como "gasto de verdulería"
+- "gasto es super" → interpretar como "gasto de super" ("es" suele ser "de" mal transcrito)
+- Si detectás "gato/gacho/gota" + categoría → es register_expense con alta confidence
+
 Categorías válidas (slug): supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos
 
 MAPEO de expresiones a categorías (NORMALIZAR siempre al slug sin tildes):
@@ -114,6 +134,14 @@ EJEMPLOS IMPORTANTES:
 - "Gasté 19.715 en verdulería" → { "intent": "register_expense", "amount_ars": 19715, "category": "verduleria", "confidence": 0.95 }
 - "gasto súper 13000" → { "intent": "register_expense", "amount_ars": 13000, "category": "supermercado", "confidence": 0.95 }
 - "verdulería 5000 con reintegro" → { "intent": "register_expense", "amount_ars": 5000, "category": "verduleria", "requires_reimbursement": true, "confidence": 0.95 }
+- "gato de super quince mil" → { "intent": "register_expense", "amount_ars": 15000, "category": "supermercado", "confidence": 0.9 }
+- "gasté cien pesos en farmacia" → { "intent": "register_expense", "amount_ars": 100, "category": "compras_personales", "confidence": 0.9 }
+- "doscientos en el chino" → { "intent": "register_expense", "amount_ars": 200, "category": "supermercado", "confidence": 0.85 }
+
+GASTO SIN MONTO - INICIAR FLUJO CONVERSACIONAL:
+- Si detectás "gasto de [categoría]" SIN monto, devolvé intent: "register_expense" con category pero amount_ars: null
+- Ej: "gasto de super" → { "intent": "register_expense", "amount_ars": null, "category": "supermercado", "confidence": 0.9 }
+- Ej: "gato de verdulería" → { "intent": "register_expense", "amount_ars": null, "category": "verduleria", "confidence": 0.85 }
 
 Si el mensaje es una sola palabra de las anteriores, usá el intent correspondiente con confidence 0.95.
 
