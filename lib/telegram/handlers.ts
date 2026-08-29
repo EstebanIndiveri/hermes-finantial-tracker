@@ -883,50 +883,75 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         requires_reimbursement?: boolean;
       };
       
-      // Check for cancel keywords
-      const cancelKeywords = ["cancelar", "cancela", "cancel", "salir", "no", "nada", "olvidar", "olvídalo", "olvidalo"];
-      const normalizedText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-      if (cancelKeywords.some(k => normalizedText.includes(k))) {
+      // If user sent a photo/document, clear state and let OCR handler process it
+      const isPhotoMsg = !!msg.photo?.length;
+      const isImageDocMsg = !!(msg.document?.mime_type?.startsWith("image/"));
+      if (isPhotoMsg || isImageDocMsg) {
         await clearConversationState(chatId, String(msg.from.id));
-        return { text: "❌ Gasto cancelado." };
-      }
-      
-      const amount = parseAmountFromText(text);
-      if (!amount || amount <= 0) {
-        return { 
-          text: [
-            `❌ No entendí el monto.`,
-            ``,
-            `Escribí o decí el número, ej:`,
-            `• <code>15000</code>`,
-            `• <code>15 mil</code>`,
-            `• <code>quince mil</code>`,
-            ``,
-            `O decí <b>cancelar</b> para salir.`,
-          ].join("\n"),
-        };
-      }
+        // Fall through to photo handler below - don't return here
+      } else {
+        // Check for cancel keywords
+        const cancelKeywords = ["cancelar", "cancela", "cancel", "salir", "no", "nada", "olvidar", "olvídalo", "olvidalo"];
+        const normalizedText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        if (cancelKeywords.some(k => normalizedText.includes(k))) {
+          await clearConversationState(chatId, String(msg.from.id));
+          return { text: "❌ Gasto cancelado." };
+        }
+        
+        // Check if user sent a NEW expense instead of just amount
+        // Pattern: "gasto de X 15000" or "restaurante 15000" or "15000 super"
+        const newExpensePattern = /(?:gasto|gasté|gato|gacho|gota)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)\s+(\d+(?:[.,]\d+)?(?:\s*mil)?)/i;
+        const categoryAmountPattern = /([a-záéíóúñ]+)\s+(\d+(?:[.,]\d+)?(?:\s*mil)?)/i;
+        const amountCategoryPattern = /(\d+(?:[.,]\d+)?(?:\s*mil)?)\s+([a-záéíóúñ]+)/i;
+        
+        const newExpenseMatch = normalizedText.match(newExpensePattern);
+        const catAmountMatch = !newExpenseMatch && normalizedText.match(categoryAmountPattern);
+        const amountCatMatch = !newExpenseMatch && !catAmountMatch && normalizedText.match(amountCategoryPattern);
+        
+        if (newExpenseMatch || catAmountMatch || amountCatMatch) {
+          // User sent a new expense - clear state and let AI process it
+          await clearConversationState(chatId, String(msg.from.id));
+          // Continue to AI processing below (don't return here)
+        } else {
+          // Just amount - process normally
+          const amount = parseAmountFromText(text);
+          if (!amount || amount <= 0) {
+            return { 
+              text: [
+                `❌ No entendí el monto.`,
+                ``,
+                `Escribí o decí el número, ej:`,
+                `• <code>15000</code>`,
+                `• <code>15 mil</code>`,
+                `• <code>quince mil</code>`,
+                ``,
+                `O decí <b>cancelar</b> para salir.`,
+              ].join("\n"),
+            };
+          }
 
-      const cat = await db.query.categories.findFirst({
-        where: and(eq(categories.id, ed.category_id), eq(categories.group_id, groupId)),
-      });
-      if (!cat) {
-        const { clearConversationState } = await import("./splits/conversation-state");
-        await clearConversationState(chatId, String(msg.from.id));
-        return { text: "❌ Categoría no encontrada. Volvé a empezar." };
-      }
+          const cat = await db.query.categories.findFirst({
+            where: and(eq(categories.id, ed.category_id), eq(categories.group_id, groupId)),
+          });
+          if (!cat) {
+            const { clearConversationState } = await import("./splits/conversation-state");
+            await clearConversationState(chatId, String(msg.from.id));
+            return { text: "❌ Categoría no encontrada. Volvé a empezar." };
+          }
 
-      return buildExpenseOrExceptionMessage(
-        chatId,
-        String(msg.from.id),
-        userId,
-        groupId,
-        month,
-        cat,
-        amount,
-        ed.merchant,
-        ed.requires_reimbursement ?? false
-      );
+          return buildExpenseOrExceptionMessage(
+            chatId,
+            String(msg.from.id),
+            userId,
+            groupId,
+            month,
+            cat,
+            amount,
+            ed.merchant,
+            ed.requires_reimbursement ?? false
+          );
+        }
+      }
     }
 
     // ── Receipt manual amount entry (when OCR couldn't detect amount) ────────
