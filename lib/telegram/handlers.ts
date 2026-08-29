@@ -60,7 +60,38 @@ function parseAmountFromText(text: string): number | null {
     .replace(/\s*pesos?\s*/gi, "")
     .replace(/\s*ars?\s*/gi, "")
     .replace(/\$\s*/g, "")
+    .replace(/\s*mangos?\s*/gi, "") // Argentine slang for pesos
     .trim();
+  
+  // Check for "Xk" pattern (e.g., "15k", "1.5k") - k means thousand
+  const kPattern = /^(\d+(?:[.,]\d+)?)\s*k$/i;
+  const kMatch = cleaned.match(kPattern);
+  if (kMatch) {
+    const num = parseFloat(kMatch[1].replace(",", "."));
+    if (!isNaN(num)) {
+      return num * 1000;
+    }
+  }
+  
+  // Check for "X lucas" pattern (e.g., "15 lucas") - lucas = mil pesos
+  const lucasPattern = /^(\d+(?:[.,]\d+)?)\s*lucas?$/i;
+  const lucasMatch = cleaned.match(lucasPattern);
+  if (lucasMatch) {
+    const num = parseFloat(lucasMatch[1].replace(",", "."));
+    if (!isNaN(num)) {
+      return num * 1000;
+    }
+  }
+  
+  // Check for "X palos" pattern (e.g., "2 palos") - palos = millón
+  const palosPattern = /^(\d+(?:[.,]\d+)?)\s*palos?$/i;
+  const palosMatch = cleaned.match(palosPattern);
+  if (palosMatch) {
+    const num = parseFloat(palosMatch[1].replace(",", "."));
+    if (!isNaN(num)) {
+      return num * 1000000;
+    }
+  }
   
   // Check for "X mil" pattern FIRST (e.g., "15 mil", "quince mil")
   // This must come before direct number parsing because parseFloat("15 mil") returns 15
@@ -1546,17 +1577,26 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     };
     
     // Pattern: "gasto de X", "gasté en X", "un gasto de X", "gasto X", "gasto es X" (voice transcription)
-    // Voice transcription error variants:
+    // Voice transcription error variants and multiple verb forms:
     // - "gato" = "gasto" (common)
     // - "gota" = "gasto" (less common)
     // - "gacho" = "gasto" (less common)
     // - "gastos" = "gasto" (plural confusion)
-    // - "es" = "de" (common)
+    // - "compre/compré/compra" = bought
+    // - "pague/pagué/pago" = paid
+    // - "es" = "de" (common voice error)
     // Using [^\s.,!?"]+ instead of \w+ to match accented characters (súper, verdulería, etc.)
     const expensePatterns = [
-      /(?:gasto|gasté|gastar|gato|gota|gacho|gastos)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
-      /(?:un\s+)?(?:gasto|gato|gota|gacho|gastos)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
-      /([^\s.,!?"]+)\s+(?:gasto|gasté|gato|gota|gacho|gastos)/i,
+      // gasto/gasté/compré/pagué + de/en + categoría
+      /(?:gasto|gasté|gaste|gastar|gato|gota|gacho|gastos|compré|compre|compra|compras|pagué|pague|pago)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
+      // un gasto de X
+      /(?:un\s+)?(?:gasto|gato|gota|gacho|gastos|compra)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
+      // nuevo gasto / quiero registrar / acabo de
+      /(?:nuevo\s+gasto|quiero\s+registrar|acabo\s+de\s+(?:gastar|comprar)|hice\s+una?\s+(?:compra|gasto))\s+(?:de\s+|en\s+)?([^\s.,!?"]+)/i,
+      // X gasto/gasté
+      /([^\s.,!?"]+)\s+(?:gasto|gasté|gaste|gato|gota|gacho|gastos|compré|compre)/i,
+      // fui al X (e.g., "fui al super")
+      /fui\s+(?:al?\s+)?([^\s.,!?"]+)/i,
     ];
     
     let detectedCategory: string | null = null;
