@@ -1,0 +1,15 @@
+{
+  "name": "Hermes Finance",
+  "install": "bash ./scripts/cloud-agent-setup.sh",
+  "terminals": [
+    {
+      "name": "libsql",
+      "command": "export PATH=\"$HOME/.turso:$PATH\" && turso dev --db-file local.db --port 8080"
+    },
+    {
+      "name": "web",
+      "command": "npm run dev"
+    }
+  ],
+  "ports": [3000, 8080]
+}
