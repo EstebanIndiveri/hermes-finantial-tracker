@@ -4,6 +4,7 @@ import {
   detectCategorySlug,
   hasReimbursementIntent,
   detectSimpleQueryIntent,
+  detectRecurringIntent,
   parseExpenseFallback,
 } from "../expense-fallback";
 
@@ -170,5 +171,44 @@ describe("parseExpenseFallback (integration of the failing screenshots)", () => 
       categorySlug: "supermercado",
       requiresReimbursement: false,
     });
+  });
+});
+
+describe("detectRecurringIntent", () => {
+  it("maps the single word 'Recurrentes' to list_recurring", () => {
+    expect(detectRecurringIntent("Recurrentes")).toBe("list_recurring");
+    expect(detectRecurringIntent("recurrentes")).toBe("list_recurring");
+    expect(detectRecurringIntent("/recurrentes")).toBe("list_recurring");
+  });
+
+  it("maps recurring list phrasings to list_recurring", () => {
+    expect(detectRecurringIntent("mis gastos recurrentes")).toBe("list_recurring");
+    expect(detectRecurringIntent("ver gastos fijos")).toBe("list_recurring");
+    expect(detectRecurringIntent("gastos fijos")).toBe("list_recurring");
+    expect(detectRecurringIntent("listar pagos mensuales")).toBe("list_recurring");
+    expect(detectRecurringIntent("mis recurrentes")).toBe("list_recurring");
+  });
+
+  it("maps the single word 'Pendientes' to pending_recurring", () => {
+    expect(detectRecurringIntent("Pendientes")).toBe("pending_recurring");
+    expect(detectRecurringIntent("pendientes")).toBe("pending_recurring");
+    expect(detectRecurringIntent("/pendientes")).toBe("pending_recurring");
+  });
+
+  it("maps pending phrasings to pending_recurring", () => {
+    expect(detectRecurringIntent("gastos pendientes")).toBe("pending_recurring");
+    expect(detectRecurringIntent("que tengo que pagar")).toBe("pending_recurring");
+    expect(detectRecurringIntent("pagos pendientes")).toBe("pending_recurring");
+    expect(detectRecurringIntent("recurrentes sin pagar")).toBe("pending_recurring");
+  });
+
+  it("does NOT steal the add-recurring flow (message with an amount)", () => {
+    expect(detectRecurringIntent("agregar recurrente netflix 1500")).toBeNull();
+    expect(detectRecurringIntent("recurrente spotify 2500 dia 10")).toBeNull();
+  });
+
+  it("returns null for unrelated messages", () => {
+    expect(detectRecurringIntent("hola")).toBeNull();
+    expect(detectRecurringIntent("gaste 5000 en super")).toBeNull();
   });
 });

@@ -204,6 +204,48 @@ export function hasReimbursementIntent(text: string): boolean {
 
 export type SimpleQueryIntent = "query_available" | "query_summary" | "query_reimbursements";
 
+export type RecurringQueryIntent = "list_recurring" | "pending_recurring";
+
+/**
+ * Deterministically detects recurring-expense query intents from short
+ * messages that the flaky AI parser sometimes classifies as "unknown"
+ * (e.g. the single words "Recurrentes" or "Pendientes").
+ *
+ * Only fires when the message contains NO amount, so it never steals the
+ * add-recurring flow ("agregar recurrente netflix 1500") or a real expense.
+ *
+ * @param text - The raw user message.
+ * @returns "list_recurring", "pending_recurring", or null.
+ */
+export function detectRecurringIntent(text: string): RecurringQueryIntent | null {
+  const norm = normalize(text).trim();
+
+  // Guard: a message with an amount is an add-recurring or an expense, not a query.
+  if (extractAmountFromMessage(text) !== null) return null;
+
+  // Pending list: "pendientes", "gastos pendientes", "pagos pendientes",
+  // "que tengo que pagar", "que debo pagar", "recurrentes sin pagar".
+  if (
+    /\bpendientes?\b/.test(norm) ||
+    /\bque\s+(?:tengo\s+que|debo)\s+pagar\b/.test(norm) ||
+    /\bsin\s+pagar\b/.test(norm)
+  ) {
+    return "pending_recurring";
+  }
+
+  // Recurring list: "recurrentes", "gastos recurrentes", "gastos fijos",
+  // "pagos mensuales", "mis recurrentes", "ver/listar recurrentes".
+  if (
+    /\brecurrentes\b/.test(norm) ||
+    /\bgastos?\s+fijos?\b/.test(norm) ||
+    /\bpagos?\s+mensuales?\b/.test(norm)
+  ) {
+    return "list_recurring";
+  }
+
+  return null;
+}
+
 /**
  * Detects simple, unambiguous query intents from short messages that the AI
  * sometimes fails to classify (e.g. the single word "disponible").

@@ -30,6 +30,7 @@ import { findSuggestionByName, RECURRING_SUGGESTIONS } from "@/lib/recurring/sug
 import {
   parseExpenseFallback,
   detectSimpleQueryIntent,
+  detectRecurringIntent,
   hasReimbursementIntent,
 } from "./expense-fallback";
 
@@ -1612,8 +1613,14 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   if (parsed.intent === "unknown" || parsed.confidence < 0.4) {
     // 1) Simple query intents the AI sometimes misses (e.g. single "disponible")
     const queryIntent = detectSimpleQueryIntent(text);
+    const recurringIntent = detectRecurringIntent(text);
     if (queryIntent) {
       parsed.intent = queryIntent;
+      parsed.category = null;
+      parsed.confidence = 0.85;
+    } else if (recurringIntent) {
+      // 1b) Recurring query intents the AI misses (e.g. "Recurrentes", "Pendientes")
+      parsed.intent = recurringIntent;
       parsed.category = null;
       parsed.confidence = 0.85;
     } else {
