@@ -29,6 +29,7 @@ export const CATEGORY_KEYWORDS: Record<string, string[]> = {
   viaje: ["viaje", "viajes", "vacaciones", "pasaje", "pasajes"],
   compras_personales: ["compras", "personal", "personales", "ropa", "farmacia", "remedios", "medicamentos", "perfumería", "perfumeria"],
   imprevistos: ["imprevisto", "imprevistos", "emergencia", "urgencia"],
+  ingresos: ["ingreso", "ingresos", "cobre", "cobro", "sueldo", "salario", "honorarios", "aguinaldo"],
 };
 
 /** Spanish number words 0-29 and tens, used for "quince mil" style amounts. */

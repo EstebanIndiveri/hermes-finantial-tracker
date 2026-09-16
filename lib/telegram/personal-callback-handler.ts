@@ -13,6 +13,7 @@ import { eq, and, sum, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary } from "@/lib/finance/summaries";
+import { isIncomeCategory } from "@/lib/finance/income";
 import { calculateCategoryStatus } from "@/lib/finance/rules";
 import { formatTransactionConfirm } from "./formatters";
 import { getConversationState, setConversationState, clearConversationState } from "./splits/conversation-state";
@@ -160,6 +161,7 @@ async function registerPersonalTransaction(
       disponible_ars,
       status,
       ahorro_proyectado_usd: summary?.ahorro_proyectado_usd ?? 0,
+      is_income: isIncomeCategory(cat?.slug),
     }),
     transactionId: txId,
   };
