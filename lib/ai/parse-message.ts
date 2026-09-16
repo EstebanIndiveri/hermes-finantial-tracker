@@ -111,7 +111,7 @@ INFORMACIÓN INCOMPLETA - DEVOLVER register_expense CON LO QUE HAY:
   * "compré 15000" → { intent: "register_expense", amount_ars: 15000, category: null, confidence: 0.8 }
   * "super" (solo categoría) → { intent: "register_expense", amount_ars: null, category: "supermercado", confidence: 0.7 }
 
-Categorías válidas (slug): supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos
+Categorías válidas (slug): supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos, ingresos
 
 MAPEO de expresiones a categorías (NORMALIZAR siempre al slug sin tildes):
 - "salidas pareja", "salidas en pareja", "salidas_pareja" → "salidas_pareja"
@@ -120,6 +120,14 @@ MAPEO de expresiones a categorías (NORMALIZAR siempre al slug sin tildes):
 - "verdura", "verdulería", "verduleria" → "verduleria"
 - "tarjeta de crédito", "tarjetas" → "tarjeta"
 - "colectivo", "transporte", "uber", "taxi" → "movilidad"
+- "ingreso", "ingresos", "cobré", "cobro", "sueldo", "salario", "honorarios", "aguinaldo", "alquiler que cobré", "me pagaron", "me depositaron" → "ingresos"
+
+INGRESOS (dinero que ENTRA, a favor — NO es un gasto):
+- Cuando el usuario dice que RECIBIÓ o COBRÓ dinero, usá intent: "register_expense" con category: "ingresos".
+- La categoría "ingresos" representa dinero a favor: SUMA al balance, no se resta.
+- Ej: "ingreso 492900 alquiler caseros" → { "intent": "register_expense", "amount_ars": 492900, "category": "ingresos", "confidence": 0.95 }
+- Ej: "cobré 300000 de sueldo" → { "intent": "register_expense", "amount_ars": 300000, "category": "ingresos", "confidence": 0.9 }
+- Ej: "me pagaron 50000" → { "intent": "register_expense", "amount_ars": 50000, "category": "ingresos", "confidence": 0.85 }
 
 REGLAS DE DETECCIÓN DE GASTOS:
 - "gasto de [categoria] [monto]" → register_expense

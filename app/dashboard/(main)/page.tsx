@@ -45,7 +45,9 @@ export default async function DashboardPage({
     with: { category: true },
   });
 
-  const spentARS = categoryBreakdown.reduce((acc, c) => acc + c.gastado_ars, 0);
+  const spentARS = categoryBreakdown
+    .filter(c => !c.is_income)
+    .reduce((acc, c) => acc + c.gastado_ars, 0);
   const incomeARS = (summary?.income_usd ?? 0) * (summary?.exchange_rate ?? 1);
   const ahorroARS = incomeARS - spentARS;
   const pctAhorro = incomeARS > 0 ? Math.round((ahorroARS / incomeARS) * 100) : 0;
@@ -59,6 +61,8 @@ export default async function DashboardPage({
   const gaugeColor = status === "GREEN" ? "" : status === "YELLOW" ? "yellow" : "red";
 
   const closedCats = categoryBreakdown.filter(c => c.status === "CLOSED");
+  // Expense-only breakdown for charts/lists (income is shown as balance, not spend).
+  const expenseBreakdown = categoryBreakdown.filter(c => !c.is_income);
   const monthLabel = new Date(month + "-01").toLocaleDateString("es-AR", { month: "long", year: "numeric" });
 
   return (
@@ -160,7 +164,7 @@ export default async function DashboardPage({
           </div>
           <div className="h-card-body">
             <CategoryDonut
-              data={categoryBreakdown.map(c => ({ name: c.name, gastado_ars: c.gastado_ars, emoji: c.emoji }))}
+              data={expenseBreakdown.map(c => ({ name: c.name, gastado_ars: c.gastado_ars, emoji: c.emoji }))}
             />
           </div>
         </div>
@@ -171,7 +175,7 @@ export default async function DashboardPage({
           </div>
           <div className="h-card-body">
             <SpendingChart
-              data={categoryBreakdown.map(c => ({
+              data={expenseBreakdown.map(c => ({
                 name: c.emoji,
                 gastado: c.gastado_ars,
                 budget: c.budget_ars,
@@ -191,7 +195,7 @@ export default async function DashboardPage({
           </div>
           <div className="h-card-body">
             <div className="h-cat-list">
-              {categoryBreakdown.map(cat => {
+              {expenseBreakdown.map(cat => {
                 const pct = cat.budget_ars > 0 ? Math.min(100, Math.round((cat.gastado_ars / cat.budget_ars) * 100)) : 0;
                 const barClass = cat.status === "OK" ? "h-bar-ok" : cat.status === "WARNING" ? "h-bar-warn" : "h-bar-closed";
                 const badgeClass = cat.status === "OK" ? "h-badge-ok" : cat.status === "WARNING" ? "h-badge-warn" : "h-badge-closed";

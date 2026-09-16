@@ -108,6 +108,11 @@ describe("detectCategorySlug", () => {
     expect(detectCategorySlug("disponible")).toBeNull();
     expect(detectCategorySlug("hola bot")).toBeNull();
   });
+
+  it("detects the income category", () => {
+    expect(detectCategorySlug("ingreso 492900 alquiler caseros")).toBe("ingresos");
+    expect(detectCategorySlug("cobre 300000 de sueldo")).toBe("ingresos");
+  });
 });
 
 describe("hasReimbursementIntent", () => {

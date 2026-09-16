@@ -9,7 +9,17 @@ export function formatTransactionConfirm(params: {
   disponible_ars: number | null;
   status: string;
   ahorro_proyectado_usd: number;
+  is_income?: boolean;
 }): string {
+  if (params.is_income) {
+    return [
+      `✅ Ingreso registrado: +${formatARS(params.amount_ars)} en ${params.emoji} ${params.category}.`,
+      ``,
+      `Este ingreso suma a tu balance del mes.`,
+      ``,
+      `💰 Ahorro proyectado: ${formatUSD(params.ahorro_proyectado_usd)}`,
+    ].join("\n");
+  }
   const statusIcon = params.status === "OK" ? "🟢 OK" : params.status === "WARNING" ? "🟡 WARNING" : "🔴 CLOSED";
   const lines = [
     `✅ Registrado: ${formatARS(params.amount_ars)} en ${params.emoji} ${params.category}.`,
