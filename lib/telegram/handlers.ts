@@ -27,6 +27,11 @@ import {
   type RecurringExecutionWithDetails,
 } from "@/lib/db/recurring-queries";
 import { findSuggestionByName, RECURRING_SUGGESTIONS } from "@/lib/recurring/suggestions";
+import {
+  parseExpenseFallback,
+  detectSimpleQueryIntent,
+  hasReimbursementIntent,
+} from "./expense-fallback";
 
 export interface PersonalBotMessage {
   text: string;
@@ -447,6 +452,40 @@ function buildReimbursementsMessage(
     ].join("\n"),
     replyMarkup: keyboardRows.length > 0 ? buildPersonalKeyboard(keyboardRows) : undefined,
   };
+}
+
+/**
+ * Resolves a category record from a slug for a group, using exact match first
+ * and an accent-insensitive fuzzy match as a fallback. Centralizes the
+ * lookup used by both the AI path and the deterministic fallback.
+ *
+ * @param groupId - The group whose categories are searched.
+ * @param slug - The candidate category slug (may contain accents/underscores).
+ * @returns The matched category, or null when none matches.
+ */
+async function resolveCategoryBySlug(
+  groupId: string,
+  slug: string
+): Promise<{ id: string; name: string; emoji: string | null; slug: string } | null> {
+  const normalizedSlug = slug.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  const exact = await db.query.categories.findFirst({
+    where: and(eq(categories.slug, normalizedSlug), eq(categories.group_id, groupId)),
+  });
+  if (exact) return exact;
+
+  const allCats = await db.select().from(categories).where(eq(categories.group_id, groupId));
+  const fuzzy = allCats.find((c) => {
+    const catSlugNorm = c.slug.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const catNameNorm = c.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return (
+      catSlugNorm === normalizedSlug ||
+      catNameNorm === normalizedSlug ||
+      catSlugNorm.includes(normalizedSlug) ||
+      normalizedSlug.includes(catSlugNorm)
+    );
+  });
+  return fuzzy ?? null;
 }
 
 /**
@@ -1560,113 +1599,98 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
   const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
   const parsed = await parseFinancialMessage(text);
 
-  // ── Fallback: detect expense patterns WITHOUT amount for conversational flow ──
-  if ((parsed.intent === "unknown" || parsed.confidence < 0.4)) {
-    // Category keyword mapping (for BOT intent detection only, actual category comes from DB)
-    const categoryKeywords: Record<string, string[]> = {
-      supermercado: ["super", "súper", "supermercado", "mercado", "chino", "almacén", "almacen", "carrefour", "disco", "coto", "jumbo"],
-      verduleria: ["verdulería", "verduleria", "verdura", "verduras", "frutería", "fruteria", "fruta", "frutas"],
-      restaurante: ["restaurante", "restaurant", "resto", "comida", "almuerzo", "cena", "pizzería", "pizzeria", "bar"],
-      servicios: ["servicios", "servicio", "luz", "gas", "agua", "internet", "cable", "celular", "teléfono", "telefono", "electricidad"],
-      movilidad: ["movilidad", "transporte", "uber", "taxi", "colectivo", "nafta", "combustible", "bondi", "subte"],
-      tarjeta: ["tarjeta", "tarjetas", "credito", "crédito"],
-      salidas_pareja: ["salida", "salidas", "pareja", "cita", "novio", "novia"],
-      viaje: ["viaje", "viajes", "vacaciones", "pasaje", "pasajes"],
-      compras_personales: ["compras", "personal", "personales", "ropa", "farmacia", "remedios", "medicamentos", "perfumería", "perfumeria"],
-      imprevistos: ["imprevisto", "imprevistos", "emergencia", "urgencia"],
-    };
-    
-    // Pattern: "gasto de X", "gasté en X", "un gasto de X", "gasto X", "gasto es X" (voice transcription)
-    // Voice transcription error variants and multiple verb forms:
-    // - "gato" = "gasto" (common)
-    // - "gota" = "gasto" (less common)
-    // - "gacho" = "gasto" (less common)
-    // - "gastos" = "gasto" (plural confusion)
-    // - "compre/compré/compra" = bought
-    // - "pague/pagué/pago" = paid
-    // - "es" = "de" (common voice error)
-    // Using [^\s.,!?"]+ instead of \w+ to match accented characters (súper, verdulería, etc.)
-    const expensePatterns = [
-      // gasto/gasté/compré/pagué + de/en + categoría
-      /(?:gasto|gasté|gaste|gastar|gato|gota|gacho|gastos|compré|compre|compra|compras|pagué|pague|pago)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
-      // un gasto de X
-      /(?:un\s+)?(?:gasto|gato|gota|gacho|gastos|compra)\s+(?:de\s+|en\s+|es\s+)?([^\s.,!?"]+)/i,
-      // nuevo gasto / quiero registrar / acabo de
-      /(?:nuevo\s+gasto|quiero\s+registrar|acabo\s+de\s+(?:gastar|comprar)|hice\s+una?\s+(?:compra|gasto))\s+(?:de\s+|en\s+)?([^\s.,!?"]+)/i,
-      // X gasto/gasté
-      /([^\s.,!?"]+)\s+(?:gasto|gasté|gaste|gato|gota|gacho|gastos|compré|compre)/i,
-      // fui al X (e.g., "fui al super")
-      /fui\s+(?:al?\s+)?([^\s.,!?"]+)/i,
-    ];
-    
-    let detectedCategory: string | null = null;
-    let detectedSlug: string | null = null;
-    
-    // Normalize the full text for matching (lowercase, remove accents)
-    const normalizedText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
-    for (const pattern of expensePatterns) {
-      const match = normalizedText.match(pattern);
-      if (match) {
-        const keyword = match[1].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        
-        // Skip very short keywords that could cause false matches (e.g., "es" matching "restaurante")
-        if (keyword.length < 3) continue;
-        
-        for (const [slug, keywords] of Object.entries(categoryKeywords)) {
-          const normalizedKeywords = keywords.map(k => k.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase());
-          if (normalizedKeywords.some(k => k.includes(keyword) || keyword.includes(k))) {
-            detectedSlug = slug;
-            detectedCategory = slug;
-            break;
-          }
+  // Guard: never trigger a reimbursement unless the user explicitly asked for it.
+  // The AI occasionally hallucinates requires_reimbursement on plain expenses.
+  if (parsed.requires_reimbursement && !hasReimbursementIntent(text)) {
+    parsed.requires_reimbursement = false;
+  }
+
+  // ── Deterministic fallback when the AI parser fails or is unsure ──
+  // The AI is the primary path, but it is flaky on clear inputs like
+  // "Gaste 13568 supermercado". This block deterministically recovers the
+  // intent so the core expense feature never falls to a generic error.
+  if (parsed.intent === "unknown" || parsed.confidence < 0.4) {
+    // 1) Simple query intents the AI sometimes misses (e.g. single "disponible")
+    const queryIntent = detectSimpleQueryIntent(text);
+    if (queryIntent) {
+      parsed.intent = queryIntent;
+      parsed.category = null;
+      parsed.confidence = 0.85;
+    } else {
+      // 2) Deterministic expense parse (amount + category from the whole message)
+      const fb = parseExpenseFallback(text);
+
+      if (fb.amount !== null && fb.categorySlug) {
+        // Both present → register directly (mirrors the AI register_expense path)
+        const cat = await resolveCategoryBySlug(groupId, fb.categorySlug);
+        if (cat) {
+          return buildExpenseOrExceptionMessage(
+            chatId,
+            String(msg.from.id),
+            userId,
+            groupId,
+            month,
+            cat,
+            fb.amount,
+            undefined,
+            fb.requiresReimbursement,
+          );
         }
-        if (detectedCategory) break;
       }
-    }
-    
-    // If we detected a category but no amount, start conversational flow
-    if (detectedSlug) {
-      const cat = await db.query.categories.findFirst({
-        where: and(eq(categories.slug, detectedSlug), eq(categories.group_id, groupId)),
-      });
-      
-      if (cat) {
-        const { setConversationState, getConversationState, clearConversationState } = await import("./splits/conversation-state");
-        
-        // Check if there's a pending expense and notify user
-        const existingState = await getConversationState(chatId, String(msg.from.id));
-        let replacedNotice = "";
-        if (existingState?.step === "expense_pending_amount") {
-          const prevData = existingState.data as { category_name?: string };
-          if (prevData?.category_name && prevData.category_name !== cat.name) {
-            replacedNotice = `\n<i>ℹ️ Reemplazaste el gasto pendiente de ${prevData.category_name}.</i>\n`;
+
+      if (fb.amount !== null && !fb.categorySlug) {
+        // Amount only → ask for category with buttons
+        return await buildExpenseCategoryKeyboard(
+          groupId,
+          fb.amount,
+          null,
+          chatId,
+          String(msg.from.id),
+          userId,
+          fb.requiresReimbursement,
+        );
+      }
+
+      if (fb.amount === null && fb.categorySlug) {
+        // Category only → conversational flow (ask amount)
+        const cat = await resolveCategoryBySlug(groupId, fb.categorySlug);
+        if (cat) {
+          const { setConversationState, getConversationState, clearConversationState } = await import("./splits/conversation-state");
+
+          // If replacing a different pending expense, tell the user.
+          const existingState = await getConversationState(chatId, String(msg.from.id));
+          let replacedNotice = "";
+          if (existingState?.step === "expense_pending_amount") {
+            const prevData = existingState.data as { category_name?: string };
+            if (prevData?.category_name && prevData.category_name !== cat.name) {
+              replacedNotice = `\n<i>ℹ️ Reemplazaste el gasto pendiente de ${prevData.category_name}.</i>\n`;
+            }
+            await clearConversationState(chatId, String(msg.from.id));
           }
-          await clearConversationState(chatId, String(msg.from.id));
+
+          await setConversationState(chatId, String(msg.from.id), {
+            step: "expense_pending_amount",
+            data: {
+              category_id: cat.id,
+              category_name: cat.name,
+              category_emoji: cat.emoji ?? "📦",
+              merchant: undefined,
+              group_id: groupId,
+              user_id: userId,
+              requires_reimbursement: fb.requiresReimbursement,
+            },
+          });
+
+          return {
+            text: [
+              `${cat.emoji ?? "📦"} <b>${cat.name}</b>`,
+              replacedNotice,
+              `¿Cuánto gastaste?`,
+              ``,
+              `Escribí el monto (ej: <code>15000</code>):`,
+            ].filter(Boolean).join("\n"),
+          };
         }
-        
-        await setConversationState(chatId, String(msg.from.id), {
-          step: "expense_pending_amount",
-          data: {
-            category_id: cat.id,
-            category_name: cat.name,
-            category_emoji: cat.emoji ?? "📦",
-            merchant: undefined,
-            group_id: groupId,
-            user_id: userId,
-            requires_reimbursement: false,
-          },
-        });
-        
-        return {
-          text: [
-            `${cat.emoji ?? "📦"} <b>${cat.name}</b>`,
-            replacedNotice,
-            `¿Cuánto gastaste?`,
-            ``,
-            `Escribí el monto (ej: <code>15000</code>):`,
-          ].filter(Boolean).join("\n"),
-        };
       }
     }
   }
