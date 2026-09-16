@@ -244,4 +244,86 @@ describe("telegram recurring messages", () => {
     expect(response.text).toContain("🏠 Alquiler - $20.000");
     expect(response.text).toContain("🎵 Spotify - $5.000");
   });
+
+  it("routes 'Recurrentes' to list_recurring even when the AI returns unknown", async () => {
+    mockParseFinancialMessage.mockResolvedValue({
+      intent: "unknown",
+      confidence: 0,
+      needs_confirmation: false,
+      requires_reimbursement: false,
+    });
+    mockGetUserRecurringExpenses.mockResolvedValue([
+      {
+        id: "rec-1",
+        userId: "user-1",
+        groupId: "group-1",
+        name: "Netflix",
+        amountArs: 12000,
+        categoryId: "cat-1",
+        merchant: null,
+        frequency: "monthly",
+        dayOfMonth: 5,
+        isActive: true,
+        autoConfirm: false,
+        notes: null,
+        createdAt: 1,
+        updatedAt: 1,
+        category: { id: "cat-1", name: "Streaming", emoji: "📺", slug: "streaming" },
+      },
+    ]);
+
+    const response = await handleTelegramMessage(
+      {
+        update_id: 1,
+        message: { text: "Recurrentes", chat: { id: 10 }, from: { id: 20 } },
+      },
+      "user-1",
+      "group-1",
+    );
+
+    expect(response.text).toContain("Gastos Recurrentes");
+    expect(response.text).toContain("Netflix");
+    expect(response.text).not.toContain("No pude interpretar");
+  });
+
+  it("routes 'Pendientes' to pending_recurring even when the AI returns unknown", async () => {
+    mockParseFinancialMessage.mockResolvedValue({
+      intent: "unknown",
+      confidence: 0,
+      needs_confirmation: false,
+      requires_reimbursement: false,
+    });
+    mockGetUserRecurringExpenses.mockResolvedValue([]);
+    mockGetPendingExecutions.mockResolvedValue([
+      {
+        id: "exec-1",
+        recurringExpenseId: "rec-1",
+        transactionId: null,
+        scheduledDate: "2026-08-20",
+        executedAt: null,
+        status: "pending",
+        amountArs: 10000,
+        createdAt: 1,
+        recurringExpense: {
+          id: "rec-1",
+          name: "Internet",
+          amountArs: 10000,
+          merchant: null,
+          category: { id: "cat-1", name: "Servicios", emoji: "🌐", slug: "servicios" },
+        },
+      },
+    ]);
+
+    const response = await handleTelegramMessage(
+      {
+        update_id: 1,
+        message: { text: "Pendientes", chat: { id: 10 }, from: { id: 20 } },
+      },
+      "user-1",
+      "group-1",
+    );
+
+    expect(response.text).toContain("🌐 Internet - $10.000");
+    expect(response.text).not.toContain("No pude interpretar");
+  });
 });
