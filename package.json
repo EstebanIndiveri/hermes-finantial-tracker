@@ -18,7 +18,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx lib/db/seed.ts",
-    "test": "npm run test:unit",
+    "test": "npm run test:harness && npm run test:unit",
+    "test:harness": "node scripts/verify-runtime.mjs && node --test scripts/__tests__/*.test.mjs",
     "test:unit": "node scripts/run-isolated.mjs test jest --runInBand",
     "test:e2e": "playwright test --project=chromium"
   },

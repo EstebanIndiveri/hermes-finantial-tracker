@@ -15,6 +15,7 @@ resuelve otra version.
 npm ci
 npm run lint
 npm run typecheck
+npm run test:harness
 npm run test:unit
 npm run build
 ```
@@ -25,6 +26,9 @@ npm run build
 - no hereda secretos ni proxies del proceso padre;
 - usa una DB libSQL temporal y valores sinteticos;
 - elimina su directorio temporal al terminar.
+
+`test:harness` comprueba que secretos, proxies y `NODE_OPTIONS` centinela no se
+propaguen al proceso aislado y que la DB utilizada sea local y temporal.
 
 Los scripts de migracion, seed, Playwright y servicios externos quedan fuera de
 estos controles.
@@ -45,3 +49,9 @@ La incorporacion de CI no convierte la suite existente en verde. El baseline
 auditado sigue siendo 58 suites aprobadas y 8 fallidas, con 482 tests aprobados
 y 17 fallidos. Se clasificaran y corregiran por comportamiento en el siguiente
 corte de PR-01; no se usa `continue-on-error` ni se excluyen esas suites.
+
+ESLint aplica reglas de produccion sin excepciones globales. En tests permite
+`require()` para reinicializar modulos de Jest y mantiene `any` como advertencia
+visible mientras se tipan los fixtures. El reproductor forense CommonJS de la
+auditoria tiene una excepcion limitada a sus dos reglas incompatibles con CJS.
+Los errores de implementacion siguen bloqueando el control.

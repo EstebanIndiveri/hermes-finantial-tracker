@@ -46,8 +46,15 @@ Fecha: 16/09/2026.
 - `e2e/test-target.ts`, `e2e/global-setup.ts`, `e2e/helpers.ts` y referencias de
   destino/credenciales en specs E2E.
 - Tests del propio guard de entorno, si son necesarios.
+- Las ocho suites fallidas registradas en H18, exclusivamente para reemplazar
+  fixtures/mocks obsoletos y aserciones de texto fuente por comportamiento.
 
 Todo cambio fuera de esta lista requiere revisar y ampliar este contrato antes de editar.
+
+Para estas ocho suites no se permite cambiar implementacion de `app/**`, `lib/**`
+o `components/**` solo para satisfacer una expectativa. Si una falla demuestra un
+defecto de producto, se conserva como regresion y se deriva a un corte con contrato
+de comportamiento propio.
 
 ## Verificacion
 
