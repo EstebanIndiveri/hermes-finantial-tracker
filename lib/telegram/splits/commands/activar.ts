@@ -116,7 +116,7 @@ export async function handleActivar(
 
   if (!hermesUser) {
     // Register as temp_user but prompt for full registration
-    let tempUser = await db.query.temp_users.findFirst({
+    const tempUser = await db.query.temp_users.findFirst({
       where: eq(temp_users.telegram_user_id, telegramUserId),
     });
     if (!tempUser) {

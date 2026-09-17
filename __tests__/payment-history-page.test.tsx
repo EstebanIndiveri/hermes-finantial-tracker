@@ -3,15 +3,24 @@ import HistorialPage from "@/app/dashboard/balances/historial/page";
 import { HermesSidebar } from "@/components/dashboard/HermesSidebar";
 import { HistorialClient } from "@/app/dashboard/balances/historial/HistorialClient";
 
-const mockSidebarStateQueue: unknown[] = [];
+let forceSidebarMenuOpen = false;
 
 jest.mock("react", () => {
   const actual = jest.requireActual<typeof import("react")>("react");
 
   return {
     ...actual,
-    useState: (initial: unknown) =>
-      mockSidebarStateQueue.length > 0 ? [mockSidebarStateQueue.shift(), jest.fn()] : actual.useState(initial),
+    useState: (initial: unknown) => {
+      if (
+        forceSidebarMenuOpen &&
+        typeof initial === "object" &&
+        initial !== null &&
+        "autoOpenKey" in initial
+      ) {
+        return [{ ...initial, open: true }, jest.fn()];
+      }
+      return actual.useState(initial);
+    },
   };
 });
 
@@ -65,8 +74,9 @@ describe("payment history page integration", () => {
 
 describe("dashboard sidebar integration for payment history", () => {
   it("includes a payment history navigation link", () => {
-    mockSidebarStateQueue.push(false, false, true);
+    forceSidebarMenuOpen = true;
     const markup = renderToStaticMarkup(<HermesSidebar />);
+    forceSidebarMenuOpen = false;
 
     expect(markup).toContain('href="/dashboard/balances/historial"');
     expect(markup).toContain("Historial de pagos");

@@ -190,7 +190,7 @@ export async function POST(req: NextRequest) {
   }
   
   // Regular text message handling
-  let messageText =
+  const messageText =
     msg.text ?? msg.caption ??
     (msg.photo?.length ? "[photo]" : null) ??
     (msg.document ? "[document]" : null) ?? "";

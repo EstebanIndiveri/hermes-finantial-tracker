@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 type Step = 1 | 2 | 3;
@@ -29,7 +29,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pollInterval, setPollInterval] = useState<ReturnType<typeof setInterval> | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     async function loadUser() {
@@ -110,7 +110,8 @@ export default function OnboardingPage() {
   // Poll /api/auth/me every 3s while on step 3 waiting for Telegram link
   useEffect(() => {
     if (step !== 3 || telegramLinked) {
-      if (pollInterval) { clearInterval(pollInterval); setPollInterval(null); }
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
       return;
     }
     const id = setInterval(async () => {
@@ -122,9 +123,11 @@ export default function OnboardingPage() {
         }
       } catch { /* ignore */ }
     }, 3000);
-    setPollInterval(id);
-    return () => clearInterval(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    pollIntervalRef.current = id;
+    return () => {
+      clearInterval(id);
+      if (pollIntervalRef.current === id) pollIntervalRef.current = null;
+    };
   }, [step, telegramLinked]);
 
   const containerStyle: React.CSSProperties = {

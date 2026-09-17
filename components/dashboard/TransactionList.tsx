@@ -224,9 +224,14 @@ export function TransactionList({ transactions: initialTx, month }: Props) {
   const [deleting, setDeleting] = useState(false);
 
   const { filters, setFilters, categories, filtered, hasFilters, clearFilters } = useFilters(txList);
-
-  // Reset to page 0 whenever filters change
-  useEffect(() => { setPage(0); }, [filters]);
+  const updateFilters = (nextFilters: FiltersState) => {
+    setFilters(nextFilters);
+    setPage(0);
+  };
+  const resetFilters = () => {
+    clearFilters();
+    setPage(0);
+  };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -262,10 +267,10 @@ export function TransactionList({ transactions: initialTx, month }: Props) {
     <>
       <FiltersBar
         filters={filters}
-        setFilters={setFilters}
+        setFilters={updateFilters}
         categories={categories}
         hasFilters={hasFilters}
-        clearFilters={clearFilters}
+        clearFilters={resetFilters}
         month={month}
         resultCount={filtered.length}
         totalCount={txList.length}
@@ -290,7 +295,7 @@ export function TransactionList({ transactions: initialTx, month }: Props) {
           <div className="h-tx-page-controls">
             <button
               className="h-tx-page-btn"
-              onClick={() => setPage(p => Math.max(0, p - 1))}
+              onClick={() => setPage((currentPage) => Math.max(0, currentPage - 1))}
               disabled={page === 0}
               aria-label="Página anterior"
             >
@@ -304,7 +309,7 @@ export function TransactionList({ transactions: initialTx, month }: Props) {
             </span>
             <button
               className="h-tx-page-btn"
-              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              onClick={() => setPage((currentPage) => Math.min(totalPages - 1, currentPage + 1))}
               disabled={page >= totalPages - 1}
               aria-label="Página siguiente"
             >

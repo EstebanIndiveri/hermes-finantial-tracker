@@ -32,10 +32,6 @@ export function ReimbursementsList() {
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState<string | null>(null);
 
-  useEffect(() => {
-    void fetchData();
-  }, []);
-
   async function fetchData() {
     try {
       const [reimbRes, userRes] = await Promise.all([
@@ -58,6 +54,14 @@ export function ReimbursementsList() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const loadTimer = window.setTimeout(() => {
+      void fetchData();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
+  }, []);
 
   async function handlePay(id: string) {
     setPaying(id);

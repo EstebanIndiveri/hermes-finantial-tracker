@@ -1,15 +1,18 @@
 "use client";
 import Link from "next/link";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { GroupSwitcher } from "./GroupSwitcher";
 
+const subscribeToMount = () => () => {};
+const getMountedSnapshot = () => true;
+const getServerMountedSnapshot = () => false;
+
 export function HermesSidebar() {
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribeToMount, getMountedSnapshot, getServerMountedSnapshot);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [compartidosOpen, setCompartidosOpen] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const month = searchParams.get("month");
@@ -17,15 +20,6 @@ export function HermesSidebar() {
     ? { pathname: "/dashboard/settings", query: { month } }
     : "/dashboard/settings";
 
-  // Auto-expand Compartidos submenu if we're on any of its pages
-  const isCompartidosSection = pathname.startsWith("/dashboard/compartidos") || 
-                                pathname.startsWith("/dashboard/balances");
-  
-  useEffect(() => setMounted(true), []);
-  useEffect(() => {
-    if (isCompartidosSection) setCompartidosOpen(true);
-  }, [isCompartidosSection]);
-  
   const isDark = mounted && theme === "dark";
 
   return (
@@ -96,71 +90,7 @@ export function HermesSidebar() {
             Categorías
           </Link>
           
-          {/* Compartidos section with submenu */}
-          <button
-            onClick={() => setCompartidosOpen(!compartidosOpen)}
-            className={`h-nav-item${isCompartidosSection ? " active" : ""}`}
-            style={{ width: "100%", justifyContent: "space-between" }}
-          >
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m9-4.13a4 4 0 11-8 0 4 4 0 018 0zM3 8a4 4 0 108 0A4 4 0 003 8z"/>
-              </svg>
-              Compartidos
-            </span>
-            <svg 
-              width="12" 
-              height="12" 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor" 
-              strokeWidth="2"
-              style={{ 
-                transition: "transform 0.2s ease",
-                transform: compartidosOpen ? "rotate(180deg)" : "rotate(0deg)"
-              }}
-            >
-              <path d="M6 9l6 6 6-6"/>
-            </svg>
-          </button>
-          
-          {compartidosOpen && (
-            <div style={{ paddingLeft: 16 }}>
-              <Link
-                href="/dashboard/compartidos"
-                className={`h-nav-item${pathname === "/dashboard/compartidos" || pathname.match(/^\/dashboard\/compartidos\/[^/]+$/) ? " active" : ""}`}
-                onClick={() => setMobileOpen(false)}
-                style={{ fontSize: 13 }}
-              >
-                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-                </svg>
-                Sesiones
-              </Link>
-              <Link
-                href="/dashboard/balances"
-                className={`h-nav-item${pathname === "/dashboard/balances" ? " active" : ""}`}
-                onClick={() => setMobileOpen(false)}
-                style={{ fontSize: 13 }}
-              >
-                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 6h18M3 12h18M3 18h18"/>
-                </svg>
-                Balances
-              </Link>
-              <Link
-                href="/dashboard/balances/historial"
-                className={`h-nav-item${pathname === "/dashboard/balances/historial" ? " active" : ""}`}
-                onClick={() => setMobileOpen(false)}
-                style={{ fontSize: 13 }}
-              >
-                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-                Historial de pagos
-              </Link>
-            </div>
-          )}
+          <CompartidosSection pathname={pathname} mounted={mounted} onNavigate={() => setMobileOpen(false)} />
           
           <Link
             href="/dashboard/reimbursements"
@@ -247,6 +177,58 @@ export function HermesSidebar() {
           </button>
         </div>
       </aside>
+    </>
+  );
+}
+
+function CompartidosSection({ pathname, mounted, onNavigate }: { pathname: string; mounted: boolean; onNavigate: () => void }) {
+  const isCompartidosSection = pathname.startsWith("/dashboard/compartidos") || pathname.startsWith("/dashboard/balances");
+  const autoOpenKey = mounted && isCompartidosSection ? 1 : 0;
+  const [menuState, setMenuState] = useState({ open: false, autoOpenKey: 0 });
+
+  if (menuState.autoOpenKey !== autoOpenKey) {
+    setMenuState({
+      open: autoOpenKey === 1 ? true : menuState.open,
+      autoOpenKey,
+    });
+  }
+
+  const compartidosOpen = menuState.open;
+
+  return (
+    <>
+      <button
+        onClick={() => setMenuState((state) => ({ ...state, open: !state.open }))}
+        className={`h-nav-item${isCompartidosSection ? " active" : ""}`}
+        style={{ width: "100%", justifyContent: "space-between" }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m9-4.13a4 4 0 11-8 0 4 4 0 018 0zM3 8a4 4 0 108 0A4 4 0 003 8z"/>
+          </svg>
+          Compartidos
+        </span>
+        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" style={{ transition: "transform 0.2s ease", transform: compartidosOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
+      </button>
+
+      {compartidosOpen && (
+        <div style={{ paddingLeft: 16 }}>
+          <Link href="/dashboard/compartidos" className={`h-nav-item${pathname === "/dashboard/compartidos" || pathname.match(/^\/dashboard\/compartidos\/[^/]+$/) ? " active" : ""}`} onClick={onNavigate} style={{ fontSize: 13 }}>
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            Sesiones
+          </Link>
+          <Link href="/dashboard/balances" className={`h-nav-item${pathname === "/dashboard/balances" ? " active" : ""}`} onClick={onNavigate} style={{ fontSize: 13 }}>
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+            Balances
+          </Link>
+          <Link href="/dashboard/balances/historial" className={`h-nav-item${pathname === "/dashboard/balances/historial" ? " active" : ""}`} onClick={onNavigate} style={{ fontSize: 13 }}>
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Historial de pagos
+          </Link>
+        </div>
+      )}
     </>
   );
 }

@@ -153,7 +153,12 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
         convState?.step === "pague_partial_amount"
       ) {
         if (convState.step === "pague_partial_amount") {
-          return handlePaguePartialAmountInput(chatId, telegramUserId, text, convState.data);
+          return handlePaguePartialAmountInput(
+            chatId,
+            telegramUserId,
+            text,
+            convState.data as Parameters<typeof handlePaguePartialAmountInput>[3]
+          );
         }
         return handleOcrEditInput(
           chatId,

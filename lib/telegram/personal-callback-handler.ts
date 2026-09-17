@@ -381,8 +381,8 @@ export async function handlePersonalCallback(
         return { text: "⏱️ Confirmación expirada.", edit: true };
       }
       await setConversationState(chatId, telegramUserId, {
-        ...state,
         step: "expense_edit_amount",
+        data: state.data as PendingExpenseState,
       });
       return { 
         text: "💰 Escribí el nuevo monto (solo el número):", 
@@ -450,8 +450,8 @@ export async function handlePersonalCallback(
         return { text: "⏱️ Confirmación expirada.", edit: true };
       }
       await setConversationState(chatId, telegramUserId, {
-        ...state,
         step: "expense_edit_merchant",
+        data: state.data as PendingExpenseState,
       });
       return { 
         text: "🏪 Escribí el nombre del comercio:", 

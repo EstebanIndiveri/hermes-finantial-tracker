@@ -43,12 +43,20 @@ Las credenciales se suministran con `E2E_USERNAME` y `E2E_PASSWORD`; no existen
 valores por defecto. No ejecutar E2E remoto hasta disponer de proyecto, DB, bot,
 secretos y usuario sintetico de staging independientes.
 
-## Estado de la linea base
+## Estado verificado de PR-01
 
-La incorporacion de CI no convierte la suite existente en verde. El baseline
-auditado sigue siendo 58 suites aprobadas y 8 fallidas, con 482 tests aprobados
-y 17 fallidos. Se clasificaran y corregiran por comportamiento en el siguiente
-corte de PR-01; no se usa `continue-on-error` ni se excluyen esas suites.
+El SHA productivo `7034107` tenia como baseline auditado 58 suites aprobadas y
+8 fallidas, con 482 tests aprobados y 17 fallidos. En la rama aislada
+`codex/harness-foundation`, esas pruebas se clasificaron y repararon sin
+excluirlas: al cierre de PR-01b pasan 67/67 suites y 504/504 tests. TypeScript
+pasa y ESLint termina con 0 errores y 73 advertencias visibles.
+
+El build local aun no constituye evidencia verde: `next build` quedo bloqueado
+al intentar descargar DM Sans y Fraunces desde Google Fonts en el entorno sin
+red. Debe resolverse con fuentes versionadas/locales o verificarse en un CI
+aislado con politica de red explicita antes de usar build como puerta de
+liberacion. Ninguno de estos resultados certifica por si solo los flujos
+financieros ni autoriza una publicacion.
 
 ESLint aplica reglas de produccion sin excepciones globales. En tests permite
 `require()` para reinicializar modulos de Jest y mantiene `any` como advertencia

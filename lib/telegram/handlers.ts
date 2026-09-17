@@ -1205,7 +1205,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
     // Flexible parsing: detect amount and category regardless of order
     let amount_ars: number | null = null;
     let slugCandidate: string | null = null;
-    let merchantParts: string[] = [];
+    const merchantParts: string[] = [];
     
     for (let i = 1; i < parts.length; i++) {
       const part = parts[i];

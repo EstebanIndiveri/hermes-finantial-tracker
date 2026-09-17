@@ -5,9 +5,11 @@ import { and, eq, lt } from "drizzle-orm";
 
 const TTL_MS = 30 * 60 * 1000; // 30 minutes - longer TTL to prevent "Confirmación expirada" errors
 
-export interface ConversationState {
+export interface ConversationState<TData = unknown> {
   step: string;
-  data: any;
+  // State payloads are narrowed by each conversation step at the call site.
+  // Deserialized payloads stay unknown until a conversation step narrows them.
+  data: TData;
 }
 
 /** Retrieves active conversation state for a chat+user pair. Returns null if expired or missing. */
@@ -33,7 +35,7 @@ export async function getConversationState(
 export async function setConversationState(
   chatId: string,
   userId: string,
-  state: ConversationState
+  state: ConversationState<object>
 ): Promise<void> {
   const expires_at = Date.now() + TTL_MS;
   await db.insert(bot_conversation_state)
