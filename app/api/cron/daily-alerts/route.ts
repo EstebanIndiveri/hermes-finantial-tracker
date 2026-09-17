@@ -8,6 +8,7 @@ import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
 import { getPersonalGroup } from "@/lib/groups/permissions";
 import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
+import { isCronRequestAuthorized } from "@/lib/auth/cron";
 
 /**
  * Daily cron job for proactive Telegram alerts.
@@ -15,12 +16,11 @@ import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/te
  * Sends alerts when: expenses today, Monday, categories WARNING/CLOSED, semáforo YELLOW/RED.
  */
 export async function GET(req: NextRequest) {
-  try {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!isCronRequestAuthorized(req.headers.get("authorization"), process.env.CRON_SECRET)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
+  try {
     const month = getActiveMonthArgentina();
     const today = getArgentinaDate();
     const todayStr = today.toISOString().split("T")[0]; // YYYY-MM-DD

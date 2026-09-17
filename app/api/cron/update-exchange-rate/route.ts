@@ -4,6 +4,7 @@ import { monthly_settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { fetchRipioRate, RipioFetchError } from "@/lib/exchange/ripio";
 import { getActiveMonthArgentina } from "@/lib/utils/dates";
+import { isCronRequestAuthorized } from "@/lib/auth/cron";
 
 /**
  * Cron job endpoint to update exchange rate from Ripio API.
@@ -12,12 +13,11 @@ import { getActiveMonthArgentina } from "@/lib/utils/dates";
  * @returns JSON response with rate and month, or error details
  */
 export async function GET(req: NextRequest) {
-  try {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!isCronRequestAuthorized(req.headers.get("authorization"), process.env.CRON_SECRET)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
+  try {
     const month = getActiveMonthArgentina();
 
     let rate: number;

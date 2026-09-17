@@ -39,6 +39,24 @@ describe("GET /api/cron/recurring-reminders", () => {
     expect(await response.json()).toEqual({ error: "Unauthorized" });
   });
 
+  it.each([
+    ["missing secret", undefined, "Bearer undefined"],
+    ["empty secret", "", "Bearer "],
+    ["wrong token", "test-secret", "Bearer wrong"],
+  ])("rejects %s before recurring reads or Telegram delivery", async (_name, secret, authorization) => {
+    const env = { ...originalEnv };
+    if (secret === undefined) delete env.CRON_SECRET;
+    else env.CRON_SECRET = secret;
+    process.env = env;
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/recurring-reminders", { headers: { authorization } }));
+
+    expect(response.status).toBe(401);
+    expect(getUpcomingExecutions).not.toHaveBeenCalled();
+    expect(getOverdueExecutions).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it("returns counts without sending notifications when there are no telegram users", async () => {
     (getUpcomingExecutions as jest.Mock).mockResolvedValue([
       { userId: "u1", telegramUserId: null, executions: [] },

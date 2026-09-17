@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUpcomingExecutions, getOverdueExecutions } from "@/lib/db/recurring-queries";
+import { isCronRequestAuthorized } from "@/lib/auth/cron";
 
 async function sendTelegramMessage(chatId: string, text: string): Promise<boolean> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -25,10 +26,7 @@ async function sendTelegramMessage(chatId: string, text: string): Promise<boolea
 }
 
 export async function GET(request: Request) {
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!isCronRequestAuthorized(request.headers.get("authorization"), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

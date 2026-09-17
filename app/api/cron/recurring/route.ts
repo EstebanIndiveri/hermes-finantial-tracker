@@ -3,6 +3,7 @@ import { db } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
 import { createMonthlyExecutions, getPendingExecutions } from "@/lib/db/recurring-queries";
 import { sendTelegramMessage, buildPersonalKeyboard } from "@/lib/telegram/send-message";
+import { isCronRequestAuthorized } from "@/lib/auth/cron";
 
 /**
  * GET /api/cron/recurring
@@ -12,8 +13,11 @@ import { sendTelegramMessage, buildPersonalKeyboard } from "@/lib/telegram/send-
  * Also supports manual triggering with ?userId=xxx for testing
  */
 export async function GET(req: NextRequest) {
+  if (!isCronRequestAuthorized(req.headers.get("authorization"), process.env.CRON_SECRET)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    const authHeader = req.headers.get("authorization");
     const { searchParams } = new URL(req.url);
     const testUserId = searchParams.get("userId");
     
@@ -28,12 +32,6 @@ export async function GET(req: NextRequest) {
         pendingCount: pending.length,
         testMode: true,
       });
-    }
-
-    // Production: verify cron secret
-    const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Get all users

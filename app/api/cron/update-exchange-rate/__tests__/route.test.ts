@@ -62,6 +62,24 @@ describe("GET /api/cron/update-exchange-rate", () => {
     expect(response.status).toBe(401);
   });
 
+  test.each([
+    ["missing secret", undefined, "Bearer undefined"],
+    ["empty secret", "", "Bearer "],
+  ])("rejects %s before Ripio or database access", async (_name, secret, authorization) => {
+    const env = { ...mockEnv };
+    if (secret === undefined) delete env.CRON_SECRET;
+    else env.CRON_SECRET = secret;
+    process.env = env;
+
+    const req = new NextRequest("http://localhost:3000/api/cron/update-exchange-rate", { headers: { authorization } });
+    const response = await GET(req);
+
+    expect(response.status).toBe(401);
+    expect(fetchRipioRate).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
   test("returns 503 when Ripio fetch fails with RipioFetchError", async () => {
     (fetchRipioRate as jest.Mock).mockRejectedValue(new RipioFetchError("API unavailable"));
 
