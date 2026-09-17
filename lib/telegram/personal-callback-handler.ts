@@ -1413,7 +1413,7 @@ export async function handlePersonalCallback(
 
     if (data.startsWith("recurring:confirm:")) {
       const execId = data.split(":")[2];
-      const result = await confirmExecution(execId);
+      const result = await confirmExecution(execId, userId);
 
       if (!result.success) {
         return { text: `❌ ${result.error}`, edit: true };
@@ -1431,7 +1431,7 @@ export async function handlePersonalCallback(
 
     if (data.startsWith("recurring:skip:")) {
       const execId = data.split(":")[2];
-      const result = await skipExecution(execId);
+      const result = await skipExecution(execId, userId);
 
       if (!result.success) {
         return { text: `❌ ${result.error}`, edit: true };
@@ -1451,7 +1451,7 @@ export async function handlePersonalCallback(
       let confirmed = 0;
 
       for (const exec of pending) {
-        const result = await confirmExecution(exec.id);
+        const result = await confirmExecution(exec.id, userId);
         if (result.success) confirmed++;
       }
 

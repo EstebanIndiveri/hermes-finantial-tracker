@@ -58,6 +58,11 @@ aislado con politica de red explicita antes de usar build como puerta de
 liberacion. Ninguno de estos resultados certifica por si solo los flujos
 financieros ni autoriza una publicacion.
 
+Tras los cortes locales de seguridad PR-02a/H21/H02, pasan 72/72 suites y
+548/548 tests. Estas regresiones cubren crons fail-closed, permisos de borrado
+y propiedad de ejecuciones recurrentes en web y Telegram. H03, concurrencia e
+idempotencia permanecen abiertos y no quedan certificados por este conteo.
+
 ESLint aplica reglas de produccion sin excepciones globales. En tests permite
 `require()` para reinicializar modulos de Jest y mantiene `any` como advertencia
 visible mientras se tipan los fixtures. El reproductor forense CommonJS de la

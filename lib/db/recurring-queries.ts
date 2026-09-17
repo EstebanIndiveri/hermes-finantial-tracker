@@ -560,25 +560,49 @@ export async function getMonthExecutions(
   }));
 }
 
+/** Resolve an execution only when it belongs to the actor. */
+async function getExecutionForActor(executionId: string, actorUserId: string) {
+  const results = await db
+    .select({
+      id: recurringExecutions.id,
+      recurringExpenseId: recurringExecutions.recurringExpenseId,
+      transactionId: recurringExecutions.transactionId,
+      scheduledDate: recurringExecutions.scheduledDate,
+      executedAt: recurringExecutions.executedAt,
+      status: recurringExecutions.status,
+      amountArs: recurringExecutions.amountArs,
+      createdAt: recurringExecutions.createdAt,
+      ownerUserId: recurringExpenses.userId,
+    })
+    .from(recurringExecutions)
+    .innerJoin(
+      recurringExpenses,
+      eq(recurringExecutions.recurringExpenseId, recurringExpenses.id),
+    )
+    .where(
+      and(
+        eq(recurringExecutions.id, executionId),
+        eq(recurringExpenses.userId, actorUserId),
+      ),
+    )
+    .limit(1);
+
+  const execution = results[0];
+  return execution?.ownerUserId === actorUserId ? execution : null;
+}
+
 /**
  * Confirm an execution (create transaction)
  */
 export async function confirmExecution(
   executionId: string,
+  actorUserId: string,
   amount?: number
 ): Promise<{ success: boolean; transactionId?: string; error?: string }> {
-  // Get execution details
-  const execResults = await db
-    .select()
-    .from(recurringExecutions)
-    .where(eq(recurringExecutions.id, executionId))
-    .limit(1);
-
-  if (execResults.length === 0) {
+  const execution = await getExecutionForActor(executionId, actorUserId);
+  if (!execution) {
     return { success: false, error: "Ejecución no encontrada" };
   }
-
-  const execution = execResults[0];
 
   if (execution.status !== "pending") {
     return { success: false, error: "Esta ejecución ya fue procesada" };
@@ -586,8 +610,8 @@ export async function confirmExecution(
 
   // Get recurring expense details
   const recurring = await getRecurringExpenseById(execution.recurringExpenseId);
-  if (!recurring) {
-    return { success: false, error: "Gasto recurrente no encontrado" };
+  if (!recurring || recurring.userId !== actorUserId) {
+    return { success: false, error: "Ejecución no encontrada" };
   }
 
   const finalAmount = amount ?? recurring.amountArs;
@@ -611,19 +635,13 @@ export async function confirmExecution(
  * Skip an execution
  */
 export async function skipExecution(
-  executionId: string
+  executionId: string,
+  actorUserId: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const execResults = await db
-    .select()
-    .from(recurringExecutions)
-    .where(eq(recurringExecutions.id, executionId))
-    .limit(1);
-
-  if (execResults.length === 0) {
+  const execution = await getExecutionForActor(executionId, actorUserId);
+  if (!execution) {
     return { success: false, error: "Ejecución no encontrada" };
   }
-
-  const execution = execResults[0];
 
   if (execution.status !== "pending") {
     return { success: false, error: "Esta ejecución ya fue procesada" };

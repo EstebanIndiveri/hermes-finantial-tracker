@@ -2195,7 +2195,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       };
     }
 
-    const result = await confirmExecution(exec.id);
+    const result = await confirmExecution(exec.id, userId);
     if (!result.success) {
       return { text: `Error: ${result.error}` };
     }
@@ -2240,7 +2240,7 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       };
     }
 
-    const result = await skipExecution(exec.id);
+    const result = await skipExecution(exec.id, userId);
     if (!result.success) {
       return { text: `Error: ${result.error}` };
     }

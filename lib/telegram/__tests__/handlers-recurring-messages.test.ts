@@ -65,19 +65,42 @@ jest.mock("@/lib/utils/dates", () => ({
 }));
 
 import { handleTelegramMessage } from "../handlers";
+import { handlePersonalCallback } from "../personal-callback-handler";
 import { parseFinancialMessage } from "@/lib/ai/parse-message";
 import {
+  confirmExecution,
   createMonthlyExecutions,
   getPendingExecutions,
   getRecurringStats,
   getUserRecurringExpenses,
+  skipExecution,
 } from "@/lib/db/recurring-queries";
 
 const mockParseFinancialMessage = parseFinancialMessage as jest.MockedFunction<typeof parseFinancialMessage>;
+const mockConfirmExecution = confirmExecution as jest.MockedFunction<typeof confirmExecution>;
 const mockGetUserRecurringExpenses = getUserRecurringExpenses as jest.MockedFunction<typeof getUserRecurringExpenses>;
 const mockGetPendingExecutions = getPendingExecutions as jest.MockedFunction<typeof getPendingExecutions>;
 const mockGetRecurringStats = getRecurringStats as jest.MockedFunction<typeof getRecurringStats>;
 const mockCreateMonthlyExecutions = createMonthlyExecutions as jest.MockedFunction<typeof createMonthlyExecutions>;
+const mockSkipExecution = skipExecution as jest.MockedFunction<typeof skipExecution>;
+
+const pendingExecution = {
+  id: "exec-1",
+  recurringExpenseId: "rec-1",
+  transactionId: null,
+  scheduledDate: "2026-08-20",
+  executedAt: null,
+  status: "pending" as const,
+  amountArs: 10000,
+  createdAt: 1,
+  recurringExpense: {
+    id: "rec-1",
+    name: "Internet",
+    amountArs: 10000,
+    merchant: null,
+    category: { id: "cat-1", name: "Servicios", emoji: "🌐", slug: "servicios" },
+  },
+};
 
 describe("telegram recurring messages", () => {
   const originalEnv = process.env;
@@ -325,5 +348,98 @@ describe("telegram recurring messages", () => {
 
     expect(response.text).toContain("🌐 Internet - $10.000");
     expect(response.text).not.toContain("No pude interpretar");
+  });
+
+  it("passes the real Telegram user when confirming by natural language", async () => {
+    mockParseFinancialMessage.mockResolvedValue({
+      intent: "confirm_recurring",
+      recurring_name: "Internet",
+      confidence: 0.95,
+      needs_confirmation: false,
+      requires_reimbursement: false,
+    });
+    mockGetPendingExecutions.mockResolvedValue([pendingExecution]);
+    mockConfirmExecution.mockResolvedValue({ success: true, transactionId: "tx-1" });
+
+    await handleTelegramMessage(
+      {
+        update_id: 1,
+        message: { text: "confirmar internet", chat: { id: 10 }, from: { id: 20 } },
+      },
+      "user-real",
+      "group-1",
+    );
+
+    expect(mockConfirmExecution).toHaveBeenCalledWith("exec-1", "user-real");
+  });
+
+  it("passes the real Telegram user when skipping by natural language", async () => {
+    mockParseFinancialMessage.mockResolvedValue({
+      intent: "skip_recurring",
+      recurring_name: "Internet",
+      confidence: 0.95,
+      needs_confirmation: false,
+      requires_reimbursement: false,
+    });
+    mockGetPendingExecutions.mockResolvedValue([pendingExecution]);
+    mockSkipExecution.mockResolvedValue({ success: true });
+
+    await handleTelegramMessage(
+      {
+        update_id: 1,
+        message: { text: "saltar internet", chat: { id: 10 }, from: { id: 20 } },
+      },
+      "user-real",
+      "group-1",
+    );
+
+    expect(mockSkipExecution).toHaveBeenCalledWith("exec-1", "user-real");
+  });
+
+  it("passes the real Telegram user when confirming from a callback", async () => {
+    mockConfirmExecution.mockResolvedValue({ success: true, transactionId: "tx-1" });
+
+    await handlePersonalCallback(
+      "chat-1",
+      "telegram-1",
+      "user-real",
+      "group-1",
+      "recurring:confirm:exec-1",
+    );
+
+    expect(mockConfirmExecution).toHaveBeenCalledWith("exec-1", "user-real");
+  });
+
+  it("passes the real Telegram user when skipping from a callback", async () => {
+    mockSkipExecution.mockResolvedValue({ success: true });
+
+    await handlePersonalCallback(
+      "chat-1",
+      "telegram-1",
+      "user-real",
+      "group-1",
+      "recurring:skip:exec-1",
+    );
+
+    expect(mockSkipExecution).toHaveBeenCalledWith("exec-1", "user-real");
+  });
+
+  it("passes the real Telegram user for every confirm-all callback", async () => {
+    mockGetPendingExecutions.mockResolvedValue([
+      pendingExecution,
+      { ...pendingExecution, id: "exec-2", recurringExpenseId: "rec-2" },
+    ]);
+    mockConfirmExecution.mockResolvedValue({ success: true, transactionId: "tx-1" });
+
+    await handlePersonalCallback(
+      "chat-1",
+      "telegram-1",
+      "user-real",
+      "group-1",
+      "recurring:confirm_all",
+    );
+
+    expect(mockConfirmExecution).toHaveBeenNthCalledWith(1, "exec-1", "user-real");
+    expect(mockConfirmExecution).toHaveBeenNthCalledWith(2, "exec-2", "user-real");
   });
 });

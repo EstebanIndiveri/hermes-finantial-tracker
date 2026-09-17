@@ -33,7 +33,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       const parsed = ConfirmSchema.safeParse(body);
       const amount = parsed.success ? parsed.data.amount : undefined;
 
-      const result = await confirmExecution(id, amount);
+      const result = await confirmExecution(id, userId, amount);
 
       if (!result.success) {
         return NextResponse.json({ error: result.error }, { status: 400 });
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     if (action === "skip") {
-      const result = await skipExecution(id);
+      const result = await skipExecution(id, userId);
 
       if (!result.success) {
         return NextResponse.json({ error: result.error }, { status: 400 });
