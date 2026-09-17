@@ -21,6 +21,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       where: and(eq(transactions.id, id), eq(transactions.group_id, groupId)),
     });
     if (!tx) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const canDelete = tx.user_id === userId || membership.role === "owner" || membership.role === "admin";
+    if (!canDelete) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     if (tx.status === "deleted") return NextResponse.json({ error: "Already deleted" }, { status: 409 });
 
     await db.update(transactions)
