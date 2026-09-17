@@ -1,33 +1,81 @@
-import fs from "fs";
-import path from "path";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
+import { SettingsPageClient } from "@/app/dashboard/settings/settings-client";
+import { HermesSidebar } from "@/components/dashboard/HermesSidebar";
 
-const repoRoot = path.join(__dirname, "..");
+const mockSettingsStateQueue: unknown[] = [];
+let mockRunEffects = false;
+
+jest.mock("react", () => {
+  const actual = jest.requireActual<typeof import("react")>("react");
+
+  return {
+    ...actual,
+    useEffect: (effect: () => void) => {
+      if (mockRunEffects) effect();
+    },
+    useState: (initial: unknown) => [mockSettingsStateQueue.length > 0 ? mockSettingsStateQueue.shift() : initial, jest.fn()],
+  };
+});
+
+jest.mock("next/navigation", () => ({
+  usePathname: () => "/dashboard",
+  useSearchParams: () => new URLSearchParams("month=2026-08"),
+  useRouter: () => ({ push: jest.fn() }),
+}));
+
+jest.mock("next-themes", () => ({
+  useTheme: () => ({ theme: "light", setTheme: jest.fn() }),
+}));
+
+jest.mock("@/components/dashboard/GroupSwitcher", () => ({
+  GroupSwitcher: () => null,
+}));
 
 describe("settings month param wiring", () => {
-  it("reads the month from search params and forwards it to settings APIs", () => {
-    const source = fs.readFileSync(path.join(repoRoot, "app/dashboard/settings/page.tsx"), "utf8");
+  const originalFetch = global.fetch;
 
-    expect(source).toContain('const searchParams = useSearchParams();');
-    expect(source).toContain('const month = searchParams.get("month");');
-    expect(source).toContain('fetch(`/api/settings/monthly${monthQuery}`)');
-    expect(source).toContain('fetch(`/api/settings/budgets${monthQuery}`)');
-    expect(source).toContain('body: JSON.stringify({ income_usd: income, exchange_rate: exchange, month: month ?? undefined })');
-    expect(source).toContain('body: JSON.stringify({ saving_goal_usd: green, saving_goal_yellow: yellow, month: month ?? undefined })');
-    expect(source).toContain('body: JSON.stringify({ items, month: month ?? undefined })');
+  afterEach(() => {
+    global.fetch = originalFetch;
+    mockRunEffects = false;
+    mockSettingsStateQueue.length = 0;
   });
 
-  it("shows the edited month in the header", () => {
-    const source = fs.readFileSync(path.join(repoRoot, "app/dashboard/settings/page.tsx"), "utf8");
+  it("loads monthly settings and budgets for the selected month", () => {
+    mockRunEffects = true;
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: jest.fn().mockResolvedValue([]) });
 
-    expect(source).toContain('Editando {monthLabel} · configuración mensual y presupuestos');
-    expect(source).toContain('new Intl.DateTimeFormat("es-AR"');
+    renderToStaticMarkup(createElement(SettingsPageClient));
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/settings/monthly?month=2026-08");
+    expect(global.fetch).toHaveBeenCalledWith("/api/settings/budgets?month=2026-08");
   });
 
-  it("preserves the month parameter in the sidebar settings link", () => {
-    const source = fs.readFileSync(path.join(repoRoot, "components/dashboard/HermesSidebar.tsx"), "utf8");
+  it("shows the selected month in the settings header", () => {
+    mockSettingsStateQueue.push(
+      { income_usd: 1000, exchange_rate: 1000, saving_goal_usd: 300, saving_goal_yellow: 100 },
+      [],
+      {},
+      null,
+      false,
+      "owner",
+      "1000",
+      "1000",
+      "300",
+      "100",
+      1000,
+      null,
+      null,
+    );
 
-    expect(source).toContain('const searchParams = useSearchParams();');
-    expect(source).toContain('const month = searchParams.get("month");');
-    expect(source).toContain('{ pathname: "/dashboard/settings", query: { month } }');
+    const markup = renderToStaticMarkup(createElement(SettingsPageClient));
+
+    expect(markup).toContain("Editando agosto de 2026");
+  });
+
+  it("preserves the selected month in the settings navigation link", () => {
+    const markup = renderToStaticMarkup(createElement(HermesSidebar));
+
+    expect(markup).toContain('href="/dashboard/settings?month=2026-08"');
   });
 });

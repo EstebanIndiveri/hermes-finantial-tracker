@@ -3,6 +3,19 @@ import ReimbursementsPage from "@/app/dashboard/reimbursements/page";
 import { ReimbursementsList } from "@/components/reimbursements/reimbursements-list";
 import { HermesSidebar } from "@/components/dashboard/HermesSidebar";
 
+jest.mock("next/navigation", () => ({
+  usePathname: () => "/dashboard/reimbursements",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+jest.mock("next-themes", () => ({
+  useTheme: () => ({ theme: "light", setTheme: jest.fn() }),
+}));
+
+jest.mock("@/components/dashboard/GroupSwitcher", () => ({
+  GroupSwitcher: () => null,
+}));
+
 describe("ReimbursementsList", () => {
   it("renders the loading state copy", () => {
     const markup = renderToStaticMarkup(<ReimbursementsList />);

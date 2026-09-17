@@ -3,6 +3,32 @@ import HistorialPage from "@/app/dashboard/balances/historial/page";
 import { HermesSidebar } from "@/components/dashboard/HermesSidebar";
 import { HistorialClient } from "@/app/dashboard/balances/historial/HistorialClient";
 
+const mockSidebarStateQueue: unknown[] = [];
+
+jest.mock("react", () => {
+  const actual = jest.requireActual<typeof import("react")>("react");
+
+  return {
+    ...actual,
+    useState: (initial: unknown) =>
+      mockSidebarStateQueue.length > 0 ? [mockSidebarStateQueue.shift(), jest.fn()] : actual.useState(initial),
+  };
+});
+
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: jest.fn() }),
+  usePathname: () => "/dashboard/balances/historial",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+jest.mock("next-themes", () => ({
+  useTheme: () => ({ theme: "light", setTheme: jest.fn() }),
+}));
+
+jest.mock("@/components/dashboard/GroupSwitcher", () => ({
+  GroupSwitcher: () => null,
+}));
+
 jest.mock("next/headers", () => ({
   headers: jest.fn().mockResolvedValue({
     get: jest.fn(() => null),
@@ -39,9 +65,10 @@ describe("payment history page integration", () => {
 
 describe("dashboard sidebar integration for payment history", () => {
   it("includes a payment history navigation link", () => {
+    mockSidebarStateQueue.push(false, false, true);
     const markup = renderToStaticMarkup(<HermesSidebar />);
 
     expect(markup).toContain('href="/dashboard/balances/historial"');
-    expect(markup).toContain("Historial");
+    expect(markup).toContain("Historial de pagos");
   });
 });

@@ -2,6 +2,39 @@ import fs from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ExportPanel } from "@/components/dashboard/ExportPanel";
+import DashboardPage from "@/app/dashboard/(main)/page";
+
+jest.mock("next/headers", () => ({
+  headers: jest.fn().mockResolvedValue({
+    get: jest.fn((name: string) => (name === "x-user-id" ? "user-1" : null)),
+  }),
+}));
+
+jest.mock("@/lib/finance/summaries", () => ({
+  getMonthSummary: jest.fn().mockResolvedValue({
+    income_usd: 0,
+    exchange_rate: 1,
+    ahorro_proyectado_usd: 0,
+    saving_goal_usd: 0,
+    status: "GREEN",
+    exchange_rate_source: "manual",
+  }),
+  getCategoryBreakdown: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock("@/lib/db/client", () => ({
+  db: { query: { transactions: { findMany: jest.fn().mockResolvedValue([]) } } },
+}));
+
+jest.mock("@/lib/utils/dates", () => ({
+  getActiveMonthArgentina: () => "2026-05",
+}));
+
+jest.mock("@/components/forms/HermesExpenseForm", () => ({ HermesExpenseForm: () => null }));
+jest.mock("@/components/dashboard/SpendingChart", () => ({ SpendingChart: () => null }));
+jest.mock("@/components/dashboard/CategoryDonut", () => ({ CategoryDonut: () => null }));
+jest.mock("@/components/dashboard/MonthSelector", () => ({ MonthSelector: () => null }));
+jest.mock("@/components/dashboard/TransactionList", () => ({ TransactionList: () => null }));
 
 describe("ExportPanel", () => {
   it("renders the selected month and export buttons", () => {
@@ -30,11 +63,11 @@ describe("export panel styles", () => {
 });
 
 describe("dashboard export integration", () => {
-  it("renders the export card from the dashboard page", () => {
-    const pageSource = fs.readFileSync(path.join(process.cwd(), "app/dashboard/page.tsx"), "utf8");
+  it("renders the export card for the selected dashboard month", async () => {
+    const markup = renderToStaticMarkup(await DashboardPage({ searchParams: Promise.resolve({ month: "2026-05" }) }));
 
-    expect(pageSource).toContain('import { ExportPanel } from "@/components/dashboard/ExportPanel";');
-    expect(pageSource).toContain("<h2 className=\"h-card-title\">Exportar movimientos</h2>");
-    expect(pageSource).toContain("<ExportPanel month={month} />");
+    expect(markup).toContain("Exportar movimientos");
+    expect(markup).toContain('value="2026-05"');
+    expect(markup).toContain("Descargar CSV");
   });
 });

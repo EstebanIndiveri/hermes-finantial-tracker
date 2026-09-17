@@ -1,7 +1,12 @@
 import { handleTelegramMessage } from "../handlers";
 import { handlePersonalCallback } from "../personal-callback-handler";
 import { db } from "@/lib/db/client";
-import { getReimbursementsByUser, markReimbursementAsPaidWithNotifications, createReimbursementWithNotifications } from "@/lib/reimbursements/requests";
+import {
+  createReimbursementWithNotifications,
+  getReimbursementByTransactionId,
+  getReimbursementsByUser,
+  markReimbursementAsPaidWithNotifications,
+} from "@/lib/reimbursements/requests";
 import { getMonthSummary } from "@/lib/finance/summaries";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { clearConversationState, getConversationState, setConversationState } from "../splits/conversation-state";
@@ -33,6 +38,7 @@ jest.mock("@/lib/utils/dates", () => ({
 jest.mock("@/lib/reimbursements/requests", () => ({
   getReimbursementsByUser: jest.fn(),
   getOpenGroupReimbursements: jest.fn().mockResolvedValue([]),
+  getReimbursementByTransactionId: jest.fn(),
   markReimbursementAsPaidWithNotifications: jest.fn(),
   createReimbursementWithNotifications: jest.fn(),
 }));
@@ -45,6 +51,7 @@ jest.mock("../splits/conversation-state", () => ({
 
 const mockDb = db as jest.Mocked<typeof db>;
 const mockGetReimbursementsByUser = getReimbursementsByUser as jest.MockedFunction<typeof getReimbursementsByUser>;
+const mockGetReimbursementByTransactionId = getReimbursementByTransactionId as jest.MockedFunction<typeof getReimbursementByTransactionId>;
 const mockMarkPaid = markReimbursementAsPaidWithNotifications as jest.MockedFunction<typeof markReimbursementAsPaidWithNotifications>;
 const mockCreateReimbursement = createReimbursementWithNotifications as jest.MockedFunction<typeof createReimbursementWithNotifications>;
 const mockGetMonthSummary = getMonthSummary as jest.MockedFunction<typeof getMonthSummary>;
@@ -56,6 +63,7 @@ describe("telegram reimbursements", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetMonthSummary.mockResolvedValue({ ahorro_proyectado_usd: 1200 } as Awaited<ReturnType<typeof getMonthSummary>>);
+    mockGetReimbursementByTransactionId.mockResolvedValue(null);
   });
 
   it("lists reimbursements to pay and requested reimbursements with pay buttons", async () => {
@@ -155,7 +163,7 @@ describe("telegram reimbursements", () => {
       77,
     );
 
-    expect(mockClearConversationState).toHaveBeenCalledWith("chat-1", "telegram-1");
+    expect(mockClearConversationState).not.toHaveBeenCalled();
     expect(mockSetConversationState).toHaveBeenCalledWith("chat-1", "telegram-1", {
       step: "expense_reimbursement_confirm",
       data: expect.objectContaining({

@@ -2,6 +2,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { StatusBadge, getExecutionStatus } from "@/components/ui/status-badge";
 import { RecurringList } from "@/components/recurring/recurring-list";
 
+const mockStateQueue: unknown[] = [];
+const mockSetState = jest.fn();
+
+jest.mock("react", () => {
+  const actual = jest.requireActual<typeof import("react")>("react");
+
+  return {
+    ...actual,
+    useState: (initial: unknown) =>
+      mockStateQueue.length > 0 ? [mockStateQueue.shift(), mockSetState] : actual.useState(initial),
+  };
+});
+
 jest.mock("@/lib/utils/dates", () => ({
   getArgentinaDate: jest.fn(),
 }));
@@ -51,21 +64,85 @@ describe("RecurringList", () => {
     expect(markup).toContain("Cargando gastos recurrentes...");
   });
 
-  it("includes pending and paid section headings in the source", () => {
-    const source = RecurringList.toString();
+  it("renders pending, paid, and edit controls for loaded recurring data", () => {
+    getArgentinaDate.mockReturnValue(new Date("2026-08-23T12:00:00.000Z"));
+    mockStateQueue.push(
+      [
+        {
+          id: "expense-1",
+          userId: "user-1",
+          groupId: null,
+          name: "Alquiler",
+          amountArs: 1000,
+          categoryId: "housing",
+          merchant: null,
+          frequency: "monthly",
+          dayOfMonth: 1,
+          isActive: true,
+          autoConfirm: false,
+          notes: null,
+          createdAt: 0,
+          updatedAt: 0,
+          category: { id: "housing", name: "Vivienda", emoji: "🏠", slug: "vivienda" },
+        },
+      ],
+      [
+        {
+          id: "pending-1",
+          recurringExpenseId: "expense-1",
+          transactionId: null,
+          scheduledDate: "2026-08-23",
+          executedAt: null,
+          status: "pending",
+          amountArs: 1000,
+          createdAt: 0,
+          recurringExpense: {
+            id: "expense-1",
+            name: "Alquiler",
+            amountArs: 1000,
+            merchant: null,
+            category: { id: "housing", name: "Vivienda", emoji: "🏠", slug: "vivienda" },
+          },
+        },
+        {
+          id: "paid-1",
+          recurringExpenseId: "expense-1",
+          transactionId: "transaction-1",
+          scheduledDate: "2026-08-20",
+          executedAt: 0,
+          status: "confirmed",
+          amountArs: 1000,
+          createdAt: 0,
+          recurringExpense: {
+            id: "expense-1",
+            name: "Alquiler",
+            amountArs: 1000,
+            merchant: null,
+            category: { id: "housing", name: "Vivienda", emoji: "🏠", slug: "vivienda" },
+          },
+        },
+      ],
+      null,
+      false,
+      false,
+      null,
+      null,
+      null,
+      [],
+      "",
+      "",
+      "1",
+      null,
+      "",
+      "",
+      "1",
+    );
 
-    expect(source).toContain("Pendientes de Este Mes");
-    expect(source).toContain("Pagados este mes");
-    expect(source).toContain("StatusBadge");
-    expect(source).toContain("getExecutionStatus");
-  });
+    const markup = renderToStaticMarkup(<RecurringList />);
 
-  it("includes edit recurring expense controls in the source", () => {
-    const source = RecurringList.toString();
-
-    expect(source).toContain("Editar recurrente");
-    expect(source).toContain("/api/recurring-expenses/${editingExpense.id}");
-    expect(source).toContain("Guardar cambios");
-    expect(source).toContain("/api/categories?all=true");
+    expect(markup).toContain("Pendientes de Este Mes");
+    expect(markup).toContain("Pagados este mes");
+    expect(markup).toContain("Alquiler");
+    expect(markup).toContain('title="Editar"');
   });
 });

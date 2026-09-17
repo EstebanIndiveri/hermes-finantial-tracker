@@ -156,16 +156,18 @@ describe("payment info helper", () => {
   });
 
   it("returns true when a payment info row is deleted", async () => {
+    const returning = jest.fn().mockResolvedValue([{ id: "pi-1" }]);
     (mockDb.delete as jest.Mock).mockReturnValue({
-      where: jest.fn().mockResolvedValue([{ id: "pi-1" }]),
+      where: jest.fn(() => ({ returning })),
     });
 
     await expect(deletePaymentInfo("pi-1", "user-1")).resolves.toBe(true);
   });
 
   it("returns false when no payment info row is deleted", async () => {
+    const returning = jest.fn().mockResolvedValue([]);
     (mockDb.delete as jest.Mock).mockReturnValue({
-      where: jest.fn().mockResolvedValue([]),
+      where: jest.fn(() => ({ returning })),
     });
 
     await expect(deletePaymentInfo("pi-1", "user-1")).resolves.toBe(false);
