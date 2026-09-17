@@ -1,4 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
+import { requireSafeE2EBaseUrl } from "./e2e/test-target";
+
+const baseURL = requireSafeE2EBaseUrl();
 
 export default defineConfig({
   testDir: "./e2e",
@@ -10,7 +13,7 @@ export default defineConfig({
   reporter: "list",
   timeout: 60_000,
   use: {
-    baseURL: process.env.BASE_URL || "https://hermes-finantial-tracker.vercel.app",
+    baseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     headless: true,

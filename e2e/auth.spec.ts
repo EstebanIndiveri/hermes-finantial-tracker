@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { TEST_USER } from "./helpers";
+import { requireE2ECredentials } from "./test-target";
 
 // These tests need a fresh unauthenticated context
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -15,10 +15,11 @@ test.describe("Auth - Login", () => {
   });
 
   test("wrong password shows error", async ({ page }) => {
+    const testUser = requireE2ECredentials();
     await page.goto("/login");
     await page.waitForLoadState("networkidle");
 
-    await page.getByPlaceholder("tu_usuario").fill(TEST_USER.username);
+    await page.getByPlaceholder("tu_usuario").fill(testUser.username);
     await page.locator('input[type="password"]').first().fill("wrongpass999");
     await page.getByRole("button", { name: /ingresar/i }).click();
 
@@ -29,11 +30,12 @@ test.describe("Auth - Login", () => {
   });
 
   test("correct credentials redirect to dashboard", async ({ page }) => {
+    const testUser = requireE2ECredentials();
     await page.goto("/login");
     await page.waitForLoadState("networkidle");
 
-    await page.getByPlaceholder("tu_usuario").fill(TEST_USER.username);
-    await page.locator('input[type="password"]').first().fill(TEST_USER.password);
+    await page.getByPlaceholder("tu_usuario").fill(testUser.username);
+    await page.locator('input[type="password"]').first().fill(testUser.password);
     await page.getByRole("button", { name: /ingresar/i }).click();
 
     await expect(page).toHaveURL(/dashboard/, { timeout: 20_000 });

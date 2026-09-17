@@ -22,9 +22,9 @@ test.describe("Group features", () => {
 });
 
 test.describe("API health checks", () => {
-  test("unauthenticated API returns 401, not 500", async ({ playwright }) => {
+  test("unauthenticated API returns 401, not 500", async ({ playwright, baseURL }) => {
     // Create a clean API context without any auth cookies
-    const baseURL = "https://hermes-finantial-tracker.vercel.app";
+    if (!baseURL) throw new Error("Playwright baseURL is required");
     const apiContext = await playwright.request.newContext({
       baseURL,
       storageState: { cookies: [], origins: [] },

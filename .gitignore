@@ -44,3 +44,5 @@ next-env.d.ts
 # Brainstorm visual companion
 .superpowers/
 e2e/.auth.json
+playwright-report/
+test-results/
