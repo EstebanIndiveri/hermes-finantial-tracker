@@ -74,6 +74,19 @@ no certifica H06 ni elimina la ventana de concurrencia entre el ultimo guard de
 membresia y un writer todavia no transaccional; esa garantia fuerte depende del
 writer comun/atomicidad de ACT-06 y de H04.
 
+Tras el corte local PR-04/H06, pasan 75/75 suites y 588/588 tests; el harness y
+TypeScript pasan, y ESLint termina con 0 errores y 70 advertencias visibles.
+Las regresiones cubren routing de voz `group`/`supergroup` sin fuga al handler
+personal, callbacks grupales sin desvio al flujo personal, contexto ligado a
+chat/sesion/actor/membresia, pasos conversacionales exactos, pagadores y
+acreedores vigentes, y revalidacion antes de los writers de gastos y pagos. La
+revision independiente no encontro hallazgos P0/P1; sus dos P2 (acreedor
+removido durante la seleccion y respuesta de error de voz que podia provocar
+un 5xx) se corrigieron con regresiones. El build continua fallando unicamente
+por la descarga bloqueada de DM Sans y Fraunces. H04/H05, la ventana de
+concurrencia previa al writer, la sincronizacion con `getChatMember` y H13/H14
+permanecen fuera de este corte.
+
 ESLint aplica reglas de produccion sin excepciones globales. En tests permite
 `require()` para reinicializar modulos de Jest y mantiene `any` como advertencia
 visible mientras se tipan los fixtures. El reproductor forense CommonJS de la

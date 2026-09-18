@@ -17,6 +17,7 @@ import type { TelegramResponse } from "./telegram-api";
 import { buildInlineKeyboard } from "./telegram-api";
 import { handlePagueSelect, handlePaguePartialAmountInput, startPaguePartialAmount } from "./commands/pague";
 import { notifySplitPaymentReceived } from "@/lib/notifications/telegram";
+import { resolveAuthorizedSplitContext } from "./authorization";
 
 interface CompartidoState {
   step: "who_paid" | "participants";
@@ -58,6 +59,23 @@ const getTempDisplayName = (tempUser: TempDisplayUser | null | undefined): strin
   return tempUser.first_name;
 };
 
+const rejectedCallback = (): TelegramResponse => ({
+  text: "⏱️ Esta conversación expiró o ya no está autorizada. Comenzá nuevamente con el comando.",
+  edit: false,
+});
+
+async function authorizeCallback(
+  chatId: string,
+  telegramUserId: string,
+  stateData: unknown,
+  expectedSessionId?: string,
+): Promise<boolean> {
+  const sessionId = expectedSessionId ?? (stateData as { session_id?: unknown })?.session_id;
+  if (typeof sessionId !== "string" || !sessionId) return false;
+  const result = await resolveAuthorizedSplitContext(chatId, telegramUserId, sessionId);
+  return result.ok;
+}
+
 export async function handleSplitCallback(
   chatId: string,
   telegramUserId: string,
@@ -73,6 +91,27 @@ export async function handleSplitCallback(
         edit: false,
       };
     }
+    if (!(await authorizeCallback(chatId, telegramUserId, state.data))) return rejectedCallback();
+    const selected = data.replace("pague_select:", "");
+    const selectedUserId = selected.startsWith("user:")
+      ? selected.slice("user:".length)
+      : selected.startsWith("temp:")
+        ? undefined
+        : selected;
+    const selectedTempId = selected.startsWith("temp:")
+      ? selected.slice("temp:".length)
+      : undefined;
+    const members = await db.query.split_session_members.findMany({
+      where: eq(split_session_members.session_id, (state.data as PagueState).session_id),
+    });
+    const selectedIsMember = members.some((member) =>
+      (selectedUserId && member.user_id === selectedUserId) ||
+      (selectedTempId && member.temp_user_id === selectedTempId)
+    );
+    if (!selectedIsMember) {
+      await clearConversationState(chatId, telegramUserId);
+      return { text: "❌ El acreedor ya no pertenece a esta sesión.", edit: true };
+    }
     return handlePagueSelect(chatId, telegramUserId, data);
   }
 
@@ -83,6 +122,7 @@ export async function handleSplitCallback(
         edit: false,
       };
     }
+    if (!(await authorizeCallback(chatId, telegramUserId, state.data))) return rejectedCallback();
     return startPaguePartialAmount(chatId, telegramUserId, state.data as PagueState);
   }
 
@@ -94,23 +134,37 @@ export async function handleSplitCallback(
   }
 
   if (data.startsWith("paid_by:")) {
+    if (state.step !== "who_paid" || !(await authorizeCallback(chatId, telegramUserId, state.data))) return rejectedCallback();
     return handleWhoPaidCallback(chatId, telegramUserId, data, state.data as CompartidoState);
   }
 
   if (data.startsWith("participants:")) {
+    if (state.step !== "participants" || !(await authorizeCallback(chatId, telegramUserId, state.data))) return rejectedCallback();
     return handleParticipantsCallback(chatId, telegramUserId, data, state.data as CompartidoState);
   }
 
   if (data.startsWith("pague_confirm:")) {
+    const action = data.replace("pague_confirm:", "");
+    const validStep = action === "full"
+      ? state.step === "pague_payment_type"
+      : action === "yes"
+        ? state.step === "pague_confirm"
+        : action === "cancel"
+          ? (state.step === "pague_payment_type" || state.step === "pague_confirm")
+          : false;
+    if (!validStep || !(await authorizeCallback(chatId, telegramUserId, state.data))) return rejectedCallback();
     return handlePagueConfirmCallback(chatId, telegramUserId, data, state.data as PagueState);
   }
 
   if (data.startsWith("ocr_expense:")) {
+    if (state.step !== "ocr_expense_confirm") return rejectedCallback();
+    if (!(await authorizeCallback(chatId, telegramUserId, state.data))) return rejectedCallback();
     return handleOcrExpenseCallback(chatId, telegramUserId, data, state.data);
   }
 
   if (data.startsWith("ocr_payment:")) {
-    return handleOcrPaymentCallback(chatId, telegramUserId, data);
+    if (state.step !== "ocr_payment_confirm" || !(await authorizeCallback(chatId, telegramUserId, state.data))) return rejectedCallback();
+    return handleOcrPaymentCallback(chatId, telegramUserId, data, state.data);
   }
 
   return {
@@ -168,6 +222,18 @@ async function handleWhoPaidCallback(
       text: "❌ Usuario no encontrado.",
       edit: true,
     };
+  }
+
+  const sessionMembers = await db.query.split_session_members.findMany({
+    where: eq(split_session_members.session_id, state.session_id),
+  });
+  const payerIsMember = sessionMembers.some((member) =>
+    (payerUserId && member.user_id === payerUserId) ||
+    (payerTempUserId && member.temp_user_id === payerTempUserId)
+  );
+  if (!payerIsMember) {
+    await clearConversationState(chatId, telegramUserId);
+    return { text: "❌ El pagador no pertenece a esta sesión.", edit: true };
   }
 
   const newState: CompartidoState = {
@@ -245,23 +311,10 @@ async function handleParticipantsCallback(
   const tempMemberIds = [...new Set(membersRows.filter(m => m.temp_user_id).map(m => m.temp_user_id as string))];
 
   if (state.payer_user_id && !userMemberIds.includes(state.payer_user_id)) {
-    await db.insert(split_session_members).values({
-      session_id: session.id,
-      user_id: state.payer_user_id,
-      temp_user_id: null,
-      joined_at: Date.now(),
-    }).onConflictDoNothing();
-    userMemberIds.push(state.payer_user_id);
+    return { text: "❌ El pagador ya no pertenece a esta sesión.", edit: true };
   }
-
   if (state.payer_temp_user_id && !tempMemberIds.includes(state.payer_temp_user_id)) {
-    await db.insert(split_session_members).values({
-      session_id: session.id,
-      user_id: null,
-      temp_user_id: state.payer_temp_user_id,
-      joined_at: Date.now(),
-    }).onConflictDoNothing();
-    tempMemberIds.push(state.payer_temp_user_id);
+    return { text: "❌ El pagador ya no pertenece a esta sesión.", edit: true };
   }
 
   const totalMembers = userMemberIds.length + tempMemberIds.length;
@@ -270,6 +323,12 @@ async function handleParticipantsCallback(
       text: "❌ No hay participantes en esta sesión.",
       edit: true,
     };
+  }
+
+  // Revalidate again immediately before opening the financial transaction.
+  if (!(await authorizeCallback(chatId, telegramUserId, state, session.id))) {
+    await clearConversationState(chatId, telegramUserId);
+    return rejectedCallback();
   }
 
   const sharePerPerson = Math.round((state.amount / totalMembers) * 100) / 100;
@@ -452,6 +511,34 @@ async function handlePagueConfirmCallback(
       text: "❌ Falta información del acreedor.",
       edit: true,
     };
+  }
+
+  // The callback may have been queued while the member/session changed.
+  // Revalidate immediately before the payment writer.
+  if (!(await authorizeCallback(chatId, telegramUserId, state, session.id))) {
+    await clearConversationState(chatId, telegramUserId);
+    return rejectedCallback();
+  }
+
+  const currentMembers = await db.query.split_session_members.findMany({
+    where: eq(split_session_members.session_id, session.id),
+  });
+  const payerMemberId = hermesUser?.id;
+  const payerTempId = tempUser?.id;
+  if (!currentMembers.some((member) =>
+    (payerMemberId && member.user_id === payerMemberId) ||
+    (payerTempId && member.temp_user_id === payerTempId)
+  )) {
+    await clearConversationState(chatId, telegramUserId);
+    return rejectedCallback();
+  }
+  if (state.creditor_user_id && !currentMembers.some((member) => member.user_id === state.creditor_user_id)) {
+    await clearConversationState(chatId, telegramUserId);
+    return { text: "❌ El acreedor ya no pertenece a esta sesión.", edit: true };
+  }
+  if (state.creditor_temp_id && !currentMembers.some((member) => member.temp_user_id === state.creditor_temp_id)) {
+    await clearConversationState(chatId, telegramUserId);
+    return { text: "❌ El acreedor ya no pertenece a esta sesión.", edit: true };
   }
 
   await db.insert(split_payments).values({
@@ -655,12 +742,10 @@ async function handleOcrExpenseCallback(
     return { text: "❌ No tenés cuenta en Hermes.", edit: true };
   }
 
-  await db.insert(split_session_members).values({
-    session_id: session.id,
-    user_id: hermesUser.id,
-    temp_user_id: null,
-    joined_at: Date.now(),
-  }).onConflictDoNothing();
+  if (!(await authorizeCallback(chatId, telegramUserId, state, session.id))) {
+    await clearConversationState(chatId, telegramUserId);
+    return rejectedCallback();
+  }
 
   const membersRows = await db.query.split_session_members.findMany({
     where: eq(split_session_members.session_id, session.id),
@@ -720,6 +805,7 @@ async function handleOcrPaymentCallback(
   chatId: string,
   telegramUserId: string,
   data: string,
+  stateData: unknown,
 ): Promise<TelegramResponse> {
   const action = data.replace("ocr_payment:", "");
 
@@ -730,6 +816,11 @@ async function handleOcrPaymentCallback(
 
   if (action !== "confirm") {
     return { text: "❌ Acción no reconocida.", edit: true };
+  }
+
+  if (!(await authorizeCallback(chatId, telegramUserId, stateData))) {
+    await clearConversationState(chatId, telegramUserId);
+    return rejectedCallback();
   }
 
   await clearConversationState(chatId, telegramUserId);

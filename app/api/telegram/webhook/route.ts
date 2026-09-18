@@ -121,13 +121,46 @@ export async function POST(req: NextRequest) {
   const telegramUserId = String(update.message.from.id);
   const chatId = String(update.message.chat.id);
   const msg = update.message;
+  const isGroupMessage = msg.chat.type === "group" || msg.chat.type === "supergroup";
   
-  // VOICE MESSAGE HANDLING - Check FIRST before anything else
+  // Classify the chat before STT. Group voice belongs to Split, never to the
+  // personal handler or the user's active personal group.
   if (msg.voice || msg.audio) {
     const voiceFileId = msg.voice?.file_id ?? msg.audio?.file_id;
 
     if (!voiceFileId) {
-      await sendTelegramMessage(chatId, "❌ Error: no se pudo obtener el archivo de audio.");
+      const send = isGroupMessage ? sendSplitMessage : sendTelegramMessage;
+      await send(chatId, "❌ Error: no se pudo obtener el archivo de audio.");
+      return NextResponse.json({ ok: true });
+    }
+
+    if (isGroupMessage) {
+      await sendSplitMessage(chatId, "🎤 <i>Procesando audio...</i>").catch(() => {});
+
+      try {
+        const transcription = await transcribeVoiceMessage(voiceFileId);
+        if (!transcription) {
+          await sendSplitMessage(chatId, "❌ No pude transcribir el audio. Intentá de nuevo o escribí el mensaje.");
+          return NextResponse.json({ ok: true });
+        }
+
+        const groupMessage = { ...msg, text: transcription };
+        const splitResponse = await handleSplitGroupMessage(groupMessage);
+        if (splitResponse) {
+          if (typeof splitResponse === "string") {
+            await sendSplitMessage(chatId, splitResponse);
+          } else {
+            await sendSplitMessage(chatId, splitResponse.text, splitResponse.replyMarkup);
+          }
+        }
+      } catch (err) {
+        console.error("Group voice processing error:", {
+          message: err instanceof Error ? err.message : "Unknown error",
+        });
+        await sendSplitMessage(chatId, "❌ Error procesando el audio. Intentá de nuevo.").catch(() => {
+          // Best-effort: Telegram delivery failure must not turn the webhook into a retryable 5xx.
+        });
+      }
       return NextResponse.json({ ok: true });
     }
 
@@ -187,7 +220,6 @@ export async function POST(req: NextRequest) {
     (msg.document ? "[document]" : null) ?? "";
 
   const updateId = String(update.update_id);
-  const isGroupMessage = msg?.chat?.type === "group" || msg?.chat?.type === "supergroup";
 
   // Dedup check only for personal messages (group messages never insert into bot_messages)
   if (!isGroupMessage) {

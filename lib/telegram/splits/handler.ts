@@ -14,6 +14,7 @@ import type { OcrExpenseState } from "./callback-handler";
 import { handlePaguePartialAmountInput } from "./commands/pague";
 import { getConversationState } from "./conversation-state";
 import type { TelegramResponse } from "./telegram-api";
+import { resolveAuthorizedSplitContext } from "./authorization";
 
 interface TelegramGroupMessage {
   chat: { id: number; type: string; title?: string };
@@ -136,9 +137,45 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
     }
   }
 
+  // Activation and help are intentionally public. Every active operation below
+  // must resolve the sender after onboarding has had a chance to register them.
+  if (text.startsWith("/activar")) {
+    return handleActivar(chatId, chatTitle, telegramUserId, from.username, from.first_name, from.last_name);
+  }
+
+  if (text === "/ayuda" || text === "/help") {
+    return [
+      "🤖 <b>Comandos de Hermes Compartidos</b>",
+      "",
+      "/activar — activar Hermes en este grupo",
+      "/compartido [monto] [descripción] — registrar gasto compartido",
+      "/pague — confirmar que pagaste una deuda",
+      "/balances — ver balances actuales del grupo",
+      "/cerrar — cerrar la sesión actual",
+      "",
+      "📷 <b>También podés:</b>",
+      "• Enviar una <b>foto de ticket/factura</b> para registrar el gasto automáticamente",
+      "• Enviar un <b>comprobante de transferencia</b> para confirmar un pago",
+    ].join("\n");
+  }
+
   // Photos and image documents always take priority over text captions → OCR flow
   const hasPhoto = message.photo && message.photo.length > 0;
   const hasImageDoc = message.document?.mime_type?.startsWith("image/");
+  const isActiveCommand = text.startsWith("/compartido") || text === "/balances" || text === "/cerrar" || text === "/pague";
+
+  if (hasPhoto || hasImageDoc || isActiveCommand) {
+    const auth = await resolveAuthorizedSplitContext(chatId, telegramUserId);
+    if (!auth.ok) {
+      const messageByReason = {
+        no_open_session: "❌ No hay sesión activa en este grupo. Usá /activar para crear una.",
+        unknown_actor: "❌ No se encontró tu cuenta en esta sesión.",
+        not_member: "❌ No sos participante de esta sesión.",
+      } as const;
+      return { text: messageByReason[auth.reason] };
+    }
+  }
+
   if (hasPhoto || hasImageDoc) {
     return handleGroupPhoto(chatId, telegramUserId, message.photo, message.document);
   }
@@ -152,6 +189,14 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
         convState?.step === "ocr_expense_edit_desc" ||
         convState?.step === "pague_partial_amount"
       ) {
+        const sessionId = (convState.data as { session_id?: unknown } | undefined)?.session_id;
+        if (typeof sessionId !== "string" || !sessionId) {
+          return { text: "⏱️ Esta conversación expiró o ya no está autorizada. Comenzá nuevamente con el comando." };
+        }
+        const auth = await resolveAuthorizedSplitContext(chatId, telegramUserId, sessionId);
+        if (!auth.ok) {
+          return { text: "⏱️ Esta conversación expiró o ya no está autorizada. Comenzá nuevamente con el comando." };
+        }
         if (convState.step === "pague_partial_amount") {
           return handlePaguePartialAmountInput(
             chatId,
@@ -173,10 +218,6 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
     }
   }
 
-  if (text.startsWith("/activar")) {
-    return handleActivar(chatId, chatTitle, telegramUserId, from.username, from.first_name, from.last_name);
-  }
-
   if (text.startsWith("/compartido")) {
     return handleCompartido(chatId, telegramUserId, rawText);
   }
@@ -191,22 +232,6 @@ export async function handleSplitGroupMessage(message: TelegramGroupMessage): Pr
 
   if (text === "/pague") {
     return handlePague(chatId, telegramUserId);
-  }
-
-  if (text === "/ayuda" || text === "/help") {
-    return [
-      "🤖 <b>Comandos de Hermes Compartidos</b>",
-      "",
-      "/activar — activar Hermes en este grupo",
-      "/compartido [monto] [descripción] — registrar gasto compartido",
-      "/pague — confirmar que pagaste una deuda",
-      "/balances — ver balances actuales del grupo",
-      "/cerrar — cerrar la sesión actual",
-      "",
-      "📷 <b>También podés:</b>",
-      "• Enviar una <b>foto de ticket/factura</b> para registrar el gasto automáticamente",
-      "• Enviar un <b>comprobante de transferencia</b> para confirmar un pago",
-    ].join("\n");
   }
 
   return null;

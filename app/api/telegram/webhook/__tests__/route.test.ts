@@ -5,6 +5,9 @@ import { handleTelegramMessage } from "@/lib/telegram/handlers";
 import { handlePersonalCallback } from "@/lib/telegram/personal-callback-handler";
 import { transcribeVoiceMessage } from "@/lib/telegram/voice";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
+import { handleSplitCallback, handleSplitGroupMessage } from "@/lib/telegram/splits/handler";
+import { sendTelegramMessage as sendSplitMessage } from "@/lib/telegram/splits/telegram-api";
+import { sendTelegramMessage as sendPersonalMessage } from "@/lib/telegram/send-message";
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -82,6 +85,94 @@ describe("Telegram webhook authorized personal context", () => {
     expect(handleTelegramMessage).toHaveBeenCalledWith(expect.objectContaining({ message: expect.objectContaining({ text: "/resumen" }) }), "user-1", "group-1");
   });
 
+  it.each(["group", "supergroup"])("routes %s voice through Split without personal context", async (chatType) => {
+    (transcribeVoiceMessage as jest.Mock).mockResolvedValue("/ayuda");
+    (handleSplitGroupMessage as jest.Mock).mockResolvedValue("Ayuda del grupo");
+
+    await POST(request({
+      update_id: 30,
+      message: {
+        chat: { id: 99, type: chatType, title: "Cena" },
+        from: { id: 20, is_bot: false, first_name: "Ana" },
+        voice: { file_id: "group-voice-1" },
+      },
+    }));
+
+    expect(transcribeVoiceMessage).toHaveBeenCalledWith("group-voice-1");
+    expect(handleSplitGroupMessage).toHaveBeenCalledWith(expect.objectContaining({
+      chat: { id: 99, type: chatType, title: "Cena" },
+      from: { id: 20, is_bot: false, first_name: "Ana" },
+      text: "/ayuda",
+    }));
+    expect(handleTelegramMessage).not.toHaveBeenCalled();
+    expect(resolveAuthorizedTelegramGroup).not.toHaveBeenCalled();
+    expect(mockDb.query.users.findFirst).not.toHaveBeenCalled();
+    expect(sendPersonalMessage).not.toHaveBeenCalled();
+    expect(sendSplitMessage).toHaveBeenCalledWith("99", "Ayuda del grupo");
+  });
+
+  it("normalizes a typed Split response for group voice", async () => {
+    (transcribeVoiceMessage as jest.Mock).mockResolvedValue("/compartido 5000 cena");
+    (handleSplitGroupMessage as jest.Mock).mockResolvedValue({
+      text: "¿Quién pagó?",
+      replyMarkup: { inline_keyboard: [[{ text: "Ana", callback_data: "paid_by:user:user-1" }]] },
+    });
+
+    await POST(request({
+      update_id: 31,
+      message: {
+        chat: { id: 99, type: "group" },
+        from: { id: 20, is_bot: false, first_name: "Ana" },
+        audio: { file_id: "group-audio-1" },
+      },
+    }));
+
+    expect(sendSplitMessage).toHaveBeenCalledWith("99", "¿Quién pagó?", expect.objectContaining({ inline_keyboard: expect.any(Array) }));
+    expect(sendPersonalMessage).not.toHaveBeenCalled();
+    expect(handleTelegramMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["null", null],
+    ["error", new Error("stt unavailable")],
+  ])("handles group STT %s without personal leak", async (_label, sttResult) => {
+    (transcribeVoiceMessage as jest.Mock).mockImplementation(
+      sttResult instanceof Error ? jest.fn().mockRejectedValue(sttResult) : jest.fn().mockResolvedValue(sttResult),
+    );
+
+    await POST(request({
+      update_id: 32,
+      message: {
+        chat: { id: 99, type: "supergroup" },
+        from: { id: 20, is_bot: false, first_name: "Ana" },
+        voice: { file_id: "group-voice-2" },
+      },
+    }));
+
+    expect(handleTelegramMessage).not.toHaveBeenCalled();
+    expect(sendPersonalMessage).not.toHaveBeenCalled();
+    expect(sendSplitMessage).toHaveBeenCalledWith("99", expect.stringContaining("audio"));
+  });
+
+  it("keeps group callbacks in Split and out of personal context", async () => {
+    (handleSplitCallback as jest.Mock).mockResolvedValue("Acción grupal");
+
+    const response = await POST(request({
+      update_id: 33,
+      callback_query: {
+        id: "group-cb-1",
+        from: { id: 20 },
+        data: "paid_by:varios",
+        message: { message_id: 8, chat: { id: 99, type: "supergroup" } },
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(handleSplitCallback).toHaveBeenCalledWith("99", "20", "paid_by:varios", 8);
+    expect(handlePersonalCallback).not.toHaveBeenCalled();
+    expect(resolveAuthorizedTelegramGroup).not.toHaveBeenCalled();
+  });
+
   it("blocks photo and caption before the financial handler when membership was removed", async () => {
     await POST(request({ update_id: 4, message: { chat: { id: 10, type: "private" }, from: { id: 20 }, photo: [{ file_id: "photo-1" }], caption: "ticket" } }));
     expect(resolveAuthorizedTelegramGroup).toHaveBeenCalledWith("user-1", "group-removed");
@@ -97,5 +188,25 @@ describe("Telegram webhook authorized personal context", () => {
     } }));
     expect(resolveAuthorizedTelegramGroup).toHaveBeenCalledWith("user-1", "group-removed");
     expect(handlePersonalCallback).not.toHaveBeenCalled();
+  });
+
+  it("returns ok when group STT and the error reply both fail", async () => {
+    (transcribeVoiceMessage as jest.Mock).mockRejectedValue(new Error("stt unavailable"));
+    (sendSplitMessage as jest.Mock).mockRejectedValue(new Error("telegram unavailable"));
+
+    const response = await POST(request({
+      update_id: 34,
+      message: {
+        chat: { id: 99, type: "group" },
+        from: { id: 20, is_bot: false, first_name: "Ana" },
+        voice: { file_id: "group-voice-3" },
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(handleTelegramMessage).not.toHaveBeenCalled();
+    expect(handlePersonalCallback).not.toHaveBeenCalled();
+    expect(resolveAuthorizedTelegramGroup).not.toHaveBeenCalled();
   });
 });

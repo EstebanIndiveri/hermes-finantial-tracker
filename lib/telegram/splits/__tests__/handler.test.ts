@@ -2,6 +2,23 @@ import { handleSplitGroupMessage } from "../handler";
 import { db } from "@/lib/db/client";
 import { handleActivar } from "../commands/activar";
 import { handleBalances } from "../commands/balances";
+import { resolveAuthorizedSplitContext } from "../authorization";
+import { getConversationState } from "../conversation-state";
+
+jest.mock("../authorization", () => ({
+  resolveAuthorizedSplitContext: jest.fn().mockResolvedValue({
+    ok: true,
+    context: { session: { id: "session-1" }, actor: { kind: "user", id: "user-1" } },
+  }),
+}));
+
+jest.mock("../conversation-state", () => ({
+  getConversationState: jest.fn(),
+}));
+
+jest.mock("../callback-handler", () => ({
+  handleOcrEditInput: jest.fn().mockResolvedValue("edited"),
+}));
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -118,5 +135,35 @@ describe("handleSplitGroupMessage", () => {
     expect(result).toBeNull();
     expect(db.query.split_sessions.findFirst).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("does not route an active command when authorization rejects the actor", async () => {
+    (resolveAuthorizedSplitContext as jest.Mock).mockResolvedValue({ ok: false, reason: "not_member" });
+
+    const result = await handleSplitGroupMessage({
+      chat: { id: 123, type: "group", title: "Cena" },
+      from: { id: 99, is_bot: true, first_name: "Outsider" },
+      text: "/balances",
+    });
+
+    expect(result).toEqual({ text: "❌ No sos participante de esta sesión." });
+    expect(handleBalances).not.toHaveBeenCalled();
+  });
+
+  it("revalidates an editable state against its stored session instead of the current chat session", async () => {
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "ocr_expense_edit_amount",
+      data: { session_id: "old-session", amount: 100, description: "ticket" },
+    });
+    (resolveAuthorizedSplitContext as jest.Mock).mockResolvedValue({ ok: false, reason: "no_open_session" });
+
+    const result = await handleSplitGroupMessage({
+      chat: { id: 123, type: "group", title: "Cena" },
+      from: { id: 99, is_bot: true, first_name: "Esteban" },
+      text: "250",
+    });
+
+    expect(resolveAuthorizedSplitContext).toHaveBeenCalledWith("123", "99", "old-session");
+    expect(result).toEqual({ text: "⏱️ Esta conversación expiró o ya no está autorizada. Comenzá nuevamente con el comando." });
   });
 });

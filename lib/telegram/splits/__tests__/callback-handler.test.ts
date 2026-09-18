@@ -4,6 +4,11 @@ import { getConversationState, setConversationState, clearConversationState } fr
 import { splits, split_payers, split_items, split_payments } from "@/lib/db/schema";
 import { handlePagueSelect, startPaguePartialAmount } from "../commands/pague";
 import { notifySplitPaymentReceived } from "@/lib/notifications/telegram";
+import { resolveAuthorizedSplitContext } from "../authorization";
+
+jest.mock("../authorization", () => ({
+  resolveAuthorizedSplitContext: jest.fn().mockResolvedValue({ ok: true, context: {} }),
+}));
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -50,7 +55,15 @@ function makeSelectMock(result: unknown) {
 }
 
 describe("handleSplitCallback", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (resolveAuthorizedSplitContext as jest.Mock).mockResolvedValue({ ok: true, context: {} });
+    (db.query.split_session_members.findMany as jest.Mock).mockResolvedValue([
+      { session_id: "session-1", user_id: "user-1", temp_user_id: null },
+      { session_id: "session-1", user_id: "user-2", temp_user_id: null },
+      { session_id: "session-1", user_id: null, temp_user_id: "temp-1" },
+    ]);
+  });
 
   it("accepts temp-user payers in the who-paid step", async () => {
     (getConversationState as jest.Mock).mockResolvedValue({
@@ -104,6 +117,7 @@ describe("handleSplitCallback", () => {
     (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue({ id: "session-1" });
     (db.query.split_session_members.findMany as jest.Mock).mockResolvedValue([
       { session_id: "session-1", user_id: "user-1", temp_user_id: null },
+      { session_id: "session-1", user_id: null, temp_user_id: "temp-payer" },
       { session_id: "session-1", user_id: null, temp_user_id: "temp-2" },
     ]);
     (db.select as jest.Mock)
@@ -126,13 +140,6 @@ describe("handleSplitCallback", () => {
     const response = await handleSplitCallback("chat-1", "telegram-1", "participants:all");
 
     expect(clearConversationState).toHaveBeenCalledWith("chat-1", "telegram-1");
-    expect(memberInsert.values).toHaveBeenCalledWith({
-      session_id: "session-1",
-      user_id: null,
-      temp_user_id: "temp-payer",
-      joined_at: expect.any(Number),
-    });
-
     const splitInsert = txInserts.find(entry => entry.table === splits);
     expect(splitInsert?.values).toEqual(expect.objectContaining({
       session_id: "session-1",
@@ -226,6 +233,91 @@ describe("handleSplitCallback", () => {
     }));
   });
 
+  it.each(["pague_payment_type", "pague_confirm"])(
+    "accepts payment cancellation from %s",
+    async (step) => {
+      (getConversationState as jest.Mock).mockResolvedValue({
+        step,
+        data: {
+          step,
+          session_id: "session-1",
+          debt_amount: 450,
+          creditor_name: "@sabri",
+        },
+      });
+
+      const response = await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:cancel");
+
+      expect(response).toEqual(expect.objectContaining({ text: "❌ Cancelado.", edit: true }));
+      expect(clearConversationState).toHaveBeenCalledWith("chat-1", "telegram-1");
+    },
+  );
+
+  it("accepts full payment only from the payment-type step", async () => {
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "pague_payment_type",
+      data: {
+        step: "pague_payment_type",
+        session_id: "session-1",
+        debt_amount: 450,
+        creditor_name: "@sabri",
+      },
+    });
+
+    const response = await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:full");
+
+    expect(response).toEqual(expect.objectContaining({ edit: true, text: expect.stringContaining("¿Confirmás") }));
+    expect(setConversationState).toHaveBeenCalledWith("chat-1", "telegram-1", {
+      step: "pague_confirm",
+      data: expect.objectContaining({ step: "pague_confirm", payment_amount: 450 }),
+    });
+  });
+
+  it("rejects a removed creditor before delegating pague selection", async () => {
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "pague_select",
+      data: { step: "pague_select", session_id: "session-1" },
+    });
+    (db.query.split_session_members.findMany as jest.Mock).mockResolvedValue([
+      { session_id: "session-1", user_id: "user-1", temp_user_id: null },
+    ]);
+
+    const response = await handleSplitCallback("chat-1", "telegram-1", "pague_select:user-removed");
+
+    expect(response).toEqual(expect.objectContaining({ edit: true, text: expect.stringContaining("acreedor") }));
+    expect(handlePagueSelect).not.toHaveBeenCalled();
+    expect(clearConversationState).toHaveBeenCalledWith("chat-1", "telegram-1");
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects full payment from the confirmation step", async () => {
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "pague_confirm",
+      data: { step: "pague_confirm", session_id: "session-1", debt_amount: 450, creditor_name: "@sabri" },
+    });
+
+    const response = await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:full");
+
+    expect(response).toEqual(expect.objectContaining({ edit: false }));
+    expect(resolveAuthorizedSplitContext).not.toHaveBeenCalled();
+    expect(setConversationState).not.toHaveBeenCalled();
+  });
+
+  it("rejects OCR callbacks while waiting for edited text", async () => {
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "ocr_expense_edit_amount",
+      data: { step: "ocr_expense_edit_amount", session_id: "session-1", amount: 100, description: "Ticket" },
+    });
+
+    const response = await handleSplitCallback("chat-1", "telegram-1", "ocr_expense:confirm");
+
+    expect(response).toEqual(expect.objectContaining({ edit: false }));
+    expect(resolveAuthorizedSplitContext).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
   it("rejects partial payment callbacks when state is expired", async () => {
     (getConversationState as jest.Mock).mockResolvedValue(null);
 
@@ -235,6 +327,38 @@ describe("handleSplitCallback", () => {
       text: "⏱️ Esta conversación expiró o no es tuya. Usá /pague para comenzar.",
       edit: false,
     });
+  });
+
+  it.each([
+    ["closed session", "no_open_session"],
+    ["other chat", "no_open_session"],
+    ["non-member actor", "not_member"],
+  ])("rejects %s callbacks without writers", async (_label, reason) => {
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "participants",
+      data: { step: "participants", amount: 100, description: "Test", session_id: "session-1", payer_user_id: "user-1" },
+    });
+    (resolveAuthorizedSplitContext as jest.Mock).mockResolvedValue({ ok: false, reason });
+
+    const response = await handleSplitCallback("chat-1", "telegram-1", "participants:all");
+
+    expect(response).toEqual(expect.objectContaining({ edit: false }));
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a callback whose action does not match the stored step", async () => {
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "who_paid",
+      data: { step: "who_paid", session_id: "session-1" },
+    });
+
+    const response = await handleSplitCallback("chat-1", "telegram-1", "participants:all");
+
+    expect(response).toEqual(expect.objectContaining({ edit: false }));
+    expect(resolveAuthorizedSplitContext).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("notifies Hermes creditors with remaining debt after payment", async () => {
