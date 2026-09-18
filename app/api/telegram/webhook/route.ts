@@ -16,24 +16,77 @@ import { handlePersonalCallback } from "@/lib/telegram/personal-callback-handler
 import { editTelegramPersonalMessage } from "@/lib/telegram/send-message";
 import { transcribeVoiceMessage } from "@/lib/telegram/voice";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
+import {
+  claimTelegramUpdate,
+  completeTelegramUpdate,
+  failTelegramUpdate,
+  resolveTelegramBotId,
+} from "@/lib/telegram/update-inbox";
 
 // Allow up to 60 seconds for OCR + AI + Voice processing
 export const maxDuration = 60;
 
-export async function POST(req: NextRequest) {
-  const secret = req.headers.get("x-telegram-bot-api-secret-token");
-  const expectedSecret = process.env.TELEGRAM_SECRET_TOKEN;
-  if (!secret || !expectedSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const providedBuf = Buffer.from(secret);
-  const expectedBuf = Buffer.from(expectedSecret);
-  if (providedBuf.length !== expectedBuf.length || !timingSafeEqual(providedBuf, expectedBuf)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+type TelegramUpdateKind = "callback" | "new_member" | "voice" | "photo" | "document" | "text" | "other";
 
-  const update = await req.json().catch(() => null);
+interface TelegramWebhookMessage {
+  chat: { id: number; type: string; title?: string };
+  from: { id: number; is_bot: boolean; username?: string; first_name: string; last_name?: string };
+  text?: string;
+  caption?: string;
+  voice?: { file_id: string };
+  audio?: { file_id: string };
+  photo?: Array<{ file_id: string; file_size?: number; width: number; height: number }>;
+  document?: { file_id: string; mime_type?: string; file_name?: string };
+  new_chat_members?: Array<{ id: number; is_bot: boolean; username?: string }>;
+}
 
+interface TelegramWebhookCallbackQuery {
+  id: string;
+  from: { id: number };
+  data?: string;
+  message?: { message_id?: number; chat?: { id: number; type: string } };
+}
+
+interface TelegramWebhookUpdate {
+  update_id: number;
+  message?: TelegramWebhookMessage;
+  callback_query?: TelegramWebhookCallbackQuery;
+}
+
+function classifyTelegramUpdate(update: unknown): TelegramUpdateKind {
+  if (!update || typeof update !== "object") return "other";
+  const candidate = update as {
+    callback_query?: unknown;
+    message?: {
+      new_chat_members?: unknown[];
+      voice?: unknown;
+      audio?: unknown;
+      photo?: unknown[];
+      document?: unknown;
+      text?: unknown;
+      caption?: unknown;
+    };
+  };
+  if (candidate.callback_query) return "callback";
+  const message = candidate.message;
+  if (!message) return "other";
+  if (message.new_chat_members?.length) return "new_member";
+  if (message.voice || message.audio) return "voice";
+  if (message.photo?.length) return "photo";
+  if (message.document) return "document";
+  if (typeof message.text === "string" || typeof message.caption === "string") return "text";
+  return "other";
+}
+
+function stableTelegramErrorCode(error: unknown): string {
+  void error;
+  return "HANDLER_ERROR";
+}
+
+async function processTelegramUpdate(
+  update: TelegramWebhookUpdate,
+  useLegacyBotMessageDedupe = true,
+): Promise<NextResponse> {
   if (update?.callback_query) {
     const cq = update.callback_query;
     
@@ -222,7 +275,7 @@ export async function POST(req: NextRequest) {
   const updateId = String(update.update_id);
 
   // Dedup check only for personal messages (group messages never insert into bot_messages)
-  if (!isGroupMessage) {
+  if (useLegacyBotMessageDedupe && !isGroupMessage) {
     const existing = await db.query.bot_messages.findFirst({
       where: eq(bot_messages.telegram_update_id, updateId),
     });
@@ -324,4 +377,59 @@ export async function POST(req: NextRequest) {
 
   await sendTelegramMessage(chatId, botResponse.text, botResponse.replyMarkup);
   return NextResponse.json({ ok: true });
+}
+
+export async function POST(req: NextRequest) {
+  const secret = req.headers.get("x-telegram-bot-api-secret-token");
+  const expectedSecret = process.env.TELEGRAM_SECRET_TOKEN;
+  if (!secret || !expectedSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const providedBuf = Buffer.from(secret);
+  const expectedBuf = Buffer.from(expectedSecret);
+  if (providedBuf.length !== expectedBuf.length || !timingSafeEqual(providedBuf, expectedBuf)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const update = await req.json().catch(() => null);
+  if (process.env.TELEGRAM_INBOX_ENABLED !== "true") {
+    return processTelegramUpdate(update, true);
+  }
+
+  if (!update || typeof update !== "object" || !("update_id" in update)) {
+    return NextResponse.json({ ok: true });
+  }
+
+  const rawUpdateId = (update as { update_id: unknown }).update_id;
+  if (typeof rawUpdateId !== "number" || !Number.isSafeInteger(rawUpdateId) || rawUpdateId < 0) {
+    return NextResponse.json({ ok: true });
+  }
+  const updateId = String(rawUpdateId);
+  const updateKind = classifyTelegramUpdate(update);
+  let botId: string;
+  let claim: Awaited<ReturnType<typeof claimTelegramUpdate>>;
+  try {
+    botId = resolveTelegramBotId();
+    claim = await claimTelegramUpdate({ botId, updateId, updateKind });
+  } catch {
+    return NextResponse.json({ error: "Telegram update claim unavailable" }, { status: 503 });
+  }
+
+  if (claim.kind === "completed" || claim.kind === "busy") {
+    return NextResponse.json({ ok: true });
+  }
+
+  try {
+    const response = await processTelegramUpdate(update, false);
+    await completeTelegramUpdate({ botId, updateId, leaseToken: claim.leaseToken });
+    return response;
+  } catch (error) {
+    await failTelegramUpdate({
+      botId,
+      updateId,
+      leaseToken: claim.leaseToken,
+      errorCode: stableTelegramErrorCode(error),
+    }).catch(() => false);
+    return NextResponse.json({ error: "Telegram update processing failed" }, { status: 503 });
+  }
 }

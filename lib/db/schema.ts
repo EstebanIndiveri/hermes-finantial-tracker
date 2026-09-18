@@ -90,6 +90,27 @@ export const bot_messages = sqliteTable("bot_messages", {
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
 
+// Durable receipt/lease for Telegram webhook updates. The rollout is
+// migration-first and feature-flagged; legacy bot_messages remains history,
+// not the authority for idempotency.
+export const telegram_update_inbox = sqliteTable("telegram_update_inbox", {
+  id: text("id").primaryKey(),
+  bot_id: text("bot_id").notNull(),
+  update_id: text("update_id").notNull(),
+  update_kind: text("update_kind").notNull(),
+  status: text("status", { enum: ["processing", "completed", "retryable"] }).notNull(),
+  attempt_count: integer("attempt_count").notNull().default(0),
+  lease_token: text("lease_token"),
+  lease_expires_at: integer("lease_expires_at"),
+  last_error_code: text("last_error_code"),
+  received_at: integer("received_at").notNull().default(sql`(unixepoch() * 1000)`),
+  updated_at: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  completed_at: integer("completed_at"),
+}, (t) => ({
+  botUpdateIdx: uniqueIndex("telegram_update_inbox_bot_update_idx").on(t.bot_id, t.update_id),
+  claimIdx: index("telegram_update_inbox_claim_idx").on(t.status, t.lease_expires_at),
+}));
+
 export const receipt_imports = sqliteTable("receipt_imports", {
   id: text("id").primaryKey(),
   user_id: text("user_id").notNull().references(() => users.id),

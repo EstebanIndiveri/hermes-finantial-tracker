@@ -87,6 +87,22 @@ por la descarga bloqueada de DM Sans y Fraunces. H04/H05, la ventana de
 concurrencia previa al writer, la sincronizacion con `getChatMember` y H13/H14
 permanecen fuera de este corte.
 
+Tras el corte local PR-05/H04a, pasan 76/76 suites y 619/619 tests; el harness y
+TypeScript pasan, y ESLint conserva 0 errores y 70 advertencias visibles. El
+claim se prueba contra la migracion `0009` en libSQL temporal real: diez
+intentos secuenciales y diez paralelos producen un owner, el lease vencido se
+puede readquirir y el token anterior queda cercado. A nivel webhook, diez POST
+concurrentes ejecutan un solo handler; voz, imagen, callbacks, grupos y texto
+reclaman antes de sus efectos cuando la flag esta activa. La revision
+independiente detecto cuatro observaciones: se corrigieron el guard legacy
+entre bots, la validacion de `update_id` y la identidad de bot fail-closed; los
+catches terminales heredados quedaron explicitamente clasificados como una
+limitacion compatible. La flag permanece apagada por defecto y ninguna
+migracion fue ejecutada fuera de la DB temporal. El build continua bloqueado
+por las fuentes Google conocidas. La ventana `commit financiero -> completar
+inbox`, la entrega/outbox y los IDs de operacion pertenecen a H04b/ACT-06 y no
+quedan certificados por H04a.
+
 ESLint aplica reglas de produccion sin excepciones globales. En tests permite
 `require()` para reinicializar modulos de Jest y mantiene `any` como advertencia
 visible mientras se tipan los fixtures. El reproductor forense CommonJS de la
