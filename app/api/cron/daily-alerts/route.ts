@@ -6,7 +6,7 @@ import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
-import { getPersonalGroup } from "@/lib/groups/permissions";
+import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 
@@ -32,23 +32,20 @@ export async function GET(req: NextRequest) {
     const results: { userId: string; sent: boolean; reason?: string }[] = [];
 
     for (const user of allUsers) {
-      // Resolve chat_id: env var first, then last bot_message from this user
-      let chatId = process.env.TELEGRAM_CHAT_ID ?? null;
-      if (!chatId) {
-        const lastMsg = await db.query.bot_messages.findFirst({
-          where: eq(bot_messages.user_id, user.id),
-          orderBy: (m, { desc }) => desc(m.created_at),
-        });
-        chatId = lastMsg?.telegram_chat_id ?? null;
-      }
+      // Resolve the destination from this user only; never use a shared env chat.
+      const lastMsg = await db.query.bot_messages.findFirst({
+        where: eq(bot_messages.user_id, user.id),
+        orderBy: (m, { desc }) => desc(m.created_at),
+      });
+      const chatId = lastMsg?.telegram_chat_id ?? user.telegram_user_id ?? null;
 
       if (!chatId) {
         results.push({ userId: user.id, sent: false, reason: "no_chat_id" });
         continue;
       }
 
-      // Resolve user's active group (personal group fallback)
-      const groupId = user.active_telegram_group_id ?? await getPersonalGroup(user.id);
+      // Resolve only a currently authorized group (and clear stale membership pointers).
+      const groupId = await resolveAuthorizedTelegramGroup(user.id, user.active_telegram_group_id);
       if (!groupId) {
         results.push({ userId: user.id, sent: false, reason: "no_group" });
         continue;

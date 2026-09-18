@@ -4,7 +4,6 @@ import { bot_messages, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { handleTelegramMessage, PersonalBotMessage } from "@/lib/telegram/handlers";
-import { getPersonalGroup } from "@/lib/groups/permissions";
 import { randomUUID, timingSafeEqual } from "crypto";
 import { handleSplitGroupMessage, handleSplitCallback } from "@/lib/telegram/splits/handler";
 import {
@@ -16,6 +15,7 @@ import type { TelegramResponse } from "@/lib/telegram/splits/telegram-api";
 import { handlePersonalCallback } from "@/lib/telegram/personal-callback-handler";
 import { editTelegramPersonalMessage } from "@/lib/telegram/send-message";
 import { transcribeVoiceMessage } from "@/lib/telegram/voice";
+import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 
 // Allow up to 60 seconds for OCR + AI + Voice processing
 export const maxDuration = 60;
@@ -87,16 +87,10 @@ export async function POST(req: NextRequest) {
       if (!personalUser) {
         await sendTelegramMessage(personalChatId, "Tu sesión expiró. Vinculá tu cuenta nuevamente.");
       } else {
-        // Mirror the same fallback logic as the message path
-        let personalGroupId = personalUser.active_telegram_group_id ?? null;
-        if (!personalGroupId) {
-          try {
-            const personalGroup = await getPersonalGroup(personalUser.id);
-            personalGroupId = personalGroup ?? null;
-          } catch {
-            personalGroupId = null;
-          }
-        }
+        const personalGroupId = await resolveAuthorizedTelegramGroup(
+          personalUser.id,
+          personalUser.active_telegram_group_id,
+        );
         
         if (!personalGroupId) {
           await sendTelegramMessage(personalChatId, "No tenés ningún grupo activo. Creá uno desde la web.");
@@ -137,6 +131,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // Resolve the user and current authorized group before invoking STT. An
+    // ex-member must not spend processing or reach the financial handler.
+    const user = await db.query.users.findFirst({
+      where: eq(users.telegram_user_id, telegramUserId),
+    });
+
+    if (!user) {
+      await sendTelegramMessage(chatId, "Para usar el bot, vinculá tu cuenta en la configuración.");
+      return NextResponse.json({ ok: true });
+    }
+
+    const groupId = await resolveAuthorizedTelegramGroup(
+      user.id,
+      user.active_telegram_group_id,
+    );
+
+    if (!groupId) {
+      await sendTelegramMessage(chatId, "No tenés ningún grupo activo. Creá uno desde la web.");
+      return NextResponse.json({ ok: true });
+    }
+
     // Send immediate feedback while processing
     await sendTelegramMessage(chatId, "🎤 <i>Procesando audio...</i>").catch(() => {});
 
@@ -153,30 +168,6 @@ export async function POST(req: NextRequest) {
         ...update, 
         message: { ...msg, text: transcription } 
       };
-      
-      const user = await db.query.users.findFirst({
-        where: eq(users.telegram_user_id, telegramUserId),
-      });
-
-      if (!user) {
-        await sendTelegramMessage(chatId, "🎤 Audio transcrito pero no estás vinculado. Vinculá tu cuenta primero.");
-        return NextResponse.json({ ok: true });
-      }
-
-      let groupId: string | null = user.active_telegram_group_id;
-      if (!groupId) {
-        try {
-          const personalGroup = await getPersonalGroup(user.id);
-          groupId = personalGroup ?? null;
-        } catch {
-          groupId = null;
-        }
-      }
-
-      if (!groupId) {
-        await sendTelegramMessage(chatId, "🎤 Audio transcrito pero no tenés grupo activo.");
-        return NextResponse.json({ ok: true });
-      }
 
       const botResponse = await handleTelegramMessage(fakeUpdate, user.id, groupId);
       await sendTelegramMessage(chatId, `🎤 "${transcription}"\n\n${botResponse.text}`, botResponse.replyMarkup);
@@ -260,15 +251,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  let groupId: string | null = user.active_telegram_group_id;
-  if (!groupId) {
-    try {
-      const personalGroup = await getPersonalGroup(user.id);
-      groupId = personalGroup ?? null;
-    } catch {
-      groupId = null;
-    }
-  }
+  const groupId = await resolveAuthorizedTelegramGroup(
+    user.id,
+    user.active_telegram_group_id,
+  );
 
   if (!groupId) {
     await sendTelegramMessage(chatId, "No tenés ningún grupo activo. Creá uno desde la web.");

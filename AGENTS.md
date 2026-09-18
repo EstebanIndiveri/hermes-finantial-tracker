@@ -89,6 +89,10 @@ No imponer cobertura global arbitraria mientras no exista baseline. Para código
 - Usar ramas/worktrees aislados para implementación. El prefijo de ramas de Codex es `codex/`.
 - Un solo escritor por archivo o módulo en cada ola. No ejecutar Codex y Copilot sobre el mismo checkout.
 - El coordinador integra; los subagentes reciben SHA, objetivo, invariantes, archivos permitidos, pruebas y prohibiciones. Paralelizar solo tareas independientes.
+- Por defecto, los subagentes de este repositorio usan GPT-5.6 Luna con contexto
+  acotado al contrato, archivos y pruebas de su tarea. Reservar modelos mayores
+  para el orquestador o una excepcion critica solicitada de forma explicita;
+  no sobredimensionar tareas mecanicas o revisiones delimitadas.
 - No hacer commit, push, PR, merge o deploy salvo pedido o aprobación que abarque esa acción.
 - Conventional Commits cuando se soliciten commits. `Closes #N` solo si existe un issue real.
 - La revisión prioriza correctness, seguridad, pérdida/duplicación de datos y regresiones. Evaluar cada observación: aplicar las válidas y documentar las rechazadas; nunca aplicar todas de forma ciega.

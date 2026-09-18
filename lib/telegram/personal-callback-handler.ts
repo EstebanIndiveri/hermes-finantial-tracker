@@ -62,6 +62,16 @@ interface PendingExpenseReimbursementState {
   group_id: string;
 }
 
+const EXPIRED_CONTEXT_MESSAGE = "⏱️ Confirmación expirada o contexto cambiado. Volvé a registrar el gasto.";
+
+function hasCurrentStateContext(data: unknown, userId: string, groupId: string): boolean {
+  if (!data || typeof data !== "object") return true;
+  const stateData = data as Record<string, unknown>;
+  const hasUserContext = "user_id" in stateData || "group_id" in stateData;
+  if (!hasUserContext) return true;
+  return stateData.user_id === userId && stateData.group_id === groupId;
+}
+
 function escapeHtml(text: string): string {
   return text.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
 }
@@ -104,6 +114,11 @@ async function registerPersonalTransaction(
   merchant: string | undefined,
   isException: boolean
 ): Promise<{ text: string; transactionId: string }> {
+  const initialMembership = await getGroupMembership(userId, groupId);
+  if (!initialMembership) {
+    return { text: "❌ Ya no tenés acceso a este grupo.", transactionId: "" };
+  }
+
   const month = getActiveMonthArgentina();
   const settings = await db.query.monthly_settings.findFirst({
     where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
@@ -113,6 +128,12 @@ async function registerPersonalTransaction(
   const amountUsd = parseFloat((amountArs / settings.exchange_rate).toFixed(2));
   const date = getArgentinaDate().toISOString().slice(0, 10);
   const txId = randomUUID();
+
+  // Revalidate immediately before the financial write to close callback TOCTOU.
+  const currentMembership = await getGroupMembership(userId, groupId);
+  if (!currentMembership) {
+    return { text: "❌ Ya no tenés acceso a este grupo.", transactionId: "" };
+  }
 
   await db.insert(transactions).values({
     id: txId,
@@ -286,13 +307,18 @@ export async function handlePersonalCallback(
     // ── expense:* — /gasto + NL expense confirmation ──────────────────
     if (data === "expense:confirm") {
       const state = await getConversationState(chatId, telegramUserId);
+
+      if (state && !hasCurrentStateContext(state.data, userId, groupId)) {
+        await clearConversationState(chatId, telegramUserId);
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
+      }
       
       // Check if already processing (clicked multiple times)
       if (state?.step === "expense_processing") {
         return { text: "⏳ Registrando gasto...", edit: true };
       }
       
-      if (state?.step !== "expense_confirm") {
+      if (state?.step !== "expense_confirm" || !state.data) {
         // State expired - check if user has a recent transaction (within 2 minutes) to avoid duplicate
         const recentTx = await db.query.transactions.findFirst({
           where: and(
@@ -370,6 +396,11 @@ export async function handlePersonalCallback(
     }
 
     if (data === "expense:cancel") {
+      const state = await getConversationState(chatId, telegramUserId);
+      if (state && !hasCurrentStateContext(state.data, userId, groupId)) {
+        await clearConversationState(chatId, telegramUserId);
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
+      }
       await clearConversationState(chatId, telegramUserId);
       return { text: "❌ Gasto cancelado.", edit: true };
     }
@@ -377,7 +408,11 @@ export async function handlePersonalCallback(
     // ── expense:edit_* — Edit pending expense fields ─────────────────
     if (data === "expense:edit_amount") {
       const state = await getConversationState(chatId, telegramUserId);
-      if (state?.step !== "expense_confirm") {
+      if (state && !hasCurrentStateContext(state.data, userId, groupId)) {
+        await clearConversationState(chatId, telegramUserId);
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
+      }
+      if (state?.step !== "expense_confirm" || !state.data) {
         return { text: "⏱️ Confirmación expirada.", edit: true };
       }
       await setConversationState(chatId, telegramUserId, {
@@ -393,6 +428,10 @@ export async function handlePersonalCallback(
     if (data === "expense:edit_category") {
       const state = await getConversationState(chatId, telegramUserId);
       const stateData = state?.data as PendingExpenseState | undefined;
+      if (state && !hasCurrentStateContext(stateData, userId, groupId)) {
+        await clearConversationState(chatId, telegramUserId);
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
+      }
       if (state?.step !== "expense_confirm" || !stateData) {
         return { text: "⏱️ Confirmación expirada.", edit: true };
       }
@@ -419,12 +458,16 @@ export async function handlePersonalCallback(
       const categoryId = data.replace("expense:set_category:", "");
       const state = await getConversationState(chatId, telegramUserId);
       const stateData = state?.data as PendingExpenseState | undefined;
+      if (state && !hasCurrentStateContext(stateData, userId, groupId)) {
+        await clearConversationState(chatId, telegramUserId);
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
+      }
       if (state?.step !== "expense_confirm" || !stateData) {
         return { text: "⏱️ Confirmación expirada.", edit: true };
       }
       
       const cat = await db.query.categories.findFirst({
-        where: eq(categories.id, categoryId),
+        where: and(eq(categories.id, categoryId), eq(categories.group_id, groupId)),
       });
       if (!cat) {
         return { text: "❌ Categoría no encontrada.", edit: true };
@@ -446,7 +489,11 @@ export async function handlePersonalCallback(
 
     if (data === "expense:edit_merchant") {
       const state = await getConversationState(chatId, telegramUserId);
-      if (state?.step !== "expense_confirm") {
+      if (state && !hasCurrentStateContext(state.data, userId, groupId)) {
+        await clearConversationState(chatId, telegramUserId);
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
+      }
+      if (state?.step !== "expense_confirm" || !state.data) {
         return { text: "⏱️ Confirmación expirada.", edit: true };
       }
       await setConversationState(chatId, telegramUserId, {
@@ -471,6 +518,10 @@ export async function handlePersonalCallback(
         requires_reimbursement: boolean;
       }
       const stateData = state?.data as ExpenseSelectCategoryState | undefined;
+      if (state && !hasCurrentStateContext(stateData, userId, groupId)) {
+        await clearConversationState(chatId, telegramUserId);
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
+      }
       if (state?.step !== "expense_select_category" || !stateData) {
         return { text: "⏱️ Selección expirada.", edit: true };
       }
@@ -507,6 +558,10 @@ export async function handlePersonalCallback(
     if (data === "exception:confirm") {
       const state = await getConversationState(chatId, telegramUserId);
       const stateData = state?.data as PendingExpenseState | undefined;
+      if (state && !hasCurrentStateContext(stateData, userId, groupId)) {
+        await clearConversationState(chatId, telegramUserId);
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
+      }
       if (state?.step !== "expense_confirm" || !stateData?.is_exception) {
         return { text: "⏱️ Confirmación expirada.", edit: true };
       }
@@ -562,6 +617,11 @@ export async function handlePersonalCallback(
     }
 
     if (data === "exception:cancel") {
+      const state = await getConversationState(chatId, telegramUserId);
+      if (state && !hasCurrentStateContext(state.data, userId, groupId)) {
+        await clearConversationState(chatId, telegramUserId);
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
+      }
       await clearConversationState(chatId, telegramUserId);
       return { text: "❌ Cancelado.", edit: true };
     }
@@ -649,28 +709,46 @@ export async function handlePersonalCallback(
       const reimbursementState = state?.data as PendingExpenseReimbursementState | undefined;
       const transactionId = data.split(":")[2] ?? "";
 
-      // Idempotent check: if reimbursement already exists for this transaction, confirm it
-      const existingReimbursement = await getReimbursementByTransactionId(transactionId);
-      if (existingReimbursement) {
+      if (state && !hasCurrentStateContext(state.data, userId, groupId)) {
         await clearConversationState(chatId, telegramUserId);
-        if (existingReimbursement.status === "pending") {
-          return { text: "✅ El reintegro ya fue solicitado. Esperando pago.", edit: true };
-        } else if (existingReimbursement.status === "paid") {
-          return { text: "✅ El reintegro ya fue pagado.", edit: true };
-        }
-        return { text: "✅ Reintegro ya procesado.", edit: true };
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
       }
 
-      // If state expired but transaction exists, try to create reimbursement directly
-      if (state?.step !== "expense_reimbursement_confirm" || !reimbursementState || reimbursementState.transaction_id !== transactionId) {
-        // Verify transaction exists and get details
+      const hasValidReimbursementState =
+        state?.step === "expense_reimbursement_confirm" &&
+        !!reimbursementState &&
+        reimbursementState.transaction_id === transactionId;
+
+      // If state expired, verify ownership and group before any reimbursement lookup.
+      if (!hasValidReimbursementState) {
         const [tx] = await db
           .select({ id: transactions.id, amount_ars: transactions.amount_ars })
           .from(transactions)
-          .where(eq(transactions.id, transactionId));
+          .where(and(
+            eq(transactions.id, transactionId),
+            eq(transactions.user_id, userId),
+            eq(transactions.group_id, groupId),
+          ));
         
         if (!tx) {
           return { text: "⏱️ Confirmación expirada. Volvé a registrar el gasto.", edit: true };
+        }
+
+        // Idempotent check after ownership is established, so this cannot cross groups.
+        const existingReimbursement = await getReimbursementByTransactionId(transactionId);
+        if (existingReimbursement) {
+          await clearConversationState(chatId, telegramUserId);
+          if (existingReimbursement.status === "pending") {
+            return { text: "✅ El reintegro ya fue solicitado. Esperando pago.", edit: true };
+          } else if (existingReimbursement.status === "paid") {
+            return { text: "✅ El reintegro ya fue pagado.", edit: true };
+          }
+          return { text: "✅ Reintegro ya procesado.", edit: true };
+        }
+
+        const currentMembership = await getGroupMembership(userId, groupId);
+        if (!currentMembership) {
+          return { text: "❌ Ya no tenés acceso a este grupo.", edit: true };
         }
         
         // Create reimbursement directly using transaction data
@@ -684,6 +762,23 @@ export async function handlePersonalCallback(
           return { text: `⚠️ ${reimbResult.error}`, edit: true };
         }
         return { text: "✅ Reintegro solicitado. Ya avisamos al grupo.", edit: true };
+      }
+
+      // Idempotent check for a current, context-bound state.
+      const existingReimbursement = await getReimbursementByTransactionId(transactionId);
+      if (existingReimbursement) {
+        await clearConversationState(chatId, telegramUserId);
+        if (existingReimbursement.status === "pending") {
+          return { text: "✅ El reintegro ya fue solicitado. Esperando pago.", edit: true };
+        } else if (existingReimbursement.status === "paid") {
+          return { text: "✅ El reintegro ya fue pagado.", edit: true };
+        }
+        return { text: "✅ Reintegro ya procesado.", edit: true };
+      }
+
+      const currentMembership = await getGroupMembership(userId, groupId);
+      if (!currentMembership) {
+        return { text: "❌ Ya no tenés acceso a este grupo.", edit: true };
       }
 
       const reimbResult = await createReimbursementWithNotifications(
@@ -700,6 +795,11 @@ export async function handlePersonalCallback(
     }
 
     if (data.startsWith("expense:reimbursement_no:")) {
+      const state = await getConversationState(chatId, telegramUserId);
+      if (state && !hasCurrentStateContext(state.data, userId, groupId)) {
+        await clearConversationState(chatId, telegramUserId);
+        return { text: EXPIRED_CONTEXT_MESSAGE, edit: true };
+      }
       await clearConversationState(chatId, telegramUserId);
       return { text: "✅ Gasto registrado sin reintegro.", edit: true };
     }

@@ -63,6 +63,17 @@ Tras los cortes locales de seguridad PR-02a/H21/H02, pasan 72/72 suites y
 y propiedad de ejecuciones recurrentes en web y Telegram. H03, concurrencia e
 idempotencia permanecen abiertos y no quedan certificados por este conteo.
 
+Tras el corte local PR-03/H03, pasan 74/74 suites y 565/565 tests; el harness y
+TypeScript pasan, y ESLint termina con 0 errores y 71 advertencias existentes.
+Las regresiones cubren texto, voz antes de STT, foto/OCR y callbacks personales;
+estado persistido ligado a actor/grupo; invalidacion transaccional al remover
+miembros; y alertas diarias con membresia y destinatario por usuario. El build
+continua fallando unicamente en la descarga bloqueada de DM Sans y Fraunces ya
+descrita. Este corte cierra la reproduccion determinista de H03 en local, pero
+no certifica H06 ni elimina la ventana de concurrencia entre el ultimo guard de
+membresia y un writer todavia no transaccional; esa garantia fuerte depende del
+writer comun/atomicidad de ACT-06 y de H04.
+
 ESLint aplica reglas de produccion sin excepciones globales. En tests permite
 `require()` para reinicializar modulos de Jest y mantiene `any` como advertencia
 visible mientras se tipan los fixtures. El reproductor forense CommonJS de la

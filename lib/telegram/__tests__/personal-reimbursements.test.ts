@@ -49,6 +49,11 @@ jest.mock("../splits/conversation-state", () => ({
   clearConversationState: jest.fn(),
 }));
 
+jest.mock("@/lib/groups/permissions", () => ({
+  getGroupMembership: jest.fn().mockResolvedValue({ group_id: "group-1", user_id: "user-1", role: "member" }),
+  isAdminOrAbove: jest.fn(),
+}));
+
 const mockDb = db as jest.Mocked<typeof db>;
 const mockGetReimbursementsByUser = getReimbursementsByUser as jest.MockedFunction<typeof getReimbursementsByUser>;
 const mockGetReimbursementByTransactionId = getReimbursementByTransactionId as jest.MockedFunction<typeof getReimbursementByTransactionId>;
@@ -58,6 +63,7 @@ const mockGetMonthSummary = getMonthSummary as jest.MockedFunction<typeof getMon
 const mockGetConversationState = getConversationState as jest.MockedFunction<typeof getConversationState>;
 const mockSetConversationState = setConversationState as jest.MockedFunction<typeof setConversationState>;
 const mockClearConversationState = clearConversationState as jest.MockedFunction<typeof clearConversationState>;
+const { getGroupMembership } = jest.requireMock("@/lib/groups/permissions") as { getGroupMembership: jest.Mock };
 
 describe("telegram reimbursements", () => {
   beforeEach(() => {
@@ -144,7 +150,7 @@ describe("telegram reimbursements", () => {
         user_id: "user-1",
         is_exception: false,
       },
-    } as any);
+    });
     (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ exchange_rate: 1000 });
     (mockDb.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
     (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-1", name: "Comida", emoji: "🍝" });
@@ -191,7 +197,7 @@ describe("telegram reimbursements", () => {
         user_id: "user-1",
         group_id: "group-1",
       },
-    } as any);
+    });
     mockCreateReimbursement.mockResolvedValue({
       id: "reimb-1",
       transactionId: "tx-1",
@@ -215,5 +221,97 @@ describe("telegram reimbursements", () => {
     expect(mockClearConversationState).toHaveBeenCalledWith("chat-1", "telegram-1");
     expect(response.text).toContain("✅ Reintegro solicitado");
     expect(response.edit).toBe(true);
+  });
+
+  it("invalidates an expense confirmation from a different group before any financial write", async () => {
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: {
+        step: "expense_confirm",
+        category_id: "cat-old",
+        category_name: "Comida",
+        category_emoji: "🍝",
+        amount_ars: 5000,
+        group_id: "group-old",
+        user_id: "user-1",
+        is_exception: false,
+      },
+    });
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "group-current", "expense:confirm");
+
+    expect(response.text).toContain("contexto cambiado");
+    expect(mockClearConversationState).toHaveBeenCalledWith("chat-1", "telegram-1");
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(mockDb.query.monthly_settings.findFirst).not.toHaveBeenCalled();
+    expect(getGroupMembership).not.toHaveBeenCalled();
+  });
+
+  it("invalidates an exception confirmation from a different user before any financial write", async () => {
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: {
+        step: "expense_confirm",
+        category_id: "cat-old",
+        category_name: "Comida",
+        category_emoji: "🍝",
+        amount_ars: 5000,
+        group_id: "group-current",
+        user_id: "user-old",
+        is_exception: true,
+      },
+    });
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "group-current", "exception:confirm");
+
+    expect(response.text).toContain("contexto cambiado");
+    expect(mockClearConversationState).toHaveBeenCalledWith("chat-1", "telegram-1");
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(mockDb.query.monthly_settings.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("scopes an expired reimbursement fallback transaction to the current user and group", async () => {
+    mockGetConversationState.mockResolvedValue(null);
+    const where = jest.fn().mockResolvedValue([]);
+    const from = jest.fn().mockReturnValue({ where });
+    (mockDb.select as jest.Mock).mockReturnValue({ from });
+
+    const response = await handlePersonalCallback(
+      "chat-1",
+      "telegram-1",
+      "user-1",
+      "group-current",
+      "expense:reimbursement_yes:tx-foreign",
+    );
+
+    expect(response.text).toContain("Confirmación expirada");
+    expect(where).toHaveBeenCalled();
+    expect(mockCreateReimbursement).not.toHaveBeenCalled();
+    expect(mockGetReimbursementByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("rechecks membership immediately before registering a transaction", async () => {
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: {
+        step: "expense_confirm",
+        category_id: "cat-1",
+        category_name: "Comida",
+        category_emoji: "🍝",
+        amount_ars: 5000,
+        group_id: "group-1",
+        user_id: "user-1",
+        is_exception: false,
+      },
+    });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ exchange_rate: 1000 });
+    getGroupMembership
+      .mockResolvedValueOnce({ group_id: "group-1", user_id: "user-1", role: "member" })
+      .mockResolvedValueOnce(null);
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "group-1", "expense:confirm");
+
+    expect(response.text).toContain("Ya no tenés acceso");
+    expect(mockDb.insert).not.toHaveBeenCalled();
   });
 });

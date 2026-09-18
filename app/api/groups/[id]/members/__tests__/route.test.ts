@@ -8,7 +8,14 @@ jest.mock("@/lib/groups/permissions", () => ({
   isOwner: jest.fn(),
   canManageMembers: jest.fn(),
 }));
-jest.mock("@/lib/db/schema", () => ({ group_members: {} }));
+jest.mock("@/lib/db/schema", () => ({
+  group_members: { group_id: "group_members.group_id", user_id: "group_members.user_id" },
+  users: { id: "users.id", active_telegram_group_id: "users.active_telegram_group_id" },
+}));
+jest.mock("drizzle-orm", () => ({
+  and: (...conditions: unknown[]) => ({ type: "and", conditions }),
+  eq: (column: unknown, value: unknown) => ({ type: "eq", column, value }),
+}));
 
 import * as perms from "@/lib/groups/permissions";
 import { db } from "@/lib/db/client";
@@ -85,7 +92,16 @@ describe("PATCH /api/groups/[id]/members/[userId]", () => {
 });
 
 describe("DELETE /api/groups/[id]/members/[userId]", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb.transaction = jest.fn(async (callback: (tx: {
+      delete: jest.Mock;
+      update: jest.Mock;
+    }) => Promise<void>) => callback({
+      delete: mockDb.delete,
+      update: mockDb.update,
+    }));
+  });
 
   it("returns 400 when owner tries to leave", async () => {
     mockPerms.getGroupMembership
@@ -103,8 +119,41 @@ describe("DELETE /api/groups/[id]/members/[userId]", () => {
       .mockResolvedValueOnce({ group_id: "g-1", user_id: "user-2", role: "member" });
     mockPerms.isOwner.mockReturnValueOnce(true).mockReturnValueOnce(false);
     mockDb.delete = jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) }));
+    mockDb.update = jest.fn(() => ({
+      set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
+    }));
     const res = await DELETE(withUser(makeReq("http://localhost/...")), memberParams);
     expect(res.status).toBe(204);
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockDb.update).toHaveBeenCalledWith(expect.anything());
+  });
+
+  it("clears only the removed group's active Telegram context", async () => {
+    mockPerms.getGroupMembership
+      .mockResolvedValueOnce({ group_id: "g-1", user_id: "user-1", role: "owner" })
+      .mockResolvedValueOnce({ group_id: "g-1", user_id: "user-2", role: "member" });
+    mockPerms.isOwner.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    const deleteWhere = jest.fn().mockResolvedValue(undefined);
+    const updateWhere = jest.fn().mockResolvedValue(undefined);
+    const set = jest.fn(() => ({ where: updateWhere }));
+    mockDb.delete = jest.fn(() => ({ where: deleteWhere }));
+    mockDb.update = jest.fn(() => ({ set }));
+
+    const res = await DELETE(withUser(makeReq("http://localhost/...")), memberParams);
+
+    expect(res.status).toBe(204);
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockDb.delete).toHaveBeenCalled();
+    expect(mockDb.update).toHaveBeenCalled();
+    expect(set).toHaveBeenCalledWith({ active_telegram_group_id: null });
+    expect(updateWhere).toHaveBeenCalledWith({
+      type: "and",
+      conditions: [
+        { type: "eq", column: "users.id", value: "user-2" },
+        { type: "eq", column: "users.active_telegram_group_id", value: "g-1" },
+      ],
+    });
   });
 
   it("returns 401 without user", async () => {

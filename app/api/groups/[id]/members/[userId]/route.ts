@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { group_members } from "@/lib/db/schema";
+import { group_members, users } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getGroupMembership, isOwner } from "@/lib/groups/permissions";
 import { z } from "zod";
@@ -58,8 +58,17 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
     return NextResponse.json({ error: "El owner no puede salir del grupo. Eliminá el grupo si querés." }, { status: 400 });
   }
 
-  await db.delete(group_members)
-    .where(and(eq(group_members.group_id, groupId), eq(group_members.user_id, targetUserId)));
+  await db.transaction(async (tx) => {
+    await tx.delete(group_members)
+      .where(and(eq(group_members.group_id, groupId), eq(group_members.user_id, targetUserId)));
+
+    await tx.update(users)
+      .set({ active_telegram_group_id: null })
+      .where(and(
+        eq(users.id, targetUserId),
+        eq(users.active_telegram_group_id, groupId),
+      ));
+  });
 
   return new NextResponse(null, { status: 204 });
 }
