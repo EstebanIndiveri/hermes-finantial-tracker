@@ -57,6 +57,7 @@ cp .env.example .env
 | `TELEGRAM_BOT_ID` | Namespace estable y no secreto; en producción debe existir o derivarse del token | `123456` |
 | `TELEGRAM_INBOX_ENABLED` | Activa el claim durable solo después de verificar la migración `0009` | `false` |
 | `TELEGRAM_OUTBOX_ENABLED` | Activa writers idempotentes y entrega durable; requiere inbox, migración `0010` y worker verificados | `false` |
+| `TELEGRAM_OUTBOX_WORKER_ENABLED` | Activa el worker cron global; requiere inbox, outbox, migración `0010`, credenciales Turso/Telegram y `CRON_SECRET` | `false` |
 | `TELEGRAM_ALLOWED_USER_ID` | ID de tu usuario de Telegram | `123456789` |
 | `TELEGRAM_SECRET_TOKEN` | Token secreto para webhook | `cualquier_string_random` |
 | `GROQ_API_KEY` | API key de Groq (opcional) | `gsk_...` |
@@ -71,12 +72,16 @@ cp .env.example .env
 # Generar esquema
 npm run db:generate
 
-# Ejecutar migraciones
-npm run db:migrate
-
-# Cargar datos iniciales (categorías)
-npm run db:seed
+# Inspeccionar y migrar solo una DB local explícita (H04c)
+npm run db:migrate:inspect -- --url file:/ruta/absoluta/hermes-local.db
+npm run db:migrate -- --url file:/ruta/absoluta/hermes-local.db
 ```
+
+El runner local rechaza URLs remotas y bases legacy no adoptadas. El proceso de
+adopción de staging/producción todavía no está habilitado; ver
+`docs/engineering/PR-07-H04C-MIGRATION-RUNBOOK.md`. `db:seed` conserva el flujo
+legacy y queda fuera de este procedimiento seguro; no ejecutarlo contra recursos
+compartidos o productivos.
 
 ### 5. Ejecutar en desarrollo
 
@@ -101,6 +106,10 @@ En el dashboard de Vercel, ve a **Settings → Environment Variables** y agrega 
 - `TURSO_DATABASE_URL`
 - `TURSO_AUTH_TOKEN`
 - `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_BOT_ID` (opcional si se deriva del token)
+- `TELEGRAM_INBOX_ENABLED`
+- `TELEGRAM_OUTBOX_ENABLED`
+- `TELEGRAM_OUTBOX_WORKER_ENABLED`
 - `TELEGRAM_ALLOWED_USER_ID`
 - `TELEGRAM_SECRET_TOKEN`
 - `GROQ_API_KEY` (opcional)
@@ -111,7 +120,7 @@ En el dashboard de Vercel, ve a **Settings → Environment Variables** y agrega 
 
 ### 3. Configurar Cron Job
 
-Vercel usa el archivo `vercel.json` para configurar cron jobs. Ya está configurado para ejecutar el tipo de cambio diario a las 00:00 UTC.
+Vercel usa el archivo `vercel.json` para configurar cron jobs. Incluye el worker global de outbox cada minuto. El endpoint `/api/cron/telegram-outbox` exige `CRON_SECRET`, las tres flags Telegram activadas y credenciales Turso/Telegram; las flags permanecen apagadas por defecto.
 
 Para verificar que funciona:
 1. Despliega el proyecto

@@ -5,6 +5,7 @@ import { telegram_delivery_outbox, telegram_operations } from "@/lib/db/schema";
 
 const DEFAULT_LEASE_MS = 60_000;
 const DEFAULT_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
+const MAX_RETENTION_PURGE_ROWS = 100;
 const ERROR_CODE = /^[a-z][a-z0-9_.-]{0,31}$/;
 const MAX_REPLY_MARKUP_BYTES = 16_384;
 
@@ -64,6 +65,12 @@ export interface UpdateTelegramDeliveryEnvelopeInput extends TelegramDeliveryEnv
 }
 
 export type TelegramDeliveryRow = typeof telegram_delivery_outbox.$inferSelect;
+
+export interface PurgeExpiredTelegramDeliveriesInput {
+  botId: string;
+  now?: number;
+  limit?: number;
+}
 
 function positiveDuration(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && (value as number) > 0
@@ -367,4 +374,52 @@ export async function markTelegramDeliveryDead({
     )
     .returning({ id: telegram_delivery_outbox.id });
   return changed.length === 1;
+}
+
+/**
+ * Removes only terminal deliveries whose explicit retention window expired.
+ * The predicates are repeated on DELETE so a concurrent worker cannot cause
+ * this operation to remove a row that became non-terminal between the read
+ * and delete statements.
+ */
+export async function purgeExpiredTelegramDeliveries({
+  botId,
+  now = Date.now(),
+  limit = MAX_RETENTION_PURGE_ROWS,
+}: PurgeExpiredTelegramDeliveriesInput): Promise<number> {
+  if (!botId || botId.trim().length === 0) {
+    throw new Error("Telegram retention purge requires a bot id");
+  }
+  const boundedLimit = Number.isFinite(limit)
+    ? Math.max(0, Math.min(MAX_RETENTION_PURGE_ROWS, Math.floor(limit)))
+    : MAX_RETENTION_PURGE_ROWS;
+  if (boundedLimit === 0) return 0;
+
+  const expired = await db
+    .select({ id: telegram_delivery_outbox.id })
+    .from(telegram_delivery_outbox)
+    .where(and(
+      eq(telegram_delivery_outbox.bot_id, botId),
+      inArray(telegram_delivery_outbox.status, ["sent", "dead"]),
+      lte(telegram_delivery_outbox.retention_until, now),
+    ))
+    .orderBy(
+      asc(telegram_delivery_outbox.retention_until),
+      asc(telegram_delivery_outbox.updated_at),
+    )
+    .limit(boundedLimit);
+
+  if (expired.length === 0) return 0;
+
+  const deleted = await db
+    .delete(telegram_delivery_outbox)
+    .where(and(
+      eq(telegram_delivery_outbox.bot_id, botId),
+      inArray(telegram_delivery_outbox.id, expired.map((row) => row.id)),
+      inArray(telegram_delivery_outbox.status, ["sent", "dead"]),
+      lte(telegram_delivery_outbox.retention_until, now),
+    ))
+    .returning({ id: telegram_delivery_outbox.id });
+
+  return deleted.length;
 }

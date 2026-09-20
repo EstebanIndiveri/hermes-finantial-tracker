@@ -193,3 +193,139 @@ it("reclaims an expired lease and fences the stale owner", async () => {
     provider_message_id: "77",
   }));
 });
+
+it("purges only expired terminal deliveries and respects the batch limit", async () => {
+  await client.execute({
+    sql: `INSERT INTO telegram_operations
+      (operation_id, bot_id, update_id, operation_kind, status)
+      VALUES (?, ?, ?, ?, ?)`,
+    args: ["operation-bot-2", "bot-2", "update-bot-2", "outbox.test", "committed"],
+  });
+  const otherBotExpired = await outbox.enqueueTelegramDelivery({
+    ...input("purge-other-bot"),
+    botId: "bot-2",
+    updateId: "update-bot-2",
+    operationId: "operation-bot-2",
+    retentionMs: 1,
+  });
+  const otherBotClaim = await outbox.claimTelegramDelivery({
+    id: otherBotExpired.id,
+    botId: "bot-2",
+    now: 2_000,
+    leaseToken: "purge-other-bot-lease",
+  });
+  await outbox.markTelegramDeliverySent({
+    id: otherBotExpired.id,
+    leaseToken: otherBotClaim!.lease_token!,
+    now: 2_001,
+  });
+
+  const sentExpired = await outbox.enqueueTelegramDelivery({
+    ...input("purge-sent-expired"),
+    retentionMs: 1,
+  });
+  const sentClaim = await outbox.claimTelegramDelivery({
+    id: sentExpired.id,
+    now: 2_000,
+    leaseToken: "purge-sent-lease",
+  });
+  await outbox.markTelegramDeliverySent({
+    id: sentExpired.id,
+    leaseToken: sentClaim!.lease_token!,
+    now: 2_001,
+  });
+
+  const deadExpired = await outbox.enqueueTelegramDelivery({
+    ...input("purge-dead-expired"),
+    retentionMs: 1,
+  });
+  const deadClaim = await outbox.claimTelegramDelivery({
+    id: deadExpired.id,
+    now: 2_000,
+    leaseToken: "purge-dead-lease",
+  });
+  await outbox.markTelegramDeliveryDead({
+    id: deadExpired.id,
+    leaseToken: deadClaim!.lease_token!,
+    errorCode: "provider_rejected",
+    now: 2_001,
+  });
+
+  const pendingExpired = await outbox.enqueueTelegramDelivery({
+    ...input("purge-pending-expired"),
+    retentionMs: 1,
+  });
+  const retryableExpired = await outbox.enqueueTelegramDelivery({
+    ...input("purge-retryable-expired"),
+    retentionMs: 1,
+  });
+  const retryClaim = await outbox.claimTelegramDelivery({
+    id: retryableExpired.id,
+    now: 2_000,
+    leaseToken: "purge-retry-lease",
+  });
+  await outbox.markTelegramDeliveryRetryable({
+    id: retryableExpired.id,
+    leaseToken: retryClaim!.lease_token!,
+    errorCode: "network_error",
+    retryAt: 10_000,
+    now: 2_001,
+  });
+
+  const processingExpired = await outbox.enqueueTelegramDelivery({
+    ...input("purge-processing-expired"),
+    retentionMs: 1,
+  });
+  await outbox.claimTelegramDelivery({
+    id: processingExpired.id,
+    now: 2_000,
+    leaseToken: "purge-processing-lease",
+    leaseMs: 100_000,
+  });
+
+  const sentRetained = await outbox.enqueueTelegramDelivery({
+    ...input("purge-sent-retained"),
+    retentionMs: 100_000,
+  });
+  const retainedClaim = await outbox.claimTelegramDelivery({
+    id: sentRetained.id,
+    now: 2_000,
+    leaseToken: "purge-retained-lease",
+  });
+  await outbox.markTelegramDeliverySent({
+    id: sentRetained.id,
+    leaseToken: retainedClaim!.lease_token!,
+    now: 2_001,
+  });
+
+  await expect(outbox.purgeExpiredTelegramDeliveries({ botId: "bot-1", now: 2_000, limit: 1 })).resolves.toBe(1);
+  await expect(outbox.purgeExpiredTelegramDeliveries({ botId: "bot-1", now: 2_000, limit: 100 })).resolves.toBe(1);
+
+  const remaining = await client.execute({
+    sql: `SELECT id, status FROM telegram_delivery_outbox
+      WHERE id IN (?, ?, ?, ?, ?)` ,
+    args: [
+      pendingExpired.id,
+      retryableExpired.id,
+      processingExpired.id,
+      sentRetained.id,
+      sentExpired.id,
+    ],
+  });
+  expect(remaining.rows).toEqual(expect.arrayContaining([
+    { id: pendingExpired.id, status: "pending" },
+    { id: retryableExpired.id, status: "retryable" },
+    { id: processingExpired.id, status: "processing" },
+    { id: sentRetained.id, status: "sent" },
+  ]));
+  expect(remaining.rows).not.toEqual(expect.arrayContaining([
+    { id: sentExpired.id, status: "sent" },
+    { id: deadExpired.id, status: "dead" },
+  ]));
+
+  const otherBot = await client.execute({
+    sql: "SELECT status FROM telegram_delivery_outbox WHERE id = ?",
+    args: [otherBotExpired.id],
+  });
+  expect(otherBot.rows).toEqual([{ status: "sent" }]);
+});

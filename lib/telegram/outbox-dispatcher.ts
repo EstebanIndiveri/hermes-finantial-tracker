@@ -33,6 +33,14 @@ export interface TelegramDispatchSummary {
   dead: number;
 }
 
+export interface DispatchClaimedTelegramDeliveryInput {
+  row: TelegramDeliveryRow;
+  now?: () => number;
+  token?: string;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}
+
 function decodeReplyMarkup(value: string | null): Record<string, unknown> | undefined {
   if (!value) return undefined;
   const parsed: unknown = JSON.parse(value);
@@ -63,6 +71,7 @@ async function deliver(
   row: TelegramDeliveryRow,
   token: string,
   fetchImpl: typeof fetch,
+  timeoutMs: number,
 ): Promise<
   | { kind: "sent"; providerMessageId?: string }
   | { kind: "retryable"; errorCode: string; httpStatus?: number; retryAfterMs?: number }
@@ -90,7 +99,7 @@ async function deliver(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     return { kind: "retryable", errorCode: "network_error" };
@@ -129,6 +138,75 @@ async function deliver(
   return { kind: "dead", errorCode: "provider_rejected", httpStatus: response.status };
 }
 
+/**
+ * Dispatches exactly one row that is already owned by this process. Both the
+ * inline update path and the global worker use this function so provider
+ * classification and retry/dead transitions cannot drift apart.
+ */
+export async function dispatchClaimedTelegramDelivery({
+  row,
+  now = Date.now,
+  token = process.env.TELEGRAM_BOT_TOKEN,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+  fetchImpl = fetch,
+}: DispatchClaimedTelegramDeliveryInput): Promise<TelegramDispatchSummary> {
+  const summary: TelegramDispatchSummary = { sent: 0, retryable: 0, dead: 0 };
+  const leaseToken = row.lease_token;
+  if (!leaseToken) throw new Error("Claimed Telegram delivery has no lease token");
+
+  const claimedAt = now();
+  if (!token) {
+    await markTelegramDeliveryRetryable({
+      id: row.id,
+      leaseToken,
+      errorCode: "missing_token",
+      retryAt: claimedAt + retryDelayMs(row.attempt_count),
+      now: claimedAt,
+    });
+    summary.retryable += 1;
+    return summary;
+  }
+
+  const boundedTimeoutMs = Number.isFinite(timeoutMs)
+    ? Math.max(1, Math.min(REQUEST_TIMEOUT_MS, Math.floor(timeoutMs)))
+    : REQUEST_TIMEOUT_MS;
+  const result = await deliver(row, token, fetchImpl, boundedTimeoutMs);
+  if (result.kind === "sent") {
+    await markTelegramDeliverySent({
+      id: row.id,
+      leaseToken,
+      providerMessageId: result.providerMessageId,
+      now: now(),
+    });
+    summary.sent += 1;
+    return summary;
+  }
+
+  if (result.kind === "retryable" && row.attempt_count < MAX_ATTEMPTS) {
+    const finishedAt = now();
+    await markTelegramDeliveryRetryable({
+      id: row.id,
+      leaseToken,
+      errorCode: result.errorCode,
+      httpStatus: result.httpStatus,
+      retryAt: finishedAt + (result.retryAfterMs ?? retryDelayMs(row.attempt_count)),
+      now: finishedAt,
+    });
+    summary.retryable += 1;
+    return summary;
+  }
+
+  await markTelegramDeliveryDead({
+    id: row.id,
+    leaseToken,
+    errorCode: result.kind === "retryable" ? "attempts_exhausted" : result.errorCode,
+    httpStatus: result.httpStatus,
+    now: now(),
+  });
+  summary.dead += 1;
+  return summary;
+}
+
 export async function dispatchTelegramDeliveriesForUpdate({
   botId,
   updateId,
@@ -144,55 +222,10 @@ export async function dispatchTelegramDeliveriesForUpdate({
     const claimedAt = now();
     const row = await claimTelegramDelivery({ botId, updateId, now: claimedAt });
     if (!row) break;
-    const leaseToken = row.lease_token;
-    if (!leaseToken) throw new Error("Claimed Telegram delivery has no lease token");
-
-    if (!token) {
-      await markTelegramDeliveryRetryable({
-        id: row.id,
-        leaseToken,
-        errorCode: "missing_token",
-        retryAt: claimedAt + retryDelayMs(row.attempt_count),
-        now: claimedAt,
-      });
-      summary.retryable += 1;
-      continue;
-    }
-
-    const result = await deliver(row, token, fetchImpl);
-    if (result.kind === "sent") {
-      await markTelegramDeliverySent({
-        id: row.id,
-        leaseToken,
-        providerMessageId: result.providerMessageId,
-        now: now(),
-      });
-      summary.sent += 1;
-      continue;
-    }
-
-    if (result.kind === "retryable" && row.attempt_count < MAX_ATTEMPTS) {
-      const finishedAt = now();
-      await markTelegramDeliveryRetryable({
-        id: row.id,
-        leaseToken,
-        errorCode: result.errorCode,
-        httpStatus: result.httpStatus,
-        retryAt: finishedAt + (result.retryAfterMs ?? retryDelayMs(row.attempt_count)),
-        now: finishedAt,
-      });
-      summary.retryable += 1;
-      continue;
-    }
-
-    await markTelegramDeliveryDead({
-      id: row.id,
-      leaseToken,
-      errorCode: result.kind === "retryable" ? "attempts_exhausted" : result.errorCode,
-      httpStatus: result.httpStatus,
-      now: now(),
-    });
-    summary.dead += 1;
+    const result = await dispatchClaimedTelegramDelivery({ row, now, token, fetchImpl });
+    summary.sent += result.sent;
+    summary.retryable += result.retryable;
+    summary.dead += result.dead;
   }
 
   return summary;

@@ -128,3 +128,31 @@ ESLint aplica reglas de produccion sin excepciones globales. En tests permite
 visible mientras se tipan los fixtures. El reproductor forense CommonJS de la
 auditoria tiene una excepcion limitada a sus dos reglas incompatibles con CJS.
 Los errores de implementacion siguen bloqueando el control.
+
+## Evidencia PR-07 / H04c (19/09/2026)
+
+H04c reemplaza la ejecución implícita del journal histórico por un manifiesto
+canónico local, ledger con checksums, pasos transaccionales y verificación de
+drift mediante objetos críticos más huella del DDL completo. Una DB vacía se
+reconstruye en nueve pasos; una DB no vacía sin ledger se clasifica y rechaza
+sin adopción. El preflight bloquea duplicados recurrentes antes de `0010`.
+
+El worker de outbox procesa como máximo cinco filas por bot, comparte la
+clasificación del dispatcher, usa leases cercados, timeout limitado por deadline
+y purga como máximo cien filas terminales vencidas del mismo bot. El cron exige
+secreto, credenciales y las tres flags; sus defaults permanecen apagados.
+
+Puertas locales finales en Node 22:
+
+- harness: 14/14;
+- Jest: 84 suites y 689 tests;
+- TypeScript: aprobado;
+- ESLint: 0 errores y 63 warnings legacy;
+- build Next.js con webpack: aprobado;
+- `git diff --check`: aprobado.
+
+El build Turbopack no acepta el symlink de `node_modules` usado por este
+worktree temporal; la verificación equivalente con webpack compiló y generó
+las 36 páginas estáticas. No se ejecutaron E2E, migraciones remotas, adopción,
+push, deploy ni cambios de secretos/webhook. Staging y producción continúan
+bloqueados por el runbook de adopción y por las flags en `false`.

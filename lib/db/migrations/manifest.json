@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "ledgerTable": "hermes_schema_migrations",
+  "migrations": [
+    {
+      "id": "0000-base",
+      "files": ["0000_nervous_bloodstorm.sql"]
+    },
+    {
+      "id": "0010-receipt-imports",
+      "files": ["0001_receipt_imports.sql"]
+    },
+    {
+      "id": "0020-groups-auth",
+      "files": ["canonical_0002_groups_auth.sql"]
+    },
+    {
+      "id": "0030-splits",
+      "files": ["0006_splits_module.sql"]
+    },
+    {
+      "id": "0040-split-constraints",
+      "files": ["0007_splits_constraints.sql"]
+    },
+    {
+      "id": "0050-recurring",
+      "files": ["0008_recurring_expenses.sql"]
+    },
+    {
+      "id": "0060-legacy-schema-reconciliation",
+      "files": ["canonical_0007_legacy_schema_reconciliation.sql"]
+    },
+    {
+      "id": "0070-telegram-inbox",
+      "files": ["0009_telegram_update_inbox.sql"]
+    },
+    {
+      "id": "0080-telegram-operations-outbox",
+      "files": ["0010_telegram_operations_outbox.sql"],
+      "preflight": ["recurring-duplicates"]
+    }
+  ],
+  "excluded": [
+    {
+      "file": "0001_violet_marvel_zombies.sql",
+      "reason": "Overlaps receipt imports and historical 0002-0005 changes; replaced by canonical_0002_groups_auth.sql."
+    },
+    {
+      "file": "0002_categories_default_hard_limit.sql",
+      "reason": "Duplicated by both 0001_violet and the canonical groups/auth migration."
+    },
+    {
+      "file": "0003_multiuser_groups.sql",
+      "reason": "Overlaps the canonical groups/auth migration and is unsafe after 0001_violet."
+    },
+    {
+      "file": "0004_onboarding.sql",
+      "reason": "Duplicated by the canonical groups/auth migration."
+    },
+    {
+      "file": "0005_username.sql",
+      "reason": "Duplicated by the canonical groups/auth migration."
+    }
+  ]
+}
