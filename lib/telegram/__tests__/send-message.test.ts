@@ -70,4 +70,17 @@ describe("sendTelegramMessage", () => {
       })
     );
   });
+
+  it("keeps direct webhook replies enabled when proactive notifications are disabled", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "test-token";
+    process.env.NOTIFICATIONS_ENABLED = "false";
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, result: {} }),
+    }) as jest.Mock;
+
+    await expect(sendTelegramMessage("123456", "direct reply")).resolves.toBeUndefined();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
 });

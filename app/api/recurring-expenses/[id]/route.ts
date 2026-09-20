@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import {
   getRecurringExpenseById,
   updateRecurringExpense,
@@ -30,7 +31,7 @@ interface RouteParams {
  */
 export async function GET(req: NextRequest, { params }: RouteParams) {
   try {
-    const cookie = req.cookies.get("hermes_session")?.value;
+    const cookie = req.cookies.get(getSessionCookieName())?.value;
     const userId = cookie ? await verifySession(cookie) : null;
     
     if (!userId) {
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
  */
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
   try {
-    const cookie = req.cookies.get("hermes_session")?.value;
+    const cookie = req.cookies.get(getSessionCookieName())?.value;
     const userId = cookie ? await verifySession(cookie) : null;
     
     if (!userId) {
@@ -117,7 +118,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
  */
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
   try {
-    const cookie = req.cookies.get("hermes_session")?.value;
+    const cookie = req.cookies.get(getSessionCookieName())?.value;
     const userId = cookie ? await verifySession(cookie) : null;
     
     if (!userId) {
@@ -156,7 +157,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
  */
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
-    const cookie = req.cookies.get("hermes_session")?.value;
+    const cookie = req.cookies.get(getSessionCookieName())?.value;
     const userId = cookie ? await verifySession(cookie) : null;
     
     if (!userId) {

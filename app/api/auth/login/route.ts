@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signSession } from "@/lib/utils/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import { db } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -27,7 +28,7 @@ function checkRateLimit(ip: string): { limited: boolean; retryAfter: number } {
 async function createSessionResponse(userId: string): Promise<NextResponse> {
   const sessionValue = await signSession(userId);
   const res = NextResponse.json({ ok: true });
-  res.cookies.set("hermes_session", sessionValue, {
+  res.cookies.set(getSessionCookieName(), sessionValue, {
     httpOnly: true,
     sameSite: "strict",
     secure: process.env.NODE_ENV === "production",

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifySession } from "@/lib/auth/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import { db } from "@/lib/db/client";
 import { split_payments, split_session_members, split_sessions, users } from "@/lib/db/schema";
 import { notifySplitPaymentReceived } from "@/lib/notifications/telegram";
@@ -24,7 +25,7 @@ function getDisplayName(person: { username?: string | null; name?: string | null
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const cookie = req.cookies.get("hermes_session")?.value;
+  const cookie = req.cookies.get(getSessionCookieName())?.value;
   const userId = cookie ? await verifySession(cookie) : null;
 
   if (!userId) {

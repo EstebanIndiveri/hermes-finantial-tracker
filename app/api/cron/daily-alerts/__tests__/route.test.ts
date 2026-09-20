@@ -69,6 +69,46 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(db.select).toHaveBeenCalled();
   });
 
+  it("skips disabled notifications before database or provider work", async () => {
+    process.env = {
+      ...originalEnv,
+      CRON_SECRET: "cron-secret",
+      NOTIFICATIONS_ENABLED: "false",
+    };
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      skipped: true,
+      reason: "notifications_disabled",
+      results: [],
+    });
+    expect(db.select).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on an invalid notifications setting before database work", async () => {
+    process.env = {
+      ...originalEnv,
+      CRON_SECRET: "cron-secret",
+      NOTIFICATIONS_ENABLED: "False",
+    };
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Notifications unavailable" });
+    expect(db.select).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
+  });
+
   function setupDailyProcessing(users: Array<Record<string, unknown>>) {
     process.env = { ...originalEnv, CRON_SECRET: "cron-secret", TELEGRAM_CHAT_ID: "global-chat" };
     (db.select as jest.Mock)

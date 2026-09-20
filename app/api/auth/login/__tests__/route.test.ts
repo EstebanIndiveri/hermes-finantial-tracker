@@ -73,6 +73,19 @@ describe("POST /api/auth/login", () => {
     expect(res.headers.get("Set-Cookie")).toContain("hermes_session");
   });
 
+  it("sets the configured session cookie name", async () => {
+    const hash = await bcrypt.hash("correctpass", 10);
+    mockUserResult({ id: "user-1", name: "Alice", username: "alice", personal_token_hash: hash });
+    process.env.SESSION_COOKIE_NAME = "hermes_staging_session";
+
+    try {
+      const res = await POST(makeReq({ username: "alice", password: "correctpass" }));
+      expect(res.headers.get("Set-Cookie")).toContain("hermes_staging_session");
+    } finally {
+      delete process.env.SESSION_COOKIE_NAME;
+    }
+  });
+
   it("lookup is case-insensitive for username", async () => {
     const hash = await bcrypt.hash("mypass", 10);
     mockUserResult({ id: "user-1", name: "Alice", username: "alice", personal_token_hash: hash });

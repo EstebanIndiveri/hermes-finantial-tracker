@@ -53,4 +53,56 @@ describe("GET /api/cron/recurring authorization", () => {
     expect(createMonthlyExecutions).toHaveBeenCalledWith("user-1");
     expect(getPendingExecutions).toHaveBeenCalledWith("user-1");
   });
+
+  it("continues recurring creation but suppresses proactive delivery when disabled", async () => {
+    process.env = {
+      ...originalEnv,
+      CRON_SECRET: "cron-secret",
+      NOTIFICATIONS_ENABLED: "false",
+    };
+    const from = jest.fn().mockResolvedValue([
+      { id: "user-1", telegramUserId: "telegram-1" },
+    ]);
+    (db.select as jest.Mock).mockReturnValue({ from });
+    (createMonthlyExecutions as jest.Mock).mockResolvedValue(1);
+    (getPendingExecutions as jest.Mock).mockResolvedValue([
+      {
+        amountArs: 1000,
+        recurringExpense: { name: "Internet", amountArs: 1000, category: null },
+      },
+    ]);
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/recurring", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      success: true,
+      usersProcessed: 1,
+      executionsCreated: 1,
+      notificationsSent: 0,
+    });
+    expect(createMonthlyExecutions).toHaveBeenCalledWith("user-1");
+    expect(getPendingExecutions).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
+  });
+
+  it("fails closed before recurring writes for an invalid notifications setting", async () => {
+    process.env = {
+      ...originalEnv,
+      CRON_SECRET: "cron-secret",
+      NOTIFICATIONS_ENABLED: "0",
+    };
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/recurring?userId=user-1", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Notifications unavailable" });
+    expect(createMonthlyExecutions).not.toHaveBeenCalled();
+    expect(getPendingExecutions).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
+  });
 });

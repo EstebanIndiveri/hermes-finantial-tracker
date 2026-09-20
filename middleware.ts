@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/utils/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import { getPersonalGroup, getGroupMembership } from "@/lib/groups/permissions";
 import { db } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
@@ -19,7 +20,7 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next();
 
-  const cookie = req.cookies.get("hermes_session")?.value;
+  const cookie = req.cookies.get(getSessionCookieName())?.value;
   const userId = cookie ? await verifySession(cookie) : null;
   if (!userId) {
     if (pathname.startsWith("/api/")) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/utils/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import {
   addPaymentInfo,
   deletePaymentInfo,
@@ -10,7 +11,7 @@ import {
 const validPaymentMethods: PaymentMethod[] = ["cbu", "alias", "efectivo"];
 
 async function getAuthenticatedUserId(req: NextRequest): Promise<string | null> {
-  const cookie = req.cookies.get("hermes_session")?.value;
+  const cookie = req.cookies.get(getSessionCookieName())?.value;
   return cookie ? verifySession(cookie) : null;
 }
 

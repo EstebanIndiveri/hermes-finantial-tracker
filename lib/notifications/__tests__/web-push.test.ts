@@ -170,6 +170,25 @@ describe("web push notifications", () => {
     expect(mockWebPush.sendNotification).not.toHaveBeenCalled();
   });
 
+  it.each(["false", "disabled"])(
+    "fails closed before subscription reads for NOTIFICATIONS_ENABLED=%j",
+    async (value) => {
+      process.env.NOTIFICATIONS_ENABLED = value;
+      mockDb.select.mockReturnValue({
+        from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([]) })),
+      });
+
+      const { sendPushToUser } = await import("../web-push");
+
+      await expect(
+        sendPushToUser("user-1", { title: "Hermes", body: "Nueva notificación" }),
+      ).resolves.toBeUndefined();
+
+      expect(mockDb.select).not.toHaveBeenCalled();
+      expect(mockWebPush.sendNotification).not.toHaveBeenCalled();
+    },
+  );
+
   it("removes a subscription by endpoint", async () => {
     const deleteWhere = jest.fn().mockResolvedValue(undefined);
     mockDb.delete.mockReturnValue({

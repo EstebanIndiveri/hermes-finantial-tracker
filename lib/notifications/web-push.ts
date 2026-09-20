@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import { pushSubscriptions } from "@/lib/db/schema";
+import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 
 const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
@@ -56,6 +57,8 @@ export async function saveSubscription(
 }
 
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
+  if (getNotificationsRuntimeMode() !== "enabled") return;
+
   if (!vapidPublicKey || !vapidPrivateKey) {
     console.warn("VAPID keys not configured, skipping web push");
     return;

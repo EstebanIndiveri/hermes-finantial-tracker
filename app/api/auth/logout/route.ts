@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const res = NextResponse.redirect(new URL("/login", req.url), { status: 303 });
-  res.cookies.set("hermes_session", "", {
+  res.cookies.set(getSessionCookieName(), "", {
     maxAge: 0,
     path: "/",
     httpOnly: true,

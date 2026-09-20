@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRecurringStats } from "@/lib/db/recurring-queries";
 import { verifySession } from "@/lib/auth/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 
 /**
  * GET /api/recurring-expenses/stats
@@ -8,7 +9,7 @@ import { verifySession } from "@/lib/auth/session";
  */
 export async function GET(req: NextRequest) {
   try {
-    const cookie = req.cookies.get("hermes_session")?.value;
+    const cookie = req.cookies.get(getSessionCookieName())?.value;
     const userId = cookie ? await verifySession(cookie) : null;
     
     if (!userId) {

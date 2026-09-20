@@ -4,6 +4,7 @@ import { users } from "@/lib/db/schema";
 import { createMonthlyExecutions, getPendingExecutions } from "@/lib/db/recurring-queries";
 import { sendTelegramMessage, buildPersonalKeyboard } from "@/lib/telegram/send-message";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
+import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 
 /**
  * GET /api/cron/recurring
@@ -15,6 +16,11 @@ import { isCronRequestAuthorized } from "@/lib/auth/cron";
 export async function GET(req: NextRequest) {
   if (!isCronRequestAuthorized(req.headers.get("authorization"), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const notificationsMode = getNotificationsRuntimeMode();
+  if (notificationsMode === "invalid") {
+    return NextResponse.json({ error: "Notifications unavailable" }, { status: 503 });
   }
 
   try {
@@ -45,7 +51,7 @@ export async function GET(req: NextRequest) {
         const created = await createMonthlyExecutions(user.id);
         totalCreated += created;
 
-        if (created > 0 && user.telegramUserId) {
+        if (notificationsMode === "enabled" && created > 0 && user.telegramUserId) {
           const pending = await getPendingExecutions(user.id);
           
           if (pending.length > 0) {

@@ -2,6 +2,7 @@ import { db } from "@/lib/db/client";
 import { group_members, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getDefaultPaymentInfo } from "@/lib/reimbursements/payment-info";
+import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 
 export interface TelegramNotificationMessage {
   text: string;
@@ -50,6 +51,8 @@ export async function sendTelegramMessage(
   text: string,
   options?: Record<string, unknown>,
 ): Promise<void> {
+  if (getNotificationsRuntimeMode() !== "enabled") return;
+
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
   if (!botToken) {

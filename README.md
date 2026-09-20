@@ -62,6 +62,10 @@ cp .env.example .env
 | `TELEGRAM_SECRET_TOKEN` | Token secreto para webhook | `cualquier_string_random` |
 | `GROQ_API_KEY` | API key de Groq (opcional) | `gsk_...` |
 | `GROQ_MODEL` | Modelo de Groq a usar | `llama3-8b-8192` |
+| `AI_MODE` | `live` por defecto; `stub` bloquea llamadas a Groq. Un valor presente desconocido falla cerrado. | `live` |
+| `OCR_MODE` | `live` por defecto; `stub` bloquea llamadas a OCR.Space. Un valor presente desconocido falla cerrado. | `live` |
+| `NOTIFICATIONS_ENABLED` | `true` por defecto; `false` bloquea envíos proactivos de Telegram y Web Push, pero no respuestas directas a un webhook autorizado. Un valor desconocido falla cerrado. | `true` |
+| `SESSION_COOKIE_NAME` | Nombre de cookie de sesión; si falta conserva `hermes_session`. Debe ser distinto en staging. | `hermes_session` |
 | `CRON_SECRET` | Secret para proteger endpoint de cron | `otro_string_random` |
 | `WEB_ACCESS_TOKEN` | Token para acceso web | `token_seguro_random` |
 | `SESSION_SECRET` | Secret para sesiones web | `secret_para_sessions` |
@@ -118,6 +122,10 @@ En el dashboard de Vercel, ve a **Settings → Environment Variables** y agrega 
 - `TELEGRAM_SECRET_TOKEN`
 - `GROQ_API_KEY` (opcional)
 - `GROQ_MODEL`
+- `AI_MODE` (`live` en legacy; `stub` para staging aislado)
+- `OCR_MODE` (`live` en legacy; `stub` para staging aislado)
+- `NOTIFICATIONS_ENABLED` (`true` en legacy; `false` para staging aislado; no bloquea respuestas directas del webhook)
+- `SESSION_COOKIE_NAME` (`hermes_session` en legacy; un nombre exclusivo en staging)
 - `CRON_SECRET`
 - `WEB_ACCESS_TOKEN`
 - `SESSION_SECRET`
@@ -137,6 +145,15 @@ Para verificar que funciona:
 npm run build  # verificar que el build funciona localmente
 git push origin main  # Vercel despliega automáticamente
 ```
+
+No usar ese flujo para staging: primero completar el runbook H04d y mantener
+aislados proyecto, DB, bot, webhook, secretos y cookie. La configuración de
+runtime de una beta aislada es `AI_MODE=stub`, `OCR_MODE=stub`,
+`NOTIFICATIONS_ENABLED=false` y
+`SESSION_COOKIE_NAME=hermes_beta_session`. Los valores `stub` impiden las
+llamadas a proveedores; `NOTIFICATIONS_ENABLED=false` solo detiene entregas
+proactivas, no las respuestas directas solicitadas mediante un webhook
+autorizado.
 
 ## 🤖 Configuración del Bot de Telegram
 

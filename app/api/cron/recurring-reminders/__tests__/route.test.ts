@@ -81,6 +81,41 @@ describe("GET /api/cron/recurring-reminders", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it("skips disabled notifications before recurring reads or Telegram delivery", async () => {
+    process.env.NOTIFICATIONS_ENABLED = "false";
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/recurring-reminders", {
+      headers: { authorization: "Bearer test-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      success: true,
+      skipped: true,
+      reason: "notifications_disabled",
+      upcoming: 0,
+      overdue: 0,
+      notificationsSent: 0,
+    });
+    expect(getUpcomingExecutions).not.toHaveBeenCalled();
+    expect(getOverdueExecutions).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on an invalid notifications setting before recurring reads", async () => {
+    process.env.NOTIFICATIONS_ENABLED = "disabled";
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/recurring-reminders", {
+      headers: { authorization: "Bearer test-secret" },
+    }));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Notifications unavailable" });
+    expect(getUpcomingExecutions).not.toHaveBeenCalled();
+    expect(getOverdueExecutions).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it("sends upcoming and overdue telegram notifications and reports sent count", async () => {
     Date.now = jest.fn(() => new Date("2026-08-23T12:00:00.000Z").getTime());
     (getUpcomingExecutions as jest.Mock).mockResolvedValue([

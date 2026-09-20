@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { inArray } from "drizzle-orm";
 import { verifySession } from "@/lib/auth/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import { db } from "@/lib/db/client";
 import { temp_users, users } from "@/lib/db/schema";
 import { calculateGlobalBalances } from "@/lib/splits/global-balances";
@@ -14,7 +15,7 @@ type SessionPayload = { user: { id: string } };
 
 async function getSession(): Promise<SessionPayload | null> {
   const cookieStore = await import("next/headers").then(({ cookies }) => cookies());
-  const token = cookieStore.get("hermes_session")?.value;
+  const token = cookieStore.get(getSessionCookieName())?.value;
   const userId = token ? await verifySession(token) : null;
 
   if (!userId) {

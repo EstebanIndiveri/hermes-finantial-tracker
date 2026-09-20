@@ -23,6 +23,17 @@ describe("POST /api/auth/logout", () => {
     expect(cookie?.sameSite).toBe("strict");
   });
 
+  test("clears the configured session cookie", async () => {
+    process.env.SESSION_COOKIE_NAME = "hermes_staging_session";
+
+    try {
+      const res = await POST(makeReq());
+      expect(res.cookies.get("hermes_staging_session")?.value).toBe("");
+    } finally {
+      delete process.env.SESSION_COOKIE_NAME;
+    }
+  });
+
   test("clears active_group_id cookie", async () => {
     const res = await POST(makeReq());
     const cookie = res.cookies.get("active_group_id");

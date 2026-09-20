@@ -9,6 +9,7 @@ import { buildDailyAlert } from "@/lib/telegram/alerts";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
+import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 
 /**
  * Daily cron job for proactive Telegram alerts.
@@ -18,6 +19,19 @@ import { isCronRequestAuthorized } from "@/lib/auth/cron";
 export async function GET(req: NextRequest) {
   if (!isCronRequestAuthorized(req.headers.get("authorization"), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const notificationsMode = getNotificationsRuntimeMode();
+  if (notificationsMode === "invalid") {
+    return NextResponse.json({ error: "Notifications unavailable" }, { status: 503 });
+  }
+  if (notificationsMode === "disabled") {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: "notifications_disabled",
+      results: [],
+    });
   }
 
   try {

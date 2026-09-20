@@ -87,6 +87,32 @@ it("skips a disabled worker without resolving a bot or touching worker code", as
   expect(botIdMock).not.toHaveBeenCalled();
 });
 
+it("lets the notifications kill switch override an enabled worker", async () => {
+  process.env = { ...readyEnv(), NOTIFICATIONS_ENABLED: "false" };
+
+  const response = await GET(request());
+
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toEqual({
+    ok: true,
+    skipped: true,
+    reason: "notifications_disabled",
+  });
+  expect(workerMock).not.toHaveBeenCalled();
+  expect(botIdMock).not.toHaveBeenCalled();
+});
+
+it("fails closed on an invalid notifications setting before worker prerequisites", async () => {
+  process.env = { ...readyEnv(), NOTIFICATIONS_ENABLED: "off" };
+
+  const response = await GET(request());
+
+  expect(response.status).toBe(503);
+  await expect(response.json()).resolves.toEqual({ error: "Notifications unavailable" });
+  expect(workerMock).not.toHaveBeenCalled();
+  expect(botIdMock).not.toHaveBeenCalled();
+});
+
 it("runs the worker with the resolved bot and returns counters only", async () => {
   const response = await GET(request());
 

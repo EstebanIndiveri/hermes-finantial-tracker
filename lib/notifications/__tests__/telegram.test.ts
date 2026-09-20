@@ -51,6 +51,18 @@ describe("notifications telegram", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it.each(["false", "disabled"])(
+    "fails closed before Telegram delivery for NOTIFICATIONS_ENABLED=%j",
+    async (value) => {
+      process.env.TELEGRAM_BOT_TOKEN = "bot-token";
+      process.env.NOTIFICATIONS_ENABLED = value;
+
+      await expect(sendTelegramMessage("123456", "mensaje")).resolves.toBeUndefined();
+
+      expect(global.fetch).not.toHaveBeenCalled();
+    },
+  );
+
   it("sends telegram messages with html parse mode and custom options", async () => {
     process.env.TELEGRAM_BOT_TOKEN = "bot-token";
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import { getPaymentHistoryForUser } from "@/lib/splits/payment-history";
 
 function isValidDate(value: string): boolean {
@@ -7,7 +8,7 @@ function isValidDate(value: string): boolean {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const cookie = req.cookies.get("hermes_session")?.value;
+  const cookie = req.cookies.get(getSessionCookieName())?.value;
   const userId = cookie ? await verifySession(cookie) : null;
 
   if (!userId) {

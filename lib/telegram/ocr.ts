@@ -7,6 +7,19 @@ export interface OcrResult {
   isReliable: boolean;
 }
 
+type OcrRuntimeMode = "live" | "stub" | "invalid";
+
+function getOcrRuntimeMode(): OcrRuntimeMode {
+  const mode = process.env.OCR_MODE;
+  if (mode === undefined || mode === "live") return "live";
+  if (mode === "stub") return "stub";
+  return "invalid";
+}
+
+function getDisabledOcrResult(): OcrResult {
+  return { text: "", isReliable: false };
+}
+
 /** Resolves the download URL for a Telegram file by file_id */
 async function getTelegramFileUrl(fileId: string): Promise<string> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -42,6 +55,8 @@ export async function runOcrOnBuffer(
   fileBuffer: Buffer,
   mimeType = "image/jpeg"
 ): Promise<OcrResult | null> {
+  if (getOcrRuntimeMode() !== "live") return getDisabledOcrResult();
+
   const apiKey = process.env.OCR_SPACE_API_KEY;
   if (!apiKey) {
     console.warn("OCR_SPACE_API_KEY not set — OCR skipped");
@@ -104,6 +119,8 @@ export async function runOcrOnBuffer(
 export async function ocrTelegramPhoto(
   photoArray: Array<{ file_id: string; file_size?: number; width: number; height: number }>
 ): Promise<OcrResult | null> {
+  if (getOcrRuntimeMode() !== "live") return getDisabledOcrResult();
+
   const largest = photoArray[photoArray.length - 1];
   if (!largest) return null;
 
@@ -122,6 +139,8 @@ export async function ocrTelegramPhoto(
 export async function ocrTelegramDocument(
   document: { file_id: string; mime_type?: string }
 ): Promise<OcrResult | null> {
+  if (getOcrRuntimeMode() !== "live") return getDisabledOcrResult();
+
   const mime = document.mime_type ?? "image/jpeg";
   if (!mime.startsWith("image/")) return null;
 

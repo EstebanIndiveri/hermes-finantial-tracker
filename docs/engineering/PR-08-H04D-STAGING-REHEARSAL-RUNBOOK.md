@@ -15,6 +15,26 @@ comercios, texto Telegram/OCR, payloads, tokens ni el salt de evidencia.
 
 ## 1. Preparar identidades sin secretos
 
+Antes de cualquier smoke remoto, configurar en el proyecto beta —nunca en
+legacy— los controles de runtime siguientes. Sus valores legacy compatibles son
+`AI_MODE=live`, `OCR_MODE=live`, `NOTIFICATIONS_ENABLED=true` y
+`SESSION_COOKIE_NAME=hermes_session`; omitirlos conserva esos defaults. Para
+una beta aislada deben ser exactamente:
+
+```text
+AI_MODE=stub
+OCR_MODE=stub
+NOTIFICATIONS_ENABLED=false
+SESSION_COOKIE_NAME=hermes_beta_session
+```
+
+`stub` evita contactar Groq y OCR.Space. `NOTIFICATIONS_ENABLED=false` detiene
+solamente entregas proactivas de Telegram y Web Push; una respuesta directa a
+un mensaje recibido en un webhook autorizado no queda bloqueada. Un valor
+presente distinto de los admitidos falla cerrado antes de contactar el proveedor
+o aceptar una configuración ambigua. Estos controles no sustituyen el
+aislamiento de DB, bot, webhook, secretos ni flags inbox/outbox/worker.
+
 Copiar fuera del control de versiones:
 
 ```bash

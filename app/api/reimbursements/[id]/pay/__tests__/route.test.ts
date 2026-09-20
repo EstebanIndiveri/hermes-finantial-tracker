@@ -5,6 +5,15 @@ jest.mock("@/lib/auth/session", () => ({
   verifySession: jest.fn(),
 }));
 
+jest.mock("@/lib/db/client", () => ({
+  db: {
+    select: jest.fn(),
+    query: {
+      group_members: { findFirst: jest.fn() },
+    },
+  },
+}));
+
 jest.mock("@/lib/reimbursements/requests", () => ({
   getReimbursementById: jest.fn(),
   markReimbursementAsPaidWithNotifications: jest.fn(),

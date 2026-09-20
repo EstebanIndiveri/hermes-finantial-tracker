@@ -92,6 +92,23 @@ describe("middleware", () => {
     expect(res.status).toBe(200);
   });
 
+  test("uses the configured session cookie name", async () => {
+    const sessionValue = await signSession("user-staging");
+    process.env.SESSION_COOKIE_NAME = "hermes_staging_session";
+
+    try {
+      const req = new NextRequest("http://localhost:3000/dashboard", {
+        headers: { cookie: `hermes_staging_session=${sessionValue}` },
+      });
+      const res = await middleware(req);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-user-id")).toBe("user-staging");
+    } finally {
+      delete process.env.SESSION_COOKIE_NAME;
+    }
+  });
+
   test("sets x-user-id header when session is valid", async () => {
     const sessionValue = await signSession("user-abc");
     const req = new NextRequest("http://localhost:3000/dashboard", {

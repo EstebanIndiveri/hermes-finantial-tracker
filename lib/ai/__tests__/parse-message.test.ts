@@ -27,6 +27,22 @@ describe("parseFinancialMessage", () => {
     });
   });
 
+  it.each(["stub", "invalid-mode"])("does not call Groq text completion when AI_MODE=%s", async (mode) => {
+    process.env.GROQ_API_KEY = "test-key";
+    process.env.AI_MODE = mode;
+    global.fetch = jest.fn();
+
+    const result = await parseFinancialMessage("gasté 5000 en supermercado");
+
+    expect(result).toEqual({
+      intent: "unknown",
+      confidence: 0,
+      needs_confirmation: false,
+      requires_reimbursement: false,
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it("should return unknown intent with confidence 0 when Groq returns invalid JSON", async () => {
     process.env.GROQ_API_KEY = "test-key";
     process.env.GROQ_MODEL = "llama3-8b-8192";

@@ -103,4 +103,22 @@ describe("POST /api/auth/register", () => {
     expect(setCookie).toContain("active_group_id=");
     expect(setCookie).toContain("hermes_session");
   });
+
+  it("sets the configured session cookie name", async () => {
+    jest.mocked(db.query.group_invitations.findFirst).mockResolvedValue(validInvite as any);
+    jest.mocked(db.query.users.findFirst).mockResolvedValue(undefined);
+    process.env.SESSION_COOKIE_NAME = "hermes_staging_session";
+
+    try {
+      const res = await POST(makeReq({
+        name: "Alice",
+        username: "alice",
+        password: "validpass123",
+        invite_token: "valid-invite-token",
+      }));
+      expect(res.headers.get("Set-Cookie")).toContain("hermes_staging_session");
+    } finally {
+      delete process.env.SESSION_COOKIE_NAME;
+    }
+  });
 });

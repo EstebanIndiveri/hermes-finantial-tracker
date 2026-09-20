@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUpcomingExecutions, getOverdueExecutions } from "@/lib/db/recurring-queries";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
+import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 
 async function sendTelegramMessage(chatId: string, text: string): Promise<boolean> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -28,6 +29,21 @@ async function sendTelegramMessage(chatId: string, text: string): Promise<boolea
 export async function GET(request: Request) {
   if (!isCronRequestAuthorized(request.headers.get("authorization"), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const notificationsMode = getNotificationsRuntimeMode();
+  if (notificationsMode === "invalid") {
+    return NextResponse.json({ error: "Notifications unavailable" }, { status: 503 });
+  }
+  if (notificationsMode === "disabled") {
+    return NextResponse.json({
+      success: true,
+      skipped: true,
+      reason: "notifications_disabled",
+      upcoming: 0,
+      overdue: 0,
+      notificationsSent: 0,
+    });
   }
 
   try {

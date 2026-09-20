@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import { removeSubscription, saveSubscription } from "@/lib/notifications/web-push";
 
 function getSessionCookie(req: NextRequest): string | null {
-  return req.cookies.get("hermes_session")?.value ?? null;
+  return req.cookies.get(getSessionCookieName())?.value ?? null;
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {

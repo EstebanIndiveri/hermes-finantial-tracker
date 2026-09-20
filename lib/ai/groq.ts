@@ -2,7 +2,22 @@ interface GroqClient {
   complete(systemPrompt: string, userPrompt: string): Promise<string>;
 }
 
+export type AiRuntimeMode = "live" | "stub" | "invalid";
+
+/**
+ * Missing AI_MODE retains the legacy live behavior. A supplied value must be
+ * recognized so an ambiguous staging configuration can never reach Groq.
+ */
+export function getAiRuntimeMode(): AiRuntimeMode {
+  const mode = process.env.AI_MODE;
+  if (mode === undefined || mode === "live") return "live";
+  if (mode === "stub") return "stub";
+  return "invalid";
+}
+
 export function getGroqClient(): GroqClient | null {
+  if (getAiRuntimeMode() !== "live") return null;
+
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
 
@@ -38,6 +53,8 @@ export async function transcribeAudio(
   audioBuffer: Buffer,
   filename: string = "voice.ogg"
 ): Promise<string | null> {
+  if (getAiRuntimeMode() !== "live") return null;
+
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
 

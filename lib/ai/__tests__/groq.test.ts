@@ -1,4 +1,4 @@
-import { transcribeAudio } from "../groq";
+import { getGroqClient, transcribeAudio } from "../groq";
 
 describe("Groq transcribeAudio", () => {
   const originalEnv = process.env;
@@ -18,6 +18,26 @@ describe("Groq transcribeAudio", () => {
     delete process.env.GROQ_API_KEY;
     const result = await transcribeAudio(Buffer.from("audio"));
     expect(result).toBeNull();
+  });
+
+  it.each(["stub", "not-a-mode"])("does not call Groq Whisper when AI_MODE=%s", async (mode) => {
+    process.env.GROQ_API_KEY = "test-key";
+    process.env.AI_MODE = mode;
+
+    const result = await transcribeAudio(Buffer.from("audio"));
+
+    expect(result).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not construct a text client when AI_MODE is stub or invalid", () => {
+    process.env.GROQ_API_KEY = "test-key";
+
+    process.env.AI_MODE = "stub";
+    expect(getGroqClient()).toBeNull();
+
+    process.env.AI_MODE = "ambiguous";
+    expect(getGroqClient()).toBeNull();
   });
 
   it("transcribes audio successfully", async () => {

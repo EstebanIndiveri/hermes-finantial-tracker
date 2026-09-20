@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import { confirmExecution, skipExecution } from "@/lib/db/recurring-queries";
 import { z } from "zod";
 
@@ -17,7 +18,7 @@ interface RouteParams {
  */
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
-    const cookie = req.cookies.get("hermes_session")?.value;
+    const cookie = req.cookies.get(getSessionCookieName())?.value;
     const userId = cookie ? await verifySession(cookie) : null;
     
     if (!userId) {

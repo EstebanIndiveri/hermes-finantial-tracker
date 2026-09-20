@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { resolveTelegramBotId } from "@/lib/telegram/update-inbox";
+import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 
 export const maxDuration = 60;
 
@@ -19,6 +20,14 @@ function workerPrerequisitesReady(env: NodeJS.ProcessEnv): boolean {
 export async function GET(request: Request) {
   if (!isCronRequestAuthorized(request.headers.get("authorization"), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const notificationsMode = getNotificationsRuntimeMode();
+  if (notificationsMode === "invalid") {
+    return NextResponse.json({ error: "Notifications unavailable" }, { status: 503 });
+  }
+  if (notificationsMode === "disabled") {
+    return NextResponse.json({ ok: true, skipped: true, reason: "notifications_disabled" });
   }
 
   // A legacy deployment can receive the scheduled request while the rollout

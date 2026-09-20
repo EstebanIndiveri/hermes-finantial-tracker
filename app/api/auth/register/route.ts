@@ -3,6 +3,7 @@ import { db } from "@/lib/db/client";
 import { users, group_invitations, groups, group_members } from "@/lib/db/schema";
 import { eq, and, gt, isNull } from "drizzle-orm";
 import { signSession } from "@/lib/utils/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const sessionValue = await signSession(userId);
     const res = NextResponse.json({ user_id: userId, group_id: invitation.group_id });
-    res.cookies.set("hermes_session", sessionValue, {
+    res.cookies.set(getSessionCookieName(), sessionValue, {
       httpOnly: true,
       sameSite: "strict",
       secure: process.env.NODE_ENV === "production",

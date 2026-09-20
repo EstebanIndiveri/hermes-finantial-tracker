@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import { db } from "@/lib/db/client";
 import { transactions, group_members } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -13,7 +14,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const { id } = await params;
-  const cookie = req.cookies.get("hermes_session")?.value;
+  const cookie = req.cookies.get(getSessionCookieName())?.value;
   const userId = cookie ? await verifySession(cookie) : null;
 
   if (!userId) {

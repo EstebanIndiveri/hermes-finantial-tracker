@@ -1,4 +1,4 @@
-import { getGroqClient } from "./groq";
+import { getAiRuntimeMode, getGroqClient } from "./groq";
 import { z } from "zod";
 
 const ReceiptSchema = z.object({
@@ -146,6 +146,10 @@ function extractJson(raw: string): string {
  * Returns null if all parsing methods fail.
  */
 export async function parseReceiptText(ocrText: string): Promise<ParsedReceipt | null> {
+  // Stub and invalid modes must not manufacture a transaction candidate from
+  // local fallback parsing. Callers already treat null as an untrusted result.
+  if (getAiRuntimeMode() !== "live") return null;
+
   const client = getGroqClient();
   
   // If no Groq client, try regex fallback only

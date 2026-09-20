@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/utils/session";
+import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import { db } from "@/lib/db/client";
 import { telegram_link_codes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const cookie = req.cookies.get("hermes_session")?.value;
+    const cookie = req.cookies.get(getSessionCookieName())?.value;
     const userId = cookie ? await verifySession(cookie) : null;
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
