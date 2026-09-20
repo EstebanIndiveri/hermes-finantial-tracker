@@ -1,5 +1,12 @@
 jest.mock("@/lib/db/client", () => ({
-  db: {},
+  db: {
+    select: jest.fn(),
+    transaction: jest.fn(),
+  },
+}));
+
+jest.mock("@/lib/telegram/financial-operation", () => ({
+  runTelegramOperation: jest.fn(),
 }));
 
 jest.mock("@/lib/finance/summaries", () => ({
@@ -66,7 +73,10 @@ jest.mock("@/lib/utils/dates", () => ({
 
 import { handleTelegramMessage } from "../handlers";
 import { handlePersonalCallback } from "../personal-callback-handler";
+import { db } from "@/lib/db/client";
 import { parseFinancialMessage } from "@/lib/ai/parse-message";
+import { runTelegramOperation } from "@/lib/telegram/financial-operation";
+import { createTelegramOperationContext } from "@/lib/telegram/operation-context";
 import {
   confirmExecution,
   createMonthlyExecutions,
@@ -83,6 +93,8 @@ const mockGetPendingExecutions = getPendingExecutions as jest.MockedFunction<typ
 const mockGetRecurringStats = getRecurringStats as jest.MockedFunction<typeof getRecurringStats>;
 const mockCreateMonthlyExecutions = createMonthlyExecutions as jest.MockedFunction<typeof createMonthlyExecutions>;
 const mockSkipExecution = skipExecution as jest.MockedFunction<typeof skipExecution>;
+const mockDb = db as jest.Mocked<typeof db>;
+const mockRunTelegramOperation = runTelegramOperation as jest.Mock;
 
 const pendingExecution = {
   id: "exec-1",
@@ -441,5 +453,108 @@ describe("telegram recurring messages", () => {
 
     expect(mockConfirmExecution).toHaveBeenNthCalledWith(1, "exec-1", "user-real");
     expect(mockConfirmExecution).toHaveBeenNthCalledWith(2, "exec-2", "user-real");
+  });
+
+  it("reports a partial confirm-all result instead of presenting full success", async () => {
+    mockGetPendingExecutions.mockResolvedValue([
+      pendingExecution,
+      { ...pendingExecution, id: "exec-2", recurringExpenseId: "rec-2" },
+    ]);
+    mockConfirmExecution
+      .mockResolvedValueOnce({ success: true, transactionId: "tx-1" })
+      .mockResolvedValueOnce({ success: false, error: "Esta ejecución ya fue procesada" });
+
+    const response = await handlePersonalCallback(
+      "chat-1",
+      "telegram-1",
+      "user-real",
+      "group-1",
+      "recurring:confirm_all",
+    );
+
+    expect(response.text).toBe("⚠️ 1 gasto registrado; 1 no pudo registrarse.");
+  });
+
+  it("uses child operation identities and one durable batch response for confirm-all", async () => {
+    mockGetPendingExecutions.mockResolvedValue([
+      pendingExecution,
+      { ...pendingExecution, id: "exec-2", recurringExpenseId: "rec-2" },
+    ]);
+    mockConfirmExecution.mockResolvedValue({ success: true, transactionId: "tx-1" });
+    (mockDb.select as jest.Mock).mockReturnValue({
+      from: jest.fn(() => ({
+        where: jest.fn().mockResolvedValue([
+          { operationId: "child-1" },
+          { operationId: "child-2" },
+        ]),
+      })),
+    });
+    const inserted: unknown[] = [];
+    const transaction = {
+      insert: jest.fn(() => ({
+        values: jest.fn((value: unknown) => {
+          inserted.push(value);
+          return Promise.resolve();
+        }),
+      })),
+    };
+    (mockDb.transaction as jest.Mock).mockImplementation(
+      async (work: (value: unknown) => Promise<unknown>) => work(transaction),
+    );
+    mockRunTelegramOperation.mockImplementation(async (
+      _runner: unknown,
+      input: { identity: { operationId: string }; operationKind: string },
+      writer: (value: unknown) => Promise<{ resourceType: string; resourceId: string | null; result: unknown }>,
+    ) => ({
+      kind: "committed",
+      operationId: input.identity.operationId,
+      ...(await writer(transaction)),
+      reused: false,
+    }));
+    const context = createTelegramOperationContext({
+      botId: "bot-1",
+      updateId: "update-1",
+      chatId: "chat-1",
+      callbackMessageId: 7,
+      action: "personal.callback",
+    });
+
+    const response = await handlePersonalCallback(
+      "chat-1",
+      "telegram-1",
+      "user-real",
+      "group-1",
+      "recurring:confirm_all",
+      7,
+      context,
+    );
+
+    expect(mockConfirmExecution).toHaveBeenNthCalledWith(
+      1,
+      "exec-1",
+      "user-real",
+      undefined,
+      context,
+      { enqueuePrimaryResponse: false },
+    );
+    expect(mockConfirmExecution).toHaveBeenNthCalledWith(
+      2,
+      "exec-2",
+      "user-real",
+      undefined,
+      context,
+      { enqueuePrimaryResponse: false },
+    );
+    expect(response).toEqual(expect.objectContaining({
+      text: "✅ 2 gastos registrados.",
+      deliveryOperationId: expect.stringMatching(/^tgop_v1_/),
+      deliveryKey: expect.stringMatching(/^tgdel_v1_/),
+    }));
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toEqual(expect.objectContaining({
+      action: "edit_message",
+      message_id: 7,
+      text: "✅ 2 gastos registrados.",
+    }));
   });
 });

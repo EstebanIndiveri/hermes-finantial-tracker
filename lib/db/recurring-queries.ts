@@ -5,9 +5,25 @@
 
 import { getArgentinaDate } from "@/lib/utils/dates";
 import { db } from "./client";
-import { recurringExpenses, recurringExecutions, transactions, categories, users } from "./schema";
+import {
+  recurringExpenses,
+  recurringExecutions,
+  transactions,
+  categories,
+  users,
+  telegram_delivery_outbox,
+} from "./schema";
 import { eq, and, desc, sql, gte, lte, isNull, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import type { TelegramOperationContext } from "@/lib/telegram/operation-context";
+import { createTelegramOperationIdentity } from "@/lib/telegram/operation-context";
+import {
+  runTelegramOperation,
+  type TelegramOperationTransaction,
+} from "@/lib/telegram/financial-operation";
+import { buildTelegramDeliveryRow } from "@/lib/telegram/outbox";
+
+type RecurringQueryExecutor = typeof db | TelegramOperationTransaction;
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -182,9 +198,10 @@ export async function getUserRecurringExpenses(
  * Get a single recurring expense by ID
  */
 export async function getRecurringExpenseById(
-  id: string
+  id: string,
+  executor: RecurringQueryExecutor = db,
 ): Promise<RecurringExpenseWithCategory | null> {
-  const results = await db
+  const results = await executor
     .select({
       id: recurringExpenses.id,
       userId: recurringExpenses.userId,
@@ -376,44 +393,44 @@ export async function createMonthlyExecutions(
   let created = 0;
   
   for (const recurring of activeRecurring) {
-    // Check if execution already exists for this month
-    const existingExecution = await db
-      .select({ id: recurringExecutions.id })
-      .from(recurringExecutions)
-      .where(
-        and(
-          eq(recurringExecutions.recurringExpenseId, recurring.id),
-          sql`substr(${recurringExecutions.scheduledDate}, 1, 7) = ${targetMonth}`
-        )
-      )
-      .limit(1);
-
-    if (existingExecution.length > 0) continue;
-
-    // Create scheduled date
     const day = Math.min(recurring.dayOfMonth, 28); // Safe day for all months
     const scheduledDate = `${targetMonth}-${String(day).padStart(2, "0")}`;
-
-    // Create execution
     const executionId = nanoid();
-    
+
     if (recurring.autoConfirm) {
-      // Auto-execute: create transaction immediately
-      const transactionId = await createTransactionFromRecurring(recurring, scheduledDate);
-      
-      await db.insert(recurringExecutions).values({
-        id: executionId,
-        recurringExpenseId: recurring.id,
-        transactionId,
-        scheduledDate,
-        executedAt: Date.now(),
-        status: "auto_executed",
-        amountArs: recurring.amountArs,
-        createdAt: Date.now(),
+      const inserted = await db.transaction(async (tx) => {
+        const now = Date.now();
+        const claimed = await tx.insert(recurringExecutions).values({
+          id: executionId,
+          recurringExpenseId: recurring.id,
+          transactionId: null,
+          scheduledDate,
+          executedAt: null,
+          status: "pending",
+          amountArs: recurring.amountArs,
+          createdAt: now,
+        }).onConflictDoNothing({
+          target: [recurringExecutions.recurringExpenseId, recurringExecutions.scheduledDate],
+        }).returning({ id: recurringExecutions.id });
+        if (claimed.length === 0) return false;
+
+        const transactionId = await createTransactionFromRecurring(
+          recurring,
+          scheduledDate,
+          undefined,
+          tx,
+          `recurring_execution:${executionId}`,
+        );
+        await tx.update(recurringExecutions).set({
+          transactionId,
+          executedAt: now,
+          status: "auto_executed",
+        }).where(eq(recurringExecutions.id, executionId));
+        return true;
       });
+      if (inserted) created += 1;
     } else {
-      // Pending: wait for user confirmation
-      await db.insert(recurringExecutions).values({
+      const inserted = await db.insert(recurringExecutions).values({
         id: executionId,
         recurringExpenseId: recurring.id,
         transactionId: null,
@@ -422,10 +439,11 @@ export async function createMonthlyExecutions(
         status: "pending",
         amountArs: recurring.amountArs,
         createdAt: Date.now(),
-      });
+      }).onConflictDoNothing({
+        target: [recurringExecutions.recurringExpenseId, recurringExecutions.scheduledDate],
+      }).returning({ id: recurringExecutions.id });
+      if (inserted.length === 1) created += 1;
     }
-    
-    created++;
   }
   
   return created;
@@ -561,8 +579,12 @@ export async function getMonthExecutions(
 }
 
 /** Resolve an execution only when it belongs to the actor. */
-async function getExecutionForActor(executionId: string, actorUserId: string) {
-  const results = await db
+async function getExecutionForActor(
+  executionId: string,
+  actorUserId: string,
+  executor: RecurringQueryExecutor = db,
+) {
+  const results = await executor
     .select({
       id: recurringExecutions.id,
       recurringExpenseId: recurringExecutions.recurringExpenseId,
@@ -594,41 +616,177 @@ async function getExecutionForActor(executionId: string, actorUserId: string) {
 /**
  * Confirm an execution (create transaction)
  */
+export interface ConfirmExecutionResult {
+  success: boolean;
+  transactionId?: string;
+  deliveryOperationId?: string;
+  deliveryKey?: string;
+  error?: string;
+}
+
+export interface ConfirmExecutionOptions {
+  /** A batch operation can own the single user-facing response. */
+  enqueuePrimaryResponse?: boolean;
+}
+
+class RecurringConfirmationRejected extends Error {
+  constructor(public readonly reason: "not_found" | "processed") {
+    super(reason);
+  }
+}
+
 export async function confirmExecution(
   executionId: string,
   actorUserId: string,
-  amount?: number
-): Promise<{ success: boolean; transactionId?: string; error?: string }> {
-  const execution = await getExecutionForActor(executionId, actorUserId);
-  if (!execution) {
-    return { success: false, error: "Ejecución no encontrada" };
+  amount?: number,
+  operationContext?: TelegramOperationContext,
+  options?: ConfirmExecutionOptions,
+): Promise<ConfirmExecutionResult> {
+  if (operationContext) {
+    const identity = createTelegramOperationIdentity({
+      ...operationContext,
+      action: "recurring.confirm",
+      suffix: executionId,
+    });
+    const now = Date.now();
+    let result: Awaited<ReturnType<typeof runTelegramOperation<{
+      success: boolean;
+      transactionId: string;
+    }>>>;
+    try {
+      result = await runTelegramOperation<{
+        success: boolean;
+        transactionId: string;
+      }>(
+      (work) => db.transaction(work),
+      {
+        identity,
+        botId: operationContext.botId,
+        updateId: operationContext.updateId,
+        operationKind: `recurring.confirm:${executionId}`,
+        now,
+      },
+      async (tx) => {
+        // Revalidate both ownership and pending status on the same transaction
+        // that creates the transaction and commits the operation registry row.
+        const execution = await getExecutionForActor(executionId, actorUserId, tx);
+        if (!execution) throw new RecurringConfirmationRejected("not_found");
+        if (execution.status !== "pending") throw new RecurringConfirmationRejected("processed");
+
+        const recurring = await getRecurringExpenseById(execution.recurringExpenseId, tx);
+        if (!recurring || recurring.userId !== actorUserId) {
+          throw new RecurringConfirmationRejected("not_found");
+        }
+
+        const finalAmount = amount ?? recurring.amountArs;
+        const transactionId = await createTransactionFromRecurring(
+          recurring,
+          execution.scheduledDate,
+          finalAmount,
+          tx,
+          identity.operationId,
+        );
+        const changed = await tx
+          .update(recurringExecutions)
+          .set({
+            transactionId,
+            executedAt: now,
+            status: "confirmed",
+            amountArs: finalAmount,
+          })
+          .where(and(
+            eq(recurringExecutions.id, executionId),
+            eq(recurringExecutions.status, "pending"),
+          ))
+          .returning({ id: recurringExecutions.id });
+        if (changed.length !== 1) throw new RecurringConfirmationRejected("processed");
+
+        if (options?.enqueuePrimaryResponse !== false) {
+          const text = `✅ Registrado: ${recurring.name} — $${finalAmount.toLocaleString("es-AR", { minimumFractionDigits: 0 })}`;
+          const messageId = operationContext.callbackMessageId;
+          const editing = Number.isSafeInteger(messageId);
+          await tx.insert(telegram_delivery_outbox).values(buildTelegramDeliveryRow({
+            botId: operationContext.botId,
+            updateId: operationContext.updateId,
+            operationId: identity.operationId,
+            deliveryKey: identity.deliveryKey,
+            action: editing ? "edit_message" : "send_message",
+            chatId: operationContext.chatId,
+            ...(editing ? { messageId } : {}),
+            text,
+            now,
+          }));
+        }
+
+        return {
+          resourceType: "transaction",
+          resourceId: transactionId,
+          result: { success: true, transactionId },
+        };
+      },
+      );
+    } catch (error) {
+      if (error instanceof RecurringConfirmationRejected) {
+        return error.reason === "processed"
+          ? { success: false, error: "Esta ejecución ya fue procesada" }
+          : { success: false, error: "Ejecución no encontrada" };
+      }
+      throw error;
+    }
+    if (result.kind === "busy") {
+      throw new Error("Recurring confirmation operation is already in progress");
+    }
+    return {
+      ...result.result,
+      ...(options?.enqueuePrimaryResponse === false
+        ? {}
+        : { deliveryOperationId: result.operationId, deliveryKey: identity.deliveryKey }),
+    };
   }
 
-  if (execution.status !== "pending") {
-    return { success: false, error: "Esta ejecución ya fue procesada" };
+  try {
+    return await db.transaction(async (tx) => {
+      const execution = await getExecutionForActor(executionId, actorUserId, tx);
+      if (!execution) throw new RecurringConfirmationRejected("not_found");
+      if (execution.status !== "pending") throw new RecurringConfirmationRejected("processed");
+
+      const recurring = await getRecurringExpenseById(execution.recurringExpenseId, tx);
+      if (!recurring || recurring.userId !== actorUserId) {
+        throw new RecurringConfirmationRejected("not_found");
+      }
+
+      const finalAmount = amount ?? recurring.amountArs;
+      const transactionId = await createTransactionFromRecurring(
+        recurring,
+        execution.scheduledDate,
+        finalAmount,
+        tx,
+      );
+      const changed = await tx
+        .update(recurringExecutions)
+        .set({
+          transactionId,
+          executedAt: Date.now(),
+          status: "confirmed",
+          amountArs: finalAmount,
+        })
+        .where(and(
+          eq(recurringExecutions.id, executionId),
+          eq(recurringExecutions.status, "pending"),
+        ))
+        .returning({ id: recurringExecutions.id });
+      if (changed.length !== 1) throw new RecurringConfirmationRejected("processed");
+
+      return { success: true, transactionId };
+    });
+  } catch (error) {
+    if (error instanceof RecurringConfirmationRejected) {
+      return error.reason === "processed"
+        ? { success: false, error: "Esta ejecución ya fue procesada" }
+        : { success: false, error: "Ejecución no encontrada" };
+    }
+    throw error;
   }
-
-  // Get recurring expense details
-  const recurring = await getRecurringExpenseById(execution.recurringExpenseId);
-  if (!recurring || recurring.userId !== actorUserId) {
-    return { success: false, error: "Ejecución no encontrada" };
-  }
-
-  const finalAmount = amount ?? recurring.amountArs;
-  const transactionId = await createTransactionFromRecurring(recurring, execution.scheduledDate, finalAmount);
-
-  // Update execution
-  await db
-    .update(recurringExecutions)
-    .set({
-      transactionId,
-      executedAt: Date.now(),
-      status: "confirmed",
-      amountArs: finalAmount,
-    })
-    .where(eq(recurringExecutions.id, executionId));
-
-  return { success: true, transactionId };
 }
 
 /**
@@ -664,7 +822,9 @@ export async function skipExecution(
 async function createTransactionFromRecurring(
   recurring: RecurringExpenseWithCategory,
   date: string,
-  amount?: number
+  amount?: number,
+  executor: RecurringQueryExecutor = db,
+  operationId?: string,
 ): Promise<string> {
   const transactionId = nanoid();
   const finalAmount = amount ?? recurring.amountArs;
@@ -676,7 +836,7 @@ async function createTransactionFromRecurring(
   // Get category ID - fallback to "imprevistos" category if not set
   let categoryId = recurring.categoryId;
   if (!categoryId) {
-    const fallbackCategory = await db
+    const fallbackCategory = await executor
       .select({ id: categories.id })
       .from(categories)
       .where(eq(categories.slug, "imprevistos"))
@@ -688,8 +848,9 @@ async function createTransactionFromRecurring(
     throw new Error("No se encontró categoría para la transacción");
   }
 
-  await db.insert(transactions).values({
+  await executor.insert(transactions).values({
     id: transactionId,
+    ...(operationId ? { operation_id: operationId } : {}),
     user_id: recurring.userId,
     group_id: recurring.groupId,
     category_id: categoryId,

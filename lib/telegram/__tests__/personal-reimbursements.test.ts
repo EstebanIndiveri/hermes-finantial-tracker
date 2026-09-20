@@ -8,8 +8,8 @@ import {
   markReimbursementAsPaidWithNotifications,
 } from "@/lib/reimbursements/requests";
 import { getMonthSummary } from "@/lib/finance/summaries";
-import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { clearConversationState, getConversationState, setConversationState } from "../splits/conversation-state";
+import { createTelegramOperationContext } from "../operation-context";
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -22,6 +22,7 @@ jest.mock("@/lib/db/client", () => ({
     select: jest.fn(),
     insert: jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) })),
     update: jest.fn(() => ({ set: jest.fn(() => ({ where: jest.fn().mockResolvedValue([{ id: "tx-1" }]) })) })),
+    transaction: jest.fn(),
   },
 }));
 
@@ -94,7 +95,7 @@ describe("telegram reimbursements", () => {
         paidAt: null,
         createdAt: 1723852800000,
       },
-    ] as any);
+    ] as Awaited<ReturnType<typeof getReimbursementsByUser>>);
 
     const response = await handleTelegramMessage({
       update_id: 1,
@@ -186,6 +187,163 @@ describe("telegram reimbursements", () => {
         { text: "❌ No", callback_data: expect.stringMatching(/^expense:reimbursement_no:/) },
       ]],
     });
+  });
+
+  it.each([
+    ["expense:confirm", "Gasto registrado"],
+    ["exception:confirm", "Excepción registrada"],
+  ])("recovers the durable confirmation for a retried %s callback", async (callbackData, text) => {
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_reimbursement_confirm",
+      data: {
+        step: "expense_reimbursement_confirm",
+        transaction_id: "tx-committed",
+        amount_ars: 5000,
+        user_id: "user-1",
+        group_id: "group-1",
+        origin_update_id: "update-retry",
+        confirmation_text: text,
+        delivery_operation_id: "operation-committed",
+        delivery_key: "delivery-committed",
+      },
+    });
+
+    const response = await handlePersonalCallback(
+      "chat-1",
+      "telegram-1",
+      "user-1",
+      "group-1",
+      callbackData,
+      77,
+      createTelegramOperationContext({
+        botId: "bot-1",
+        updateId: "update-retry",
+        chatId: "chat-1",
+        callbackMessageId: 77,
+        action: "personal.callback",
+      }),
+    );
+
+    expect(response).toEqual(expect.objectContaining({
+      text,
+      edit: true,
+      deliveryOperationId: "operation-committed",
+      deliveryKey: "delivery-committed",
+    }));
+    expect(response.replyMarkup).toEqual({
+      inline_keyboard: [[
+        { text: "💸 Sí", callback_data: "expense:reimbursement_yes:tx-committed" },
+        { text: "❌ No", callback_data: "expense:reimbursement_no:tx-committed" },
+      ]],
+    });
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it("confirms the receipt in the same operation transaction as its financial write", async () => {
+    const pendingReceipt = {
+      id: "receipt-1",
+      user_id: "user-1",
+      parsed_amount_ars: 5000,
+      parsed_category_slug: "food",
+      parsed_merchant: "Cena",
+      status: "pending",
+      created_at: 1,
+    };
+    const pendingLimit = jest.fn().mockResolvedValue([pendingReceipt]);
+    (mockDb.select as jest.Mock).mockReturnValueOnce({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({
+          orderBy: jest.fn(() => ({ limit: pendingLimit })),
+        })),
+      })),
+    });
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({
+      id: "cat-1",
+      name: "Comida",
+      emoji: "🍝",
+      slug: "food",
+    });
+
+    const operationInsertValues: unknown[] = [];
+    const transactionInsertValues: unknown[] = [];
+    const outboxInsertValues: unknown[] = [];
+    const updateSets: unknown[] = [];
+    const selectResults = [
+      [{ userId: "user-1" }],
+      [{ exchange_rate: 1000 }],
+      [{ userId: "user-1" }],
+      [],
+      [{ total: 5000 }],
+      [{ name: "Comida", emoji: "🍝", slug: "food" }],
+    ];
+    const tx = {
+      insert: jest.fn(() => ({
+        values: jest.fn((values: unknown) => {
+          if (operationInsertValues.length === 0) operationInsertValues.push(values);
+          else if (transactionInsertValues.length === 0) transactionInsertValues.push(values);
+          else outboxInsertValues.push(values);
+          return {
+            onConflictDoNothing: jest.fn(() => ({
+              returning: jest.fn().mockResolvedValue([{ operationId: "claimed" }]),
+            })),
+          };
+        }),
+      })),
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => {
+            const rows = selectResults.shift() ?? [];
+            const whereResult = Promise.resolve(rows) as unknown as { limit: jest.Mock };
+            whereResult.limit = jest.fn().mockResolvedValue(rows);
+            return whereResult;
+          }),
+        })),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn((values: unknown) => {
+          updateSets.push(values);
+          return {
+            where: jest.fn(() => ({
+              returning: jest.fn().mockResolvedValue([{ id: "receipt-1", operationId: "claimed" }]),
+            })),
+          };
+        }),
+      })),
+    };
+    (mockDb.transaction as jest.Mock).mockImplementation(
+      async (work: (value: unknown) => Promise<unknown>) => work(tx),
+    );
+
+    const response = await handlePersonalCallback(
+      "chat-1",
+      "telegram-1",
+      "user-1",
+      "group-1",
+      "receipt:confirm",
+      77,
+      createTelegramOperationContext({
+        botId: "bot-1",
+        updateId: "receipt-update",
+        chatId: "chat-1",
+        callbackMessageId: 77,
+        action: "personal.callback",
+      }),
+    );
+
+    expect(response.deliveryOperationId).toMatch(/^tgop_v1_/);
+    expect(updateSets).toContainEqual(expect.objectContaining({
+      status: "confirmed",
+      transaction_id: expect.any(String),
+    }));
+    expect(transactionInsertValues[0]).toEqual(expect.objectContaining({
+      operation_id: response.deliveryOperationId,
+      source: "telegram",
+    }));
+    expect(outboxInsertValues[0]).toEqual(expect.objectContaining({
+      operation_id: response.deliveryOperationId,
+    }));
+    expect(mockDb.update).not.toHaveBeenCalled();
   });
 
   it("creates a reimbursement request when the user confirms they need it", async () => {
@@ -313,5 +471,97 @@ describe("telegram reimbursements", () => {
 
     expect(response.text).toContain("Ya no tenés acceso");
     expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it("uses the operation transaction and persists its fallback delivery row when context is supplied", async () => {
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: {
+        step: "expense_confirm",
+        category_id: "cat-1",
+        category_name: "Comida",
+        category_emoji: "🍝",
+        amount_ars: 5000,
+        merchant: "Cena",
+        group_id: "group-1",
+        user_id: "user-1",
+        is_exception: false,
+      },
+    });
+    mockGetMonthSummary.mockResolvedValue({ ahorro_proyectado_usd: 1200 } as Awaited<ReturnType<typeof getMonthSummary>>);
+
+    const operationInsertValues: unknown[] = [];
+    const transactionInsertValues: unknown[] = [];
+    const outboxInsertValues: unknown[] = [];
+    const selectResults = [
+      [{ userId: "user-1" }],
+      [{ exchange_rate: 1000 }],
+      [{ userId: "user-1" }],
+      [],
+      [{ total: 5000 }],
+      [{ name: "Comida", emoji: "🍝", slug: "food" }],
+    ];
+    const tx = {
+      insert: jest.fn(() => ({
+        values: jest.fn((values: unknown) => {
+          if (operationInsertValues.length === 0) operationInsertValues.push(values);
+          else if (transactionInsertValues.length === 0) transactionInsertValues.push(values);
+          else outboxInsertValues.push(values);
+          return {
+            onConflictDoNothing: jest.fn(() => ({
+              returning: jest.fn().mockResolvedValue([{ operationId: "claimed" }]),
+            })),
+          };
+        }),
+      })),
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => {
+            const rows = selectResults.shift() ?? [];
+            const whereResult = Promise.resolve(rows) as unknown as { limit: jest.Mock };
+            whereResult.limit = jest.fn().mockResolvedValue(rows);
+            return whereResult;
+          }),
+        })),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([{ operationId: "claimed" }]) })),
+        })),
+      })),
+    };
+    (mockDb.transaction as jest.Mock).mockImplementation(async (work: (value: unknown) => Promise<unknown>) => work(tx));
+
+    const response = await handlePersonalCallback(
+      "chat-1",
+      "telegram-1",
+      "user-1",
+      "group-1",
+      "expense:confirm",
+      77,
+      createTelegramOperationContext({
+        botId: "bot-1",
+        updateId: "update-1",
+        chatId: "chat-1",
+        callbackMessageId: 77,
+        action: "callback",
+      }),
+    );
+
+    expect(response.deliveryOperationId).toMatch(/^tgop_v1_/);
+    expect(transactionInsertValues[0]).toEqual(expect.objectContaining({
+      operation_id: response.deliveryOperationId,
+      source: "telegram",
+    }));
+    expect(outboxInsertValues[0]).toEqual(expect.objectContaining({
+      operation_id: response.deliveryOperationId,
+      action: "edit_message",
+      message_id: 77,
+      status: "pending",
+    }));
+    expect(operationInsertValues[0]).toEqual(expect.objectContaining({
+      operation_id: response.deliveryOperationId,
+      operation_kind: "personal_transaction:expense",
+    }));
   });
 });

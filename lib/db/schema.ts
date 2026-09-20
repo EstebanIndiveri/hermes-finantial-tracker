@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { text, real, integer, sqliteTable, uniqueIndex, index, primaryKey } from "drizzle-orm/sqlite-core";
+import { text, real, integer, sqliteTable, uniqueIndex, index, primaryKey, foreignKey } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -57,6 +57,7 @@ export const budgets = sqliteTable("budgets", {
 
 export const transactions = sqliteTable("transactions", {
   id: text("id").primaryKey(),
+  operation_id: text("operation_id"),
   user_id: text("user_id").notNull().references(() => users.id),
   group_id: text("group_id").references(() => groups.id),
   category_id: text("category_id").notNull().references(() => categories.id),
@@ -76,6 +77,7 @@ export const transactions = sqliteTable("transactions", {
   userMonthIdx: index("tx_user_month_idx").on(t.user_id, t.month),
   categoryIdx: index("tx_category_idx").on(t.category_id),
   groupIdx: index("tx_group_id_idx").on(t.group_id),
+  operationIdx: uniqueIndex("transactions_operation_id_idx").on(t.operation_id).where(sql`${t.operation_id} IS NOT NULL`),
 }));
 
 export const bot_messages = sqliteTable("bot_messages", {
@@ -109,6 +111,63 @@ export const telegram_update_inbox = sqliteTable("telegram_update_inbox", {
 }, (t) => ({
   botUpdateIdx: uniqueIndex("telegram_update_inbox_bot_update_idx").on(t.bot_id, t.update_id),
   claimIdx: index("telegram_update_inbox_claim_idx").on(t.status, t.lease_expires_at),
+}));
+
+export const telegram_operations = sqliteTable("telegram_operations", {
+  operation_id: text("operation_id").primaryKey(),
+  bot_id: text("bot_id").notNull(),
+  update_id: text("update_id").notNull(),
+  operation_kind: text("operation_kind").notNull(),
+  status: text("status", { enum: ["started", "committed", "rejected"] }).notNull(),
+  resource_type: text("resource_type"),
+  resource_id: text("resource_id"),
+  result_json: text("result_json"),
+  created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  updated_at: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  committed_at: integer("committed_at"),
+}, (t) => ({
+  updateKindIdx: uniqueIndex("telegram_operations_update_kind_idx").on(t.bot_id, t.update_id, t.operation_kind),
+  namespaceIdx: uniqueIndex("telegram_operations_namespace_idx").on(t.operation_id, t.bot_id, t.update_id),
+}));
+
+export const telegram_delivery_outbox = sqliteTable("telegram_delivery_outbox", {
+  id: text("id").primaryKey(),
+  bot_id: text("bot_id").notNull(),
+  update_id: text("update_id").notNull(),
+  operation_id: text("operation_id").notNull(),
+  delivery_key: text("delivery_key").notNull(),
+  action: text("action", { enum: ["send_message", "edit_message"] }).notNull(),
+  chat_id: text("chat_id").notNull(),
+  message_id: integer("message_id"),
+  parse_mode: text("parse_mode").notNull().default("HTML"),
+  text: text("text").notNull(),
+  reply_markup_json: text("reply_markup_json"),
+  status: text("status", { enum: ["pending", "processing", "retryable", "sent", "dead"] }).notNull(),
+  attempt_count: integer("attempt_count").notNull().default(0),
+  next_attempt_at: integer("next_attempt_at").notNull(),
+  lease_token: text("lease_token"),
+  lease_expires_at: integer("lease_expires_at"),
+  provider_message_id: text("provider_message_id"),
+  last_error_code: text("last_error_code"),
+  last_http_status: integer("last_http_status"),
+  created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  updated_at: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  sent_at: integer("sent_at"),
+  retention_until: integer("retention_until"),
+}, (t) => ({
+  operationNamespaceFk: foreignKey({
+    columns: [t.operation_id, t.bot_id, t.update_id],
+    foreignColumns: [
+      telegram_operations.operation_id,
+      telegram_operations.bot_id,
+      telegram_operations.update_id,
+    ],
+    name: "telegram_delivery_outbox_operation_namespace_fk",
+  }),
+  deliveryKeyIdx: uniqueIndex("telegram_delivery_outbox_delivery_key_idx").on(t.bot_id, t.delivery_key),
+  claimIdx: index("telegram_delivery_outbox_claim_idx").on(t.status, t.next_attempt_at, t.lease_expires_at),
+  updateIdx: index("telegram_delivery_outbox_update_idx").on(t.bot_id, t.update_id),
+  operationIdx: index("telegram_delivery_outbox_operation_idx").on(t.operation_id),
 }));
 
 export const receipt_imports = sqliteTable("receipt_imports", {
@@ -210,6 +269,7 @@ export const split_session_members = sqliteTable("split_session_members", {
 
 export const splits = sqliteTable("splits", {
   id: text("id").primaryKey(),
+  operation_id: text("operation_id"),
   session_id: text("session_id").notNull().references(() => split_sessions.id),
   description: text("description").notNull(),
   total_amount: real("total_amount").notNull(),
@@ -220,7 +280,9 @@ export const splits = sqliteTable("splits", {
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
   cancelled_at: integer("cancelled_at"),
   telegram_message_id: text("telegram_message_id"),
-});
+}, (t) => ({
+  operationIdx: uniqueIndex("splits_operation_id_idx").on(t.operation_id).where(sql`${t.operation_id} IS NOT NULL`),
+}));
 
 export const split_payers = sqliteTable("split_payers", {
   id: text("id").primaryKey(),
@@ -241,6 +303,7 @@ export const split_items = sqliteTable("split_items", {
 
 export const split_payments = sqliteTable("split_payments", {
   id: text("id").primaryKey(),
+  operation_id: text("operation_id"),
   session_id: text("session_id").notNull().references(() => split_sessions.id),
   payer_user_id: text("payer_user_id").references(() => users.id),
   payer_temp_id: text("payer_temp_id").references(() => temp_users.id),
@@ -252,7 +315,9 @@ export const split_payments = sqliteTable("split_payments", {
   ocr_raw_text: text("ocr_raw_text"),
   confirmed_at: integer("confirmed_at"),
   telegram_update_id: text("telegram_update_id"),
-});
+}, (t) => ({
+  operationIdx: uniqueIndex("split_payments_operation_id_idx").on(t.operation_id).where(sql`${t.operation_id} IS NOT NULL`),
+}));
 
 export const userPaymentInfo = sqliteTable("user_payment_info", {
   id: text("id").primaryKey(),
@@ -265,6 +330,7 @@ export const userPaymentInfo = sqliteTable("user_payment_info", {
 
 export const reimbursementRequests = sqliteTable("reimbursement_requests", {
   id: text("id").primaryKey(),
+  operationId: text("operation_id"),
   transactionId: text("transaction_id").notNull().references(() => transactions.id),
   requesterId: text("requester_id").notNull().references(() => users.id),
   payerId: text("payer_id").references(() => users.id),
@@ -272,7 +338,9 @@ export const reimbursementRequests = sqliteTable("reimbursement_requests", {
   status: text("status").notNull().default("pending"),
   paidAt: text("paid_at"),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
-});
+}, (t) => ({
+  operationIdx: uniqueIndex("reimbursement_requests_operation_id_idx").on(t.operationId).where(sql`${t.operationId} IS NOT NULL`),
+}));
 
 export const pushSubscriptions = sqliteTable("push_subscriptions", {
   id: text("id").primaryKey(),
@@ -314,6 +382,7 @@ export const recurringExecutions = sqliteTable("recurring_executions", {
   amountArs: real("amount_ars"),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 }, (t) => ({
+  recurringDateIdx: uniqueIndex("execution_recurring_date_idx").on(t.recurringExpenseId, t.scheduledDate),
   recurringIdx: index("execution_recurring_idx").on(t.recurringExpenseId),
   dateIdx: index("execution_date_idx").on(t.scheduledDate),
   statusIdx: index("execution_status_idx").on(t.status),

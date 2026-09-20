@@ -22,6 +22,15 @@ import {
   failTelegramUpdate,
   resolveTelegramBotId,
 } from "@/lib/telegram/update-inbox";
+import {
+  createTelegramOperationContext,
+  type TelegramOperationContext,
+} from "@/lib/telegram/operation-context";
+import {
+  telegramDeliveryOperationKinds,
+  updateTelegramDeliveryEnvelope,
+} from "@/lib/telegram/outbox";
+import { dispatchTelegramDeliveriesForUpdate } from "@/lib/telegram/outbox-dispatcher";
 
 // Allow up to 60 seconds for OCR + AI + Voice processing
 export const maxDuration = 60;
@@ -51,6 +60,71 @@ interface TelegramWebhookUpdate {
   update_id: number;
   message?: TelegramWebhookMessage;
   callback_query?: TelegramWebhookCallbackQuery;
+}
+
+interface TelegramOperationSeed {
+  botId: string;
+  updateId: string;
+}
+
+interface DurableTelegramResponse {
+  deliveryOperationId?: string;
+  deliveryKey?: string;
+}
+
+function canCompleteRetryFromDurableDelivery(operationKinds: string[]): boolean {
+  return operationKinds.some((kind) =>
+    kind.startsWith("split.") ||
+    kind.startsWith("reimbursement.") ||
+    kind === "personal_transaction:receipt" ||
+    kind === "recurring.confirm_all" ||
+    kind.startsWith("recurring.confirm:"),
+  );
+}
+
+function operationContext(
+  seed: TelegramOperationSeed | undefined,
+  chatId: string,
+  action: string,
+  callbackMessageId?: number,
+): TelegramOperationContext | undefined {
+  if (!seed) return undefined;
+  return createTelegramOperationContext({
+    botId: seed.botId,
+    updateId: seed.updateId,
+    chatId,
+    action,
+    callbackMessageId,
+  });
+}
+
+function durableDelivery(response: unknown): { operationId: string; deliveryKey: string } | undefined {
+  if (!response || typeof response !== "object") return undefined;
+  const candidate = response as DurableTelegramResponse;
+  return typeof candidate.deliveryOperationId === "string" && candidate.deliveryOperationId.length > 0 &&
+    typeof candidate.deliveryKey === "string" && candidate.deliveryKey.length > 0
+    ? { operationId: candidate.deliveryOperationId, deliveryKey: candidate.deliveryKey }
+    : undefined;
+}
+
+async function stageAndDispatchDurableResponse(
+  seed: TelegramOperationSeed | undefined,
+  response: { text: string; replyMarkup?: unknown },
+): Promise<boolean> {
+  const delivery = durableDelivery(response);
+  if (!seed || !delivery) return false;
+
+  await updateTelegramDeliveryEnvelope({
+    botId: seed.botId,
+    operationId: delivery.operationId,
+    deliveryKey: delivery.deliveryKey,
+    text: response.text,
+    replyMarkup: response.replyMarkup && typeof response.replyMarkup === "object" && !Array.isArray(response.replyMarkup)
+      ? response.replyMarkup as Record<string, unknown>
+      : undefined,
+  });
+  await dispatchTelegramDeliveriesForUpdate(seed);
+  return true;
 }
 
 function classifyTelegramUpdate(update: unknown): TelegramUpdateKind {
@@ -86,6 +160,7 @@ function stableTelegramErrorCode(error: unknown): string {
 async function processTelegramUpdate(
   update: TelegramWebhookUpdate,
   useLegacyBotMessageDedupe = true,
+  operationSeed?: TelegramOperationSeed,
 ): Promise<NextResponse> {
   if (update?.callback_query) {
     const cq = update.callback_query;
@@ -108,9 +183,20 @@ async function processTelegramUpdate(
 
     if (isGroupChat) {
       try {
-        const response = await handleSplitCallback(chatId, telegramUserId, data, messageId);
+        const splitOperationContext = operationContext(
+          operationSeed,
+          chatId,
+          "split.callback",
+          messageId,
+        );
+        const response = splitOperationContext
+          ? await handleSplitCallback(chatId, telegramUserId, data, messageId, splitOperationContext)
+          : await handleSplitCallback(chatId, telegramUserId, data, messageId);
         if (response) {
-          if (response.edit && messageId) {
+          if (await stageAndDispatchDurableResponse(operationSeed, response)) {
+            // The writer and confirmation were accepted durably. Provider
+            // delivery is independent and may remain retryable in the outbox.
+          } else if (response.edit && messageId) {
             await editTelegramMessage(chatId, messageId, response.text, response.replyMarkup);
           } else {
             await sendSplitMessage(chatId, response.text, response.replyMarkup);
@@ -121,6 +207,7 @@ async function processTelegramUpdate(
           message: err instanceof Error ? err.message : "Unknown error",
           data,
         });
+        if (operationSeed) throw err;
         try {
           await sendSplitMessage(chatId, "Ocurrió un error procesando tu acción. Intentá nuevamente.");
         } catch {
@@ -148,10 +235,33 @@ async function processTelegramUpdate(
         if (!personalGroupId) {
           await sendTelegramMessage(personalChatId, "No tenés ningún grupo activo. Creá uno desde la web.");
         } else {
-          const response = await handlePersonalCallback(
-            personalChatId, telegramUserId, personalUser.id, personalGroupId, data, messageId
+          const personalOperationContext = operationContext(
+            operationSeed,
+            personalChatId,
+            "personal.callback",
+            messageId,
           );
-          if (response.edit === true && messageId) {
+          const response = personalOperationContext
+            ? await handlePersonalCallback(
+                personalChatId,
+                telegramUserId,
+                personalUser.id,
+                personalGroupId,
+                data,
+                messageId,
+                personalOperationContext,
+              )
+            : await handlePersonalCallback(
+                personalChatId,
+                telegramUserId,
+                personalUser.id,
+                personalGroupId,
+                data,
+                messageId,
+              );
+          if (await stageAndDispatchDurableResponse(operationSeed, response)) {
+            // Durable response is dispatched through the outbox.
+          } else if (response.edit === true && messageId) {
             await editTelegramPersonalMessage(personalChatId, messageId, response.text, response.replyMarkup);
           } else {
             await sendTelegramMessage(personalChatId, response.text, response.replyMarkup);
@@ -160,6 +270,7 @@ async function processTelegramUpdate(
       }
     } catch (err) {
       console.error("Personal callback error:", { message: err instanceof Error ? err.message : "Unknown error", data });
+      if (operationSeed) throw err;
       try {
         await sendTelegramMessage(personalChatId, "Ocurrió un error. Intentá nuevamente.");
       } catch { /* best-effort */ }
@@ -255,12 +366,26 @@ async function processTelegramUpdate(
         message: { ...msg, text: transcription } 
       };
 
-      const botResponse = await handleTelegramMessage(fakeUpdate, user.id, groupId);
-      await sendTelegramMessage(chatId, `🎤 "${transcription}"\n\n${botResponse.text}`, botResponse.replyMarkup);
+      const voiceOperationContext = operationContext(
+        operationSeed,
+        chatId,
+        "personal.voice",
+      );
+      const botResponse = voiceOperationContext
+        ? await handleTelegramMessage(fakeUpdate, user.id, groupId, voiceOperationContext)
+        : await handleTelegramMessage(fakeUpdate, user.id, groupId);
+      const voiceResponse = {
+        ...botResponse,
+        text: `🎤 "${transcription}"\n\n${botResponse.text}`,
+      };
+      if (!(await stageAndDispatchDurableResponse(operationSeed, voiceResponse))) {
+        await sendTelegramMessage(chatId, voiceResponse.text, voiceResponse.replyMarkup);
+      }
       return NextResponse.json({ ok: true });
 
     } catch (err) {
       console.error("Voice processing error:", err);
+      if (operationSeed) throw err;
       await sendTelegramMessage(chatId, "❌ Error procesando el audio: " + (err instanceof Error ? err.message : "desconocido"));
       return NextResponse.json({ ok: true });
     }
@@ -348,12 +473,16 @@ async function processTelegramUpdate(
 
   let botResponse: PersonalBotMessage = { text: "Error interno." };
   try {
-    botResponse = await handleTelegramMessage(update, user.id, groupId);
+    const messageOperationContext = operationContext(operationSeed, chatId, "personal.message");
+    botResponse = messageOperationContext
+      ? await handleTelegramMessage(update, user.id, groupId, messageOperationContext)
+      : await handleTelegramMessage(update, user.id, groupId);
   } catch (err) {
     console.error("Telegram handler error:", {
       message: err instanceof Error ? err.message : "Unknown error",
       updateId,
     });
+    if (operationSeed) throw err;
     botResponse = { text: "Error procesando el mensaje." };
   }
 
@@ -375,7 +504,9 @@ async function processTelegramUpdate(
     });
   }
 
-  await sendTelegramMessage(chatId, botResponse.text, botResponse.replyMarkup);
+  if (!(await stageAndDispatchDurableResponse(operationSeed, botResponse))) {
+    await sendTelegramMessage(chatId, botResponse.text, botResponse.replyMarkup);
+  }
   return NextResponse.json({ ok: true });
 }
 
@@ -392,6 +523,9 @@ export async function POST(req: NextRequest) {
   }
 
   const update = await req.json().catch(() => null);
+  if (process.env.TELEGRAM_OUTBOX_ENABLED === "true" && process.env.TELEGRAM_INBOX_ENABLED !== "true") {
+    return NextResponse.json({ error: "Telegram outbox requires inbox" }, { status: 503 });
+  }
   if (process.env.TELEGRAM_INBOX_ENABLED !== "true") {
     return processTelegramUpdate(update, true);
   }
@@ -415,12 +549,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Telegram update claim unavailable" }, { status: 503 });
   }
 
-  if (claim.kind === "completed" || claim.kind === "busy") {
+  if (claim.kind === "completed") {
+    if (process.env.TELEGRAM_OUTBOX_ENABLED === "true") {
+      await dispatchTelegramDeliveriesForUpdate({ botId, updateId }).catch(() => ({
+        sent: 0,
+        retryable: 0,
+        dead: 0,
+      }));
+    }
+    return NextResponse.json({ ok: true });
+  }
+  if (claim.kind === "busy") {
     return NextResponse.json({ ok: true });
   }
 
   try {
-    const response = await processTelegramUpdate(update, false);
+    if (
+      process.env.TELEGRAM_OUTBOX_ENABLED === "true" &&
+      claim.attempt > 1 &&
+      canCompleteRetryFromDurableDelivery(
+        await telegramDeliveryOperationKinds(botId, updateId),
+      )
+    ) {
+      await dispatchTelegramDeliveriesForUpdate({ botId, updateId });
+      await completeTelegramUpdate({ botId, updateId, leaseToken: claim.leaseToken });
+      return NextResponse.json({ ok: true });
+    }
+
+    const response = await processTelegramUpdate(
+      update,
+      false,
+      process.env.TELEGRAM_OUTBOX_ENABLED === "true" ? { botId, updateId } : undefined,
+    );
     await completeTelegramUpdate({ botId, updateId, leaseToken: claim.leaseToken });
     return response;
   } catch (error) {

@@ -3,6 +3,48 @@ import { group_members, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getDefaultPaymentInfo } from "@/lib/reimbursements/payment-info";
 
+export interface TelegramNotificationMessage {
+  text: string;
+  replyMarkup?: Record<string, unknown>;
+}
+
+export function buildReimbursementRequestNotification(input: {
+  requesterName?: string | null;
+  amount: number;
+  categoryName: string;
+  description: string;
+  reimbursementId: string;
+  paymentMethod?: string | null;
+  paymentValue?: string | null;
+}): TelegramNotificationMessage {
+  const paymentText = input.paymentMethod
+    ? input.paymentMethod === "efectivo"
+      ? "Efectivo"
+      : `${input.paymentMethod.toUpperCase()}: ${input.paymentValue}`
+    : "No configurado";
+
+  return {
+    text: `💸 <b>Solicitud de Reintegro</b>\n\n👤 ${input.requesterName ?? "Usuario"} gastó <b>$${input.amount.toLocaleString("es-AR")}</b>\n📁 Categoría: ${input.categoryName}\n📝 ${input.description || "Sin descripción"}\n\n💳 Datos de pago: ${paymentText}`,
+    replyMarkup: {
+      inline_keyboard: [[
+        { text: `✅ Pagar $${input.amount.toLocaleString("es-AR")}`, callback_data: `pay_reimbursement:${input.reimbursementId}` },
+      ]],
+    },
+  };
+}
+
+export function buildReimbursementPaidNotification(payerName: string, amount: number): TelegramNotificationMessage {
+  return {
+    text: `✅ <b>Reintegro Pagado</b>\n\n${payerName} te ha pagado <b>$${amount.toLocaleString("es-AR")}</b>\n\n¡Ya está todo saldado! 🎉`,
+  };
+}
+
+export function buildReimbursementCancelledNotification(requesterName: string, amount: number): TelegramNotificationMessage {
+  return {
+    text: `❌ <b>Reintegro Cancelado</b>\n\n${requesterName} canceló su solicitud de reintegro de <b>$${amount.toLocaleString("es-AR")}</b>\n\nNo es necesario realizar el pago.`,
+  };
+}
+
 export async function sendTelegramMessage(
   chatId: string | number,
   text: string,
@@ -64,29 +106,19 @@ export async function notifyGroupOfReimbursementRequest(
   const paymentInfo = await getDefaultPaymentInfo(requesterId);
   const members = await getGroupMembersWithTelegram(groupId, requesterId);
 
-  const paymentText = paymentInfo
-    ? paymentInfo.paymentMethod === "efectivo"
-      ? "Efectivo"
-      : `${paymentInfo.paymentMethod.toUpperCase()}: ${paymentInfo.value}`
-    : "No configurado";
-
-  const message = `💸 <b>Solicitud de Reintegro</b>
-
-👤 ${requester?.name ?? "Usuario"} gastó <b>$${amount.toLocaleString("es-AR")}</b>
-📁 Categoría: ${categoryName}
-📝 ${description || "Sin descripción"}
-
-💳 Datos de pago: ${paymentText}`;
-
-  const replyMarkup = {
-    inline_keyboard: [[
-      { text: `✅ Pagar $${amount.toLocaleString("es-AR")}`, callback_data: `pay_reimbursement:${reimbursementId}` },
-    ]],
-  };
+  const notification = buildReimbursementRequestNotification({
+    requesterName: requester?.name,
+    amount,
+    categoryName,
+    description,
+    reimbursementId,
+    paymentMethod: paymentInfo?.paymentMethod,
+    paymentValue: paymentInfo?.value,
+  });
 
   for (const member of members) {
     if (member.telegramId) {
-      await sendTelegramMessage(member.telegramId, message, { reply_markup: replyMarkup });
+      await sendTelegramMessage(member.telegramId, notification.text, { reply_markup: notification.replyMarkup });
     }
   }
 }
@@ -102,13 +134,9 @@ export async function notifyReimbursementPaid(
     return;
   }
 
-  const message = `✅ <b>Reintegro Pagado</b>
+  const message = buildReimbursementPaidNotification(payerName, amount);
 
-${payerName} te ha pagado <b>$${amount.toLocaleString("es-AR")}</b>
-
-¡Ya está todo saldado! 🎉`;
-
-  await sendTelegramMessage(requester.telegram_user_id, message);
+  await sendTelegramMessage(requester.telegram_user_id, message.text);
 }
 
 export async function notifyReimbursementCancelled(
@@ -119,15 +147,11 @@ export async function notifyReimbursementCancelled(
 ): Promise<void> {
   const members = await getGroupMembersWithTelegram(groupId, requesterId);
 
-  const message = `❌ <b>Reintegro Cancelado</b>
-
-${requesterName} canceló su solicitud de reintegro de <b>$${amount.toLocaleString("es-AR")}</b>
-
-No es necesario realizar el pago.`;
+  const message = buildReimbursementCancelledNotification(requesterName, amount);
 
   for (const member of members) {
     if (member.telegramId) {
-      await sendTelegramMessage(member.telegramId, message);
+      await sendTelegramMessage(member.telegramId, message.text);
     }
   }
 }

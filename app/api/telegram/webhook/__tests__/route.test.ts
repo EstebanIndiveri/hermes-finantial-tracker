@@ -21,6 +21,11 @@ import {
   failTelegramUpdate,
   resolveTelegramBotId,
 } from "@/lib/telegram/update-inbox";
+import {
+  telegramDeliveryOperationKinds,
+  updateTelegramDeliveryEnvelope,
+} from "@/lib/telegram/outbox";
+import { dispatchTelegramDeliveriesForUpdate } from "@/lib/telegram/outbox-dispatcher";
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -54,13 +59,23 @@ jest.mock("@/lib/telegram/update-inbox", () => ({
   failTelegramUpdate: jest.fn().mockResolvedValue(true),
   resolveTelegramBotId: jest.fn().mockReturnValue("test-bot"),
 }));
+jest.mock("@/lib/telegram/outbox", () => ({
+  telegramDeliveryOperationKinds: jest.fn().mockResolvedValue([]),
+  updateTelegramDeliveryEnvelope: jest.fn().mockResolvedValue(1),
+}));
+jest.mock("@/lib/telegram/outbox-dispatcher", () => ({
+  dispatchTelegramDeliveriesForUpdate: jest.fn().mockResolvedValue({ sent: 1, retryable: 0, dead: 0 }),
+}));
 
 const mockDb = db as jest.Mocked<typeof db>;
 const originalInboxFlag = process.env.TELEGRAM_INBOX_ENABLED;
+const originalOutboxFlag = process.env.TELEGRAM_OUTBOX_ENABLED;
 
 afterAll(() => {
   if (originalInboxFlag === undefined) delete process.env.TELEGRAM_INBOX_ENABLED;
   else process.env.TELEGRAM_INBOX_ENABLED = originalInboxFlag;
+  if (originalOutboxFlag === undefined) delete process.env.TELEGRAM_OUTBOX_ENABLED;
+  else process.env.TELEGRAM_OUTBOX_ENABLED = originalOutboxFlag;
 });
 
 function request(body: unknown) {
@@ -79,6 +94,7 @@ describe("Telegram webhook authorized personal context", () => {
     jest.clearAllMocks();
     process.env.TELEGRAM_SECRET_TOKEN = "test-secret";
     delete process.env.TELEGRAM_INBOX_ENABLED;
+    delete process.env.TELEGRAM_OUTBOX_ENABLED;
     const botMessageInsert = {
       values: jest.fn().mockReturnThis(),
       onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
@@ -104,6 +120,9 @@ describe("Telegram webhook authorized personal context", () => {
     (completeTelegramUpdate as jest.Mock).mockResolvedValue(true);
     (failTelegramUpdate as jest.Mock).mockResolvedValue(true);
     (resolveTelegramBotId as jest.Mock).mockReturnValue("test-bot");
+    (telegramDeliveryOperationKinds as jest.Mock).mockResolvedValue([]);
+    (updateTelegramDeliveryEnvelope as jest.Mock).mockResolvedValue(1);
+    (dispatchTelegramDeliveriesForUpdate as jest.Mock).mockResolvedValue({ sent: 1, retryable: 0, dead: 0 });
   });
 
   it("blocks text before the financial handler when membership was removed", async () => {
@@ -261,6 +280,145 @@ describe("Telegram webhook authorized personal context", () => {
       process.env.TELEGRAM_INBOX_ENABLED = "true";
       (resolveAuthorizedTelegramGroup as jest.Mock).mockResolvedValue("group-1");
       (handleTelegramMessage as jest.Mock).mockResolvedValue({ text: "Resumen" });
+    });
+
+    it("fails closed when outbox is enabled without the inbox", async () => {
+      delete process.env.TELEGRAM_INBOX_ENABLED;
+      process.env.TELEGRAM_OUTBOX_ENABLED = "true";
+
+      const response = await POST(request({
+        update_id: 400,
+        message: { chat: { id: 10, type: "private" }, from: { id: 20 }, text: "/resumen" },
+      }));
+
+      expect(response.status).toBe(503);
+      expect(claimTelegramUpdate).not.toHaveBeenCalled();
+      expect(handleTelegramMessage).not.toHaveBeenCalled();
+    });
+
+    it("stages and dispatches a durable callback response without a direct send", async () => {
+      process.env.TELEGRAM_OUTBOX_ENABLED = "true";
+      (claimTelegramUpdate as jest.Mock).mockResolvedValue({
+        kind: "acquired",
+        leaseToken: "lease-outbox",
+        attempt: 1,
+      });
+      (handlePersonalCallback as jest.Mock).mockResolvedValue({
+        text: "Gasto confirmado",
+        edit: true,
+        deliveryOperationId: "operation-1",
+        deliveryKey: "delivery-1",
+      });
+
+      const response = await POST(request({
+        update_id: 401,
+        callback_query: {
+          id: "callback-outbox",
+          from: { id: 20 },
+          data: "expense:confirm",
+          message: { message_id: 4, chat: { id: 10, type: "private" } },
+        },
+      }));
+
+      expect(response.status).toBe(200);
+      expect(updateTelegramDeliveryEnvelope).toHaveBeenCalledWith(expect.objectContaining({
+        botId: "test-bot",
+        operationId: "operation-1",
+        deliveryKey: "delivery-1",
+        text: "Gasto confirmado",
+      }));
+      expect(dispatchTelegramDeliveriesForUpdate).toHaveBeenCalledWith({
+        botId: "test-bot",
+        updateId: "401",
+      });
+      expect(editTelegramPersonalMessage).not.toHaveBeenCalled();
+      expect(sendPersonalMessage).not.toHaveBeenCalled();
+      expect(completeTelegramUpdate).toHaveBeenCalledWith({
+        botId: "test-bot",
+        updateId: "401",
+        leaseToken: "lease-outbox",
+      });
+    });
+
+    it.each([
+      "split.payment",
+      "reimbursement.pay",
+      "personal_transaction:receipt",
+      "recurring.confirm:execution-1",
+      "recurring.confirm_all",
+    ])(
+      "recovers an accepted %s outbox on retry without rerunning the writer",
+      async (operationKind) => {
+      process.env.TELEGRAM_OUTBOX_ENABLED = "true";
+      (claimTelegramUpdate as jest.Mock).mockResolvedValue({
+        kind: "acquired",
+        leaseToken: "lease-retry",
+        attempt: 2,
+      });
+      (telegramDeliveryOperationKinds as jest.Mock).mockResolvedValue([operationKind]);
+
+      const response = await POST(request({
+        update_id: 402,
+        callback_query: {
+          id: "callback-retry",
+          from: { id: 20 },
+          data: "expense:confirm",
+          message: { message_id: 4, chat: { id: 10, type: "private" } },
+        },
+      }));
+
+      expect(response.status).toBe(200);
+      expect(handlePersonalCallback).not.toHaveBeenCalled();
+      expect(dispatchTelegramDeliveriesForUpdate).toHaveBeenCalledWith({
+        botId: "test-bot",
+        updateId: "402",
+      });
+      expect(completeTelegramUpdate).toHaveBeenCalledWith({
+        botId: "test-bot",
+        updateId: "402",
+        leaseToken: "lease-retry",
+      });
+      },
+    );
+
+    it("reruns a personal expense retry when only its parent delivery is durable", async () => {
+      process.env.TELEGRAM_OUTBOX_ENABLED = "true";
+      (claimTelegramUpdate as jest.Mock).mockResolvedValue({
+        kind: "acquired",
+        leaseToken: "lease-personal-retry",
+        attempt: 2,
+      });
+      (telegramDeliveryOperationKinds as jest.Mock).mockResolvedValue([
+        "personal_transaction:expense",
+      ]);
+      (handlePersonalCallback as jest.Mock).mockResolvedValueOnce({
+        text: "Respuesta de reintento",
+        edit: true,
+      });
+
+      const response = await POST(request({
+        update_id: 403,
+        callback_query: {
+          id: "callback-personal-retry",
+          from: { id: 20 },
+          data: "expense:confirm",
+          message: { message_id: 4, chat: { id: 10, type: "private" } },
+        },
+      }));
+
+      expect(response.status).toBe(200);
+      expect(handlePersonalCallback).toHaveBeenCalledTimes(1);
+      expect(editTelegramPersonalMessage).toHaveBeenCalledWith(
+        "10",
+        4,
+        "Respuesta de reintento",
+        undefined,
+      );
+      expect(completeTelegramUpdate).toHaveBeenCalledWith({
+        botId: "test-bot",
+        updateId: "403",
+        leaseToken: "lease-personal-retry",
+      });
     });
 
     it("keeps the legacy flow unchanged while the flag is off", async () => {

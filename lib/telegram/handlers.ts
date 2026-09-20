@@ -33,10 +33,13 @@ import {
   detectRecurringIntent,
   hasReimbursementIntent,
 } from "./expense-fallback";
+import type { TelegramOperationContext } from "./operation-context";
 
 export interface PersonalBotMessage {
   text: string;
   replyMarkup?: InlineKeyboardMarkup;
+  deliveryOperationId?: string;
+  deliveryKey?: string;
 }
 
 interface PendingExpenseReimbursementState {
@@ -616,7 +619,12 @@ interface TelegramUpdate {
 
 /** Receipt proposals are persisted in receipt_imports table (status="pending") — no in-memory state needed */
 
-export async function handleTelegramMessage(update: TelegramUpdate, userId: string, groupId: string): Promise<PersonalBotMessage> {
+export async function handleTelegramMessage(
+  update: TelegramUpdate,
+  userId: string,
+  groupId: string,
+  operationContext?: TelegramOperationContext,
+): Promise<PersonalBotMessage> {
   const msg = update.message;
   if (!msg) return { text: "Mensaje no reconocido." };
   
@@ -2195,7 +2203,9 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
       };
     }
 
-    const result = await confirmExecution(exec.id, userId);
+    const result = operationContext
+      ? await confirmExecution(exec.id, userId, undefined, operationContext)
+      : await confirmExecution(exec.id, userId);
     if (!result.success) {
       return { text: `Error: ${result.error}` };
     }
@@ -2216,6 +2226,9 @@ export async function handleTelegramMessage(update: TelegramUpdate, userId: stri
         [{ text: "📋 Ver pendientes", callback_data: "recurring:pending" }],
         [{ text: "📊 Resumen", callback_data: "summary" }],
       ]),
+      ...(result.deliveryOperationId && result.deliveryKey
+        ? { deliveryOperationId: result.deliveryOperationId, deliveryKey: result.deliveryKey }
+        : {}),
     };
   }
 

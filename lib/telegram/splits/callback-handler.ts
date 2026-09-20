@@ -9,6 +9,7 @@ import {
   split_payers,
   split_items,
   split_payments,
+  telegram_delivery_outbox,
 } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -18,6 +19,47 @@ import { buildInlineKeyboard } from "./telegram-api";
 import { handlePagueSelect, handlePaguePartialAmountInput, startPaguePartialAmount } from "./commands/pague";
 import { notifySplitPaymentReceived } from "@/lib/notifications/telegram";
 import { resolveAuthorizedSplitContext } from "./authorization";
+import type { TelegramOperationContext } from "../operation-context";
+import { createTelegramDeliveryKey, createTelegramOperationIdentity } from "../operation-context";
+import { runTelegramOperation, type TelegramOperationTransaction } from "../financial-operation";
+import { buildTelegramDeliveryRow } from "../outbox";
+
+const SPLIT_CREATE_OPERATION = "split.create";
+const SPLIT_PAYMENT_OPERATION = "split.payment";
+
+type TelegramResponseWithOperation = TelegramResponse & {
+  deliveryOperationId?: string;
+  deliveryKey?: string;
+};
+
+function operationIdentity(context: TelegramOperationContext, action: string) {
+  return createTelegramOperationIdentity({ ...context, action });
+}
+
+async function insertPrimaryDelivery(
+  transaction: TelegramOperationTransaction,
+  context: TelegramOperationContext,
+  operationId: string,
+  deliveryKey: string,
+  response: TelegramResponse,
+  messageId?: number,
+  now?: number,
+): Promise<void> {
+  const editMessageId = context.callbackMessageId ?? messageId;
+  const editing = response.edit === true && Number.isSafeInteger(editMessageId);
+  await transaction.insert(telegram_delivery_outbox).values(buildTelegramDeliveryRow({
+    botId: context.botId,
+    updateId: context.updateId,
+    operationId,
+    deliveryKey,
+    action: editing ? "edit_message" : "send_message",
+    chatId: context.chatId,
+    ...(editing ? { messageId: editMessageId } : {}),
+    text: response.text,
+    replyMarkup: response.replyMarkup as Record<string, unknown> | undefined,
+    now,
+  }));
+}
 
 interface CompartidoState {
   step: "who_paid" | "participants";
@@ -80,8 +122,9 @@ export async function handleSplitCallback(
   chatId: string,
   telegramUserId: string,
   data: string,
-  messageId?: number
-): Promise<TelegramResponse | null> {
+  messageId?: number,
+  operationContext?: TelegramOperationContext,
+): Promise<TelegramResponseWithOperation | null> {
   const state = await getConversationState(chatId, telegramUserId);
 
   if (data.startsWith("pague_select:")) {
@@ -140,7 +183,7 @@ export async function handleSplitCallback(
 
   if (data.startsWith("participants:")) {
     if (state.step !== "participants" || !(await authorizeCallback(chatId, telegramUserId, state.data))) return rejectedCallback();
-    return handleParticipantsCallback(chatId, telegramUserId, data, state.data as CompartidoState);
+    return handleParticipantsCallback(chatId, telegramUserId, data, state.data as CompartidoState, messageId, operationContext);
   }
 
   if (data.startsWith("pague_confirm:")) {
@@ -153,7 +196,7 @@ export async function handleSplitCallback(
           ? (state.step === "pague_payment_type" || state.step === "pague_confirm")
           : false;
     if (!validStep || !(await authorizeCallback(chatId, telegramUserId, state.data))) return rejectedCallback();
-    return handlePagueConfirmCallback(chatId, telegramUserId, data, state.data as PagueState);
+    return handlePagueConfirmCallback(chatId, telegramUserId, data, state.data as PagueState, messageId, operationContext);
   }
 
   if (data.startsWith("ocr_expense:")) {
@@ -266,8 +309,10 @@ async function handleParticipantsCallback(
   chatId: string,
   telegramUserId: string,
   data: string,
-  state: CompartidoState
-): Promise<TelegramResponse> {
+  state: CompartidoState,
+  messageId?: number,
+  operationContext?: TelegramOperationContext,
+): Promise<TelegramResponseWithOperation> {
   if (data === "participants:exclude") {
     return {
       text: "➖ El flujo de exclusión no está implementado aún. Por ahora, usá 'Sí, todos'.",
@@ -289,8 +334,6 @@ async function handleParticipantsCallback(
       edit: true,
     };
   }
-
-  await clearConversationState(chatId, telegramUserId);
 
   const session = await db.query.split_sessions.findFirst({
     where: eq(split_sessions.id, state.session_id),
@@ -335,51 +378,6 @@ async function handleParticipantsCallback(
   const splitId = randomUUID();
   const now = Date.now();
 
-  await db.transaction(async (tx) => {
-    await tx.insert(splits).values({
-      id: splitId,
-      session_id: session.id,
-      description: state.description,
-      total_amount: state.amount,
-      split_type: "equal",
-      status: "active",
-      created_by_user_id: state.payer_user_id ?? null,
-      created_by_temp_id: state.payer_temp_user_id ?? null,
-      created_at: now,
-    });
-
-    await tx.insert(split_payers).values({
-      id: randomUUID(),
-      split_id: splitId,
-      user_id: state.payer_user_id ?? null,
-      temp_user_id: state.payer_temp_user_id ?? null,
-      amount_paid: state.amount,
-    });
-
-    const itemValues = [
-      ...userMemberIds.map((userId) => ({
-        id: randomUUID(),
-        split_id: splitId,
-        user_id: userId,
-        temp_user_id: null,
-        amount_owed: sharePerPerson,
-        percentage: null,
-      })),
-      ...tempMemberIds.map((tempUserId) => ({
-        id: randomUUID(),
-        split_id: splitId,
-        user_id: null,
-        temp_user_id: tempUserId,
-        amount_owed: sharePerPerson,
-        percentage: null,
-      })),
-    ];
-
-    if (itemValues.length > 0) {
-      await tx.insert(split_items).values(itemValues);
-    }
-  });
-
   const [usersData, tempUsersData] = await Promise.all([
     userMemberIds.length > 0
       ? db.select({ id: users.id, name: users.name, username: users.username })
@@ -421,7 +419,7 @@ async function handleParticipantsCallback(
   const formattedAmount = state.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
   const formattedShare = sharePerPerson.toLocaleString("es-AR", { minimumFractionDigits: 0 });
 
-  return {
+  const response: TelegramResponse = {
     text: [
       `✅ <b>${state.description}</b> — $${formattedAmount}`,
       ``,
@@ -433,14 +431,115 @@ async function handleParticipantsCallback(
     ].join("\n"),
     edit: true,
   };
+
+  const identity = operationContext
+    ? operationIdentity(operationContext, SPLIT_CREATE_OPERATION)
+    : null;
+
+  const writeSplit = async (tx: TelegramOperationTransaction) => {
+    if (identity) {
+      const currentMembers = await tx
+        .select({
+          userId: split_session_members.user_id,
+          tempUserId: split_session_members.temp_user_id,
+        })
+        .from(split_session_members)
+        .where(eq(split_session_members.session_id, session.id));
+      const currentUserIds = new Set(currentMembers.flatMap((member) => member.userId ? [member.userId] : []));
+      const currentTempIds = new Set(currentMembers.flatMap((member) => member.tempUserId ? [member.tempUserId] : []));
+      if (
+        currentUserIds.size !== userMemberIds.length ||
+        currentTempIds.size !== tempMemberIds.length ||
+        userMemberIds.some((id) => !currentUserIds.has(id)) ||
+        tempMemberIds.some((id) => !currentTempIds.has(id))
+      ) {
+        throw new Error("Split membership changed before commit");
+      }
+    }
+
+    await tx.insert(splits).values({
+      id: splitId,
+      ...(identity ? { operation_id: identity.operationId } : {}),
+      session_id: session.id,
+      description: state.description,
+      total_amount: state.amount,
+      split_type: "equal",
+      status: "active",
+      created_by_user_id: state.payer_user_id ?? null,
+      created_by_temp_id: state.payer_temp_user_id ?? null,
+      created_at: now,
+    });
+
+    await tx.insert(split_payers).values({
+      id: randomUUID(),
+      split_id: splitId,
+      user_id: state.payer_user_id ?? null,
+      temp_user_id: state.payer_temp_user_id ?? null,
+      amount_paid: state.amount,
+    });
+
+    const itemValues = [
+      ...userMemberIds.map((userId) => ({
+        id: randomUUID(),
+        split_id: splitId,
+        user_id: userId,
+        temp_user_id: null,
+        amount_owed: sharePerPerson,
+        percentage: null,
+      })),
+      ...tempMemberIds.map((tempUserId) => ({
+        id: randomUUID(),
+        split_id: splitId,
+        user_id: null,
+        temp_user_id: tempUserId,
+        amount_owed: sharePerPerson,
+        percentage: null,
+      })),
+    ];
+
+    if (itemValues.length > 0) await tx.insert(split_items).values(itemValues);
+    if (operationContext && identity) {
+      await insertPrimaryDelivery(tx, operationContext, identity.operationId, identity.deliveryKey, response, messageId, now);
+    }
+  };
+
+  if (!operationContext || !identity) {
+    await db.transaction(writeSplit);
+    await clearConversationState(chatId, telegramUserId);
+    return response;
+  }
+
+  const result = await runTelegramOperation(
+    (work) => db.transaction(work),
+    {
+      identity,
+      botId: operationContext.botId,
+      updateId: operationContext.updateId,
+      operationKind: SPLIT_CREATE_OPERATION,
+      now,
+    },
+    async (tx) => {
+      await writeSplit(tx);
+      return { resourceType: "split", resourceId: splitId, result: response };
+    },
+  );
+  if (result.kind === "busy") throw new Error("Telegram split operation is already in progress");
+  await clearConversationState(chatId, telegramUserId);
+  return {
+    ...result.result,
+    deliveryOperationId: result.operationId,
+    deliveryKey: identity.deliveryKey,
+  };
 }
 
 async function handlePagueConfirmCallback(
   chatId: string,
   telegramUserId: string,
   data: string,
-  state: PagueState
-): Promise<TelegramResponse> {
+  state: PagueState,
+  messageId?: number,
+  operationContext?: TelegramOperationContext,
+): Promise<TelegramResponseWithOperation> {
   const action = data.replace("pague_confirm:", "");
 
   if (action === "full") {
@@ -541,26 +640,12 @@ async function handlePagueConfirmCallback(
     return { text: "❌ El acreedor ya no pertenece a esta sesión.", edit: true };
   }
 
-  await db.insert(split_payments).values({
-    id: randomUUID(),
-    session_id: session.id,
-    payer_user_id: hermesUser?.id ?? null,
-    payer_temp_id: tempUser?.id ?? null,
-    payee_user_id: state.creditor_user_id ?? null,
-    payee_temp_id: state.creditor_temp_id ?? null,
-    amount: state.payment_amount ?? state.debt_amount,
-    method: "manual",
-    receipt_image_url: null,
-    ocr_raw_text: null,
-    confirmed_at: Date.now(),
-    telegram_update_id: null,
-  });
-
-  await clearConversationState(chatId, telegramUserId);
-
+  const creditorUser = state.creditor_user_id
+    ? await db.query.users.findFirst({ where: eq(users.id, state.creditor_user_id) })
+    : null;
   const creditorName = state.creditor_name
-    ?? (state.creditor_user_id
-      ? getHermesDisplayName(await db.query.users.findFirst({ where: eq(users.id, state.creditor_user_id) }))
+    ?? (creditorUser
+      ? getHermesDisplayName(creditorUser)
       : getTempDisplayName(await db.query.temp_users.findFirst({ where: eq(temp_users.id, state.creditor_temp_id!) })));
 
   const paidAmount = state.payment_amount ?? state.debt_amount;
@@ -570,22 +655,128 @@ async function handlePagueConfirmCallback(
     ? getHermesDisplayName(hermesUser)
     : getTempDisplayName(tempUser);
 
-  if (state.creditor_user_id) {
-    await notifySplitPaymentReceived(
-      state.creditor_user_id,
-      payerName,
-      paidAmount,
-      state.remaining_amount ?? 0,
-      session.name,
-    );
-  }
-
-  return {
+  const response: TelegramResponse = {
     text: [
       `✅ Registrado: Pagaste $${formattedAmount} a ${creditorName}`,
       `💰 Tu deuda restante con ${creditorName}: $${remainingAmount}`,
     ].join("\n"),
     edit: true,
+  };
+
+  const identity = operationContext
+    ? operationIdentity(operationContext, SPLIT_PAYMENT_OPERATION)
+    : null;
+  const paymentId = randomUUID();
+  const now = Date.now();
+  const writePayment = async (tx: TelegramOperationTransaction) => {
+    if (identity) {
+      const currentMembers = await tx
+        .select({
+          userId: split_session_members.user_id,
+          tempUserId: split_session_members.temp_user_id,
+        })
+        .from(split_session_members)
+        .where(eq(split_session_members.session_id, session.id));
+      const payerStillMember = currentMembers.some((member) =>
+        (hermesUser?.id && member.userId === hermesUser.id) ||
+        (tempUser?.id && member.tempUserId === tempUser.id));
+      const creditorStillMember = currentMembers.some((member) =>
+        (state.creditor_user_id && member.userId === state.creditor_user_id) ||
+        (state.creditor_temp_id && member.tempUserId === state.creditor_temp_id));
+      if (!payerStillMember || !creditorStillMember) {
+        throw new Error("Split payment membership changed before commit");
+      }
+    }
+
+    await tx.insert(split_payments).values({
+      id: paymentId,
+      ...(identity ? { operation_id: identity.operationId } : {}),
+      session_id: session.id,
+      payer_user_id: hermesUser?.id ?? null,
+      payer_temp_id: tempUser?.id ?? null,
+      payee_user_id: state.creditor_user_id ?? null,
+      payee_temp_id: state.creditor_temp_id ?? null,
+      amount: paidAmount,
+      method: "manual",
+      receipt_image_url: null,
+      ocr_raw_text: null,
+      confirmed_at: now,
+      telegram_update_id: null,
+    });
+    if (operationContext && identity) {
+      await insertPrimaryDelivery(tx, operationContext, identity.operationId, identity.deliveryKey, response, messageId, now);
+      if (creditorUser?.telegram_user_id) {
+        const sessionText = session.name ? `\n📁 Sesión: ${session.name}` : "";
+        const remainingText = (state.remaining_amount ?? 0) > 0
+          ? `\n💰 Deuda restante: <b>$${remainingAmount}</b>`
+          : "\n✅ ¡Deuda saldada!";
+        await tx.insert(telegram_delivery_outbox).values(buildTelegramDeliveryRow({
+          botId: operationContext.botId,
+          updateId: operationContext.updateId,
+          operationId: identity.operationId,
+          deliveryKey: createTelegramDeliveryKey(
+            identity,
+            "split_payment_received",
+            creditorUser.telegram_user_id,
+          ),
+          action: "send_message",
+          chatId: creditorUser.telegram_user_id,
+          text: `💸 <b>Recibiste un Pago</b>\n\n${payerName} te pagó <b>$${formattedAmount}</b>${sessionText}${remainingText}`,
+          now,
+        }));
+      }
+    }
+  };
+
+  if (!operationContext || !identity) {
+    await db.insert(split_payments).values({
+      id: paymentId,
+      session_id: session.id,
+      payer_user_id: hermesUser?.id ?? null,
+      payer_temp_id: tempUser?.id ?? null,
+      payee_user_id: state.creditor_user_id ?? null,
+      payee_temp_id: state.creditor_temp_id ?? null,
+      amount: paidAmount,
+      method: "manual",
+      receipt_image_url: null,
+      ocr_raw_text: null,
+      confirmed_at: now,
+      telegram_update_id: null,
+    });
+    await clearConversationState(chatId, telegramUserId);
+    if (state.creditor_user_id) {
+      await notifySplitPaymentReceived(
+        state.creditor_user_id,
+        payerName,
+        paidAmount,
+        state.remaining_amount ?? 0,
+        session.name,
+      );
+    }
+    return response;
+  }
+
+  const result = await runTelegramOperation(
+    (work) => db.transaction(work),
+    {
+      identity,
+      botId: operationContext.botId,
+      updateId: operationContext.updateId,
+      operationKind: SPLIT_PAYMENT_OPERATION,
+      now,
+    },
+    async (tx) => {
+      await writePayment(tx);
+      return { resourceType: "split_payment", resourceId: paymentId, result: response };
+    },
+  );
+  if (result.kind === "busy") throw new Error("Telegram split payment operation is already in progress");
+
+  await clearConversationState(chatId, telegramUserId);
+  return {
+    ...result.result,
+    deliveryOperationId: result.operationId,
+    deliveryKey: identity.deliveryKey,
   };
 }
 

@@ -2,6 +2,8 @@ import { db } from "../client";
 import { recurringExecutions, recurringExpenses } from "../schema";
 import { confirmExecution, skipExecution } from "../recurring-queries";
 import { and, eq } from "drizzle-orm";
+import { createTelegramOperationContext, createTelegramOperationIdentity } from "@/lib/telegram/operation-context";
+import { runTelegramOperation } from "@/lib/telegram/financial-operation";
 
 jest.mock("drizzle-orm", () => {
   const actual = jest.requireActual("drizzle-orm");
@@ -18,7 +20,8 @@ const mockInnerJoin = jest.fn(() => ({ where: mockWhere }));
 const mockLeftJoin = jest.fn(() => ({ where: mockWhere }));
 const mockFrom = jest.fn(() => ({ innerJoin: mockInnerJoin, leftJoin: mockLeftJoin, where: mockWhere }));
 const mockInsertValues = jest.fn();
-const mockUpdateWhere = jest.fn();
+const mockUpdateReturning = jest.fn().mockResolvedValue([{ id: "exec-a" }]);
+const mockUpdateWhere = jest.fn(() => ({ returning: mockUpdateReturning }));
 const mockUpdateSet = jest.fn(() => ({ where: mockUpdateWhere }));
 
 jest.mock("../client", () => ({
@@ -26,12 +29,18 @@ jest.mock("../client", () => ({
     select: jest.fn(() => ({ from: mockFrom })),
     insert: jest.fn(() => ({ values: mockInsertValues })),
     update: jest.fn(() => ({ set: mockUpdateSet })),
+    transaction: jest.fn(),
   },
+}));
+
+jest.mock("@/lib/telegram/financial-operation", () => ({
+  runTelegramOperation: jest.fn(),
 }));
 
 const mockAnd = and as jest.MockedFunction<typeof and>;
 const mockEq = eq as jest.MockedFunction<typeof eq>;
 const mockDb = db as jest.Mocked<typeof db>;
+const mockRunTelegramOperation = runTelegramOperation as jest.Mock;
 
 function expectActorScopedLookup(executionId: string, actorUserId: string): void {
   expect(mockInnerJoin).toHaveBeenCalled();
@@ -109,6 +118,10 @@ describe("recurring execution authorization", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockLimit.mockResolvedValue([]);
+    mockUpdateReturning.mockResolvedValue([{ id: "exec-a" }]);
+    (mockDb.transaction as jest.Mock).mockImplementation(
+      async (work: (transaction: typeof db) => Promise<unknown>) => work(db),
+    );
   });
 
   it("scopes confirmation lookup to both execution ID and actor", async () => {
@@ -176,6 +189,101 @@ describe("recurring execution authorization", () => {
       amountArs: expectedAmount,
     }));
     expect(mockUpdateWhere).toHaveBeenCalled();
+    expect(mockEq).toHaveBeenCalledWith(recurringExecutions.status, "pending");
+  });
+
+  it("rejects a legacy confirmation when the pending execution claim loses", async () => {
+    mockLimit
+      .mockResolvedValueOnce([authorizedExecution])
+      .mockResolvedValueOnce([authorizedRecurring]);
+    mockUpdateReturning.mockResolvedValueOnce([]);
+
+    await expect(confirmExecution("exec-a", "user-a")).resolves.toEqual({
+      success: false,
+      error: "Esta ejecución ya fue procesada",
+    });
+
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockInsertValues).toHaveBeenCalledTimes(1);
+    expect(mockUpdateReturning).toHaveBeenCalledTimes(1);
+  });
+
+  it("atomically writes a context-aware confirmation, operation id, and fallback delivery", async () => {
+    const txInserts: Array<{ table: unknown; values: unknown }> = [];
+    const txUpdates: unknown[] = [];
+    const txSelectBuilder: Record<"from" | "innerJoin" | "leftJoin" | "where" | "limit", jest.Mock> = {
+      from: jest.fn(() => txSelectBuilder),
+      innerJoin: jest.fn(() => txSelectBuilder),
+      leftJoin: jest.fn(() => txSelectBuilder),
+      where: jest.fn(() => txSelectBuilder),
+      limit: jest.fn()
+        .mockResolvedValueOnce([authorizedExecution])
+        .mockResolvedValueOnce([authorizedRecurring]),
+    };
+    const tx = {
+      select: jest.fn(() => txSelectBuilder),
+      insert: jest.fn((table: unknown) => ({
+        values: jest.fn(async (values: unknown) => {
+          txInserts.push({ table, values });
+        }),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn((values: unknown) => {
+          txUpdates.push(values);
+          return {
+            where: jest.fn(() => ({
+              returning: jest.fn().mockResolvedValue([{ id: "exec-a" }]),
+            })),
+          };
+        }),
+      })),
+    };
+    mockRunTelegramOperation.mockImplementationOnce(async (
+      _runner: unknown,
+      input: { identity: { operationId: string }; operationKind: string },
+      writer: (transaction: typeof tx) => Promise<{ resourceType: string; resourceId: string; result: unknown }>,
+    ) => {
+      expect(input.operationKind).toBe("recurring.confirm:exec-a");
+      return {
+        kind: "committed",
+        operationId: input.identity.operationId,
+        ...(await writer(tx)),
+        reused: false,
+      };
+    });
+
+    const context = createTelegramOperationContext({
+      botId: "bot-1",
+      updateId: "update-1",
+      chatId: "chat-1",
+      callbackMessageId: 22,
+      action: "callback",
+    });
+    const expectedOperationId = createTelegramOperationIdentity({
+      ...context,
+      action: "recurring.confirm",
+      suffix: "exec-a",
+    }).operationId;
+
+    const result = await confirmExecution("exec-a", "user-a", 12500, context);
+
+    expect(result).toEqual({
+      success: true,
+      transactionId: expect.any(String),
+      deliveryOperationId: expectedOperationId,
+      deliveryKey: expect.stringMatching(/^tgdel_v1_/),
+    });
+    expect(txInserts[0].values).toEqual(expect.objectContaining({
+      operation_id: expectedOperationId,
+      user_id: "user-a",
+      amount_ars: 12500,
+    }));
+    expect(txInserts[1].values).toEqual(expect.objectContaining({
+      operation_id: expectedOperationId,
+      action: "edit_message",
+      message_id: 22,
+    }));
+    expect(txUpdates[0]).toEqual(expect.objectContaining({ status: "confirmed", amountArs: 12500 }));
   });
 
   it("skips the actor's own pending execution", async () => {

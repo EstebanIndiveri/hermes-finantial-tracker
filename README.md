@@ -56,6 +56,7 @@ cp .env.example .env
 | `TELEGRAM_BOT_TOKEN` | Token de tu bot de Telegram | `123456:ABC-DEF...` |
 | `TELEGRAM_BOT_ID` | Namespace estable y no secreto; en producción debe existir o derivarse del token | `123456` |
 | `TELEGRAM_INBOX_ENABLED` | Activa el claim durable solo después de verificar la migración `0009` | `false` |
+| `TELEGRAM_OUTBOX_ENABLED` | Activa writers idempotentes y entrega durable; requiere inbox, migración `0010` y worker verificados | `false` |
 | `TELEGRAM_ALLOWED_USER_ID` | ID de tu usuario de Telegram | `123456789` |
 | `TELEGRAM_SECRET_TOKEN` | Token secreto para webhook | `cualquier_string_random` |
 | `GROQ_API_KEY` | API key de Groq (opcional) | `gsk_...` |

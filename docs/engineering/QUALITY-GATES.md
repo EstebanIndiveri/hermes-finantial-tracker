@@ -103,6 +103,26 @@ por las fuentes Google conocidas. La ventana `commit financiero -> completar
 inbox`, la entrega/outbox y los IDs de operacion pertenecen a H04b/ACT-06 y no
 quedan certificados por H04a.
 
+Tras el corte local PR-06/H04b, pasan 82/82 suites y 675/675 tests; el harness
+y TypeScript pasan, y ESLint termina con 0 errores y 63 advertencias visibles
+(siete menos que PR-05). Las pruebas nuevas usan libSQL temporal real para la
+migracion, constraints, diez claims paralelos, recuperacion de leases y
+fencing; tambien cubren identidad/reuso de operaciones, clasificacion de
+errores del dispatcher, compatibilidad con flags apagadas, writers personales,
+Split, recurrentes y reintegros, incluido `confirm_all` y revalidacion de
+membresia dentro del writer. No se usaron recursos externos ni credenciales.
+La confirmacion OCR tambien reclama el ticket, enlaza su `transaction_id` y
+crea el movimiento dentro de la misma transaccion durable; los reintentos tras
+commit recuperan entregas incluso cuando ya quedaron en estado terminal.
+
+Este resultado no autoriza staging ni produccion: el journal Drizzle historico
+todavia no registra `0009`/`0010`, la migracion no es reentrante ante una
+aplicacion parcial, el indice unico recurrente requiere preflight/conciliacion,
+y falta un worker programado para entregas `retryable`. Las consultas de
+preflight y la secuencia de rollout estan en
+`PR-06-H04B-MIGRATION-PREFLIGHT.sql` y
+`PR-06-H04B-OPERATION-OUTBOX-CONTRACT.md`. Las flags permanecen apagadas.
+
 ESLint aplica reglas de produccion sin excepciones globales. En tests permite
 `require()` para reinicializar modulos de Jest y mantiene `any` como advertencia
 visible mientras se tipan los fixtures. El reproductor forense CommonJS de la
