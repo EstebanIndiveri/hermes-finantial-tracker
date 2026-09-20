@@ -46,3 +46,7 @@ next-env.d.ts
 e2e/.auth.json
 playwright-report/
 test-results/
+config/staging-isolation.local.json
+config/production-reference.local.json
+config/staging-backup-evidence.local.json
+artifacts/staging/

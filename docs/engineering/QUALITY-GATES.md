@@ -156,3 +156,35 @@ worktree temporal; la verificación equivalente con webpack compiló y generó
 las 36 páginas estáticas. No se ejecutaron E2E, migraciones remotas, adopción,
 push, deploy ni cambios de secretos/webhook. Staging y producción continúan
 bloqueados por el runbook de adopción y por las flags en `false`.
+
+## Evidencia PR-08 / H04d (20/09/2026)
+
+H04d prepara el ensayo sin conectar proveedores: valida manifests declarativos
+de aislamiento, captura snapshots libSQL locales con `query_only`, firma HMAC y
+redacción, compara identidad de DB/manifiesto/schema y mantiene la adopción en
+`decision: blocked`/`applyAuthorized: false`. El digest abarca migraciones,
+archivos, checksums, preflights y exclusiones. Los blockers incluyen backup,
+restore, forward-fix, fingerprint objetivo, conciliación y autorización.
+
+La conciliación detecta FKs, huérfanos de negocio, duplicados, estados inválidos,
+schema parcial y cambios por fila financiera incluso si dos cambios compensados
+preservan la suma global. Un archivo de DB inexistente se rechaza antes de abrir
+libSQL; los artefactos manipulados, otro destino/salt o tablas aditivas no
+aprobadas también fallan cerrados.
+
+Puertas locales finales en Node 22:
+
+- harness: 33/33;
+- Jest: 84 suites y 689 tests;
+- TypeScript: aprobado;
+- ESLint: 0 errores y 63 warnings legacy;
+- build Next.js con webpack: aprobado (solo se habilitó red para descargar DM
+  Sans y Fraunces; permanecen los warnings conocidos de middleware/Edge);
+- `git diff --check`: aprobado.
+
+No se crearon ni consultaron proyectos Vercel, DB Turso, bots/webhooks Telegram,
+secretos, backups o datos remotos. `ok: true` en el manifiesto significa
+consistencia local, mantiene `isolationVerified: false` y
+`providerVerificationRequired: true`; no prueba
+identidades reales. Producción, `main`, flags, E2E, push y deploy permanecieron
+inmutables.

@@ -271,7 +271,7 @@ async function indexNames(client) {
   return result.rows.map((row) => String(row.name));
 }
 
-async function schemaFingerprint(client) {
+export async function computeSchemaFingerprint(client) {
   const result = await client.execute(`
     SELECT type, name, tbl_name, sql
     FROM sqlite_schema
@@ -334,7 +334,7 @@ async function canonicalSchemaDrift(client, tables, appliedMigrationIds) {
   }
   const canonicalIds = Object.keys(SCHEMA_REQUIREMENTS);
   if (canonicalIds.every((migrationId) => appliedMigrationIds.has(migrationId))) {
-    const fingerprint = await schemaFingerprint(client);
+    const fingerprint = await computeSchemaFingerprint(client);
     if (fingerprint !== CANONICAL_SCHEMA_FINGERPRINT) {
       drift.push("schema-fingerprint-mismatch");
     }
@@ -423,6 +423,7 @@ export async function inspectDatabase({ url, manifestPath = DEFAULT_MANIFEST_PAT
   const loadedManifest = await loadMigrationManifest(manifestPath);
   const client = createClient({ url });
   try {
+    await client.execute("PRAGMA query_only = ON");
     await client.execute("PRAGMA foreign_keys = ON");
     return await inspectWithClient(client, loadedManifest);
   } finally {

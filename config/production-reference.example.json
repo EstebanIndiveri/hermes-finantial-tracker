@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "environment": "production-reference",
+  "vercelProjectId": "prj_hermes_production_example",
+  "appOrigin": "https://hermes-production.example.invalid",
+  "productionHostDenylist": [
+    "hermes-production.example.invalid",
+    "hermes-finantial-tracker.vercel.app"
+  ],
+  "approvedStagingHostSuffix": "hermes-staging.example.invalid",
+  "databaseHost": "hermes-production-db.example.invalid",
+  "databaseId": "db_hermes_production_example",
+  "telegramBotId": "200000001",
+  "telegramBotUsername": "HermesProductionExampleBot",
+  "webhookUrl": "https://hermes-production.example.invalid/api/telegram/webhook",
+  "sessionCookieName": "hermes-production-session",
+  "secretRefs": {
+    "database": "vercel:production-database",
+    "telegramBot": "vercel:production-telegram-bot",
+    "telegramWebhook": "vercel:production-telegram-webhook",
+    "session": "vercel:production-session",
+    "cron": "vercel:production-cron",
+    "webAccess": "vercel:production-web-access"
+  },
+  "secretFingerprints": {
+    "database": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "telegramBot": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "telegramWebhook": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "session": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "cron": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "webAccess": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  }
+}

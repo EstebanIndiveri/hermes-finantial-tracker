@@ -83,6 +83,10 @@ adopción de staging/producción todavía no está habilitado; ver
 legacy y queda fuera de este procedimiento seguro; no ejecutarlo contra recursos
 compartidos o productivos.
 
+La preparación H04d agrega validación de identidades y conciliación read-only
+sobre una restauración libSQL local. No habilita apply remoto; ver
+`docs/engineering/PR-08-H04D-STAGING-REHEARSAL-RUNBOOK.md`.
+
 ### 5. Ejecutar en desarrollo
 
 ```bash

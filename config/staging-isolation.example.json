@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "environment": "staging",
+  "releaseSha": "1433d552005cd4c6d53df1f02bf8d82374b2005e",
+  "vercelProjectId": "prj_hermes_staging_example",
+  "appOrigin": "https://hermes-staging.example.invalid",
+  "databaseHost": "hermes-staging-db.example.invalid",
+  "databaseId": "db_hermes_staging_example",
+  "telegramBotId": "100000001",
+  "telegramBotUsername": "HermesStagingExampleBot",
+  "webhookUrl": "https://hermes-staging.example.invalid/api/telegram/webhook",
+  "sessionCookieName": "hermes-staging-session",
+  "secretRefs": {
+    "database": "vercel:staging-database",
+    "telegramBot": "vercel:staging-telegram-bot",
+    "telegramWebhook": "vercel:staging-telegram-webhook",
+    "session": "vercel:staging-session",
+    "cron": "vercel:staging-cron",
+    "webAccess": "vercel:staging-web-access"
+  },
+  "secretFingerprints": {
+    "database": "1111111111111111111111111111111111111111111111111111111111111111",
+    "telegramBot": "2222222222222222222222222222222222222222222222222222222222222222",
+    "telegramWebhook": "3333333333333333333333333333333333333333333333333333333333333333",
+    "session": "4444444444444444444444444444444444444444444444444444444444444444",
+    "cron": "5555555555555555555555555555555555555555555555555555555555555555",
+    "webAccess": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "dataPolicy": "synthetic-only",
+  "notificationsEnabled": false,
+  "flags": {
+    "inbox": false,
+    "outbox": false,
+    "worker": false
+  },
+  "e2eAllowedHost": "hermes-staging.example.invalid",
+  "aiMode": "stub",
+  "ocrMode": "stub"
+}
