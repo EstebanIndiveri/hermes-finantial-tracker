@@ -79,16 +79,18 @@ consulta de metadata.
 - Falta verificar el ID numérico del bot Telegram productivo: el proyecto
   legacy no declara `TELEGRAM_BOT_ID` y Vercel no devuelve el valor del token
   marcado como sensitive.
-- Faltan fingerprints reales de secretos para contrastar los manifiestos de
-  staging y producción; no se sustituyen por placeholders ni IDs de Vercel.
+- Faltan recibos/fingerprints reales de los secretos de staging. H04d.4 permite
+  que los fingerprints productivos permanezcan `null` cuando no existe un
+  recibo histórico, para no leer ni rotar legacy por este gate.
 - En consecuencia, el manifiesto de aislamiento no puede cerrarse y toda
   conexión o acción remota con efectos permanece bloqueada.
 
 ## Siguiente paso autorizado
 
 Obtener por un canal autorizado el ID no secreto del bot Telegram productivo y
-los fingerprints de las referencias de secretos en el momento de su carga o
-rotación, sin imprimir ni persistir sus valores. Contrastar ambos lados contra
-el manifiesto antes de pedir autorización explícita para un ensayo remoto.
+los recibos/fingerprints de staging durante una rotación beta controlada, sin
+imprimir ni persistir sus valores. Contrastar identidades, bindings y evidencia
+disponible contra el manifiesto antes de pedir autorización explícita para un
+ensayo remoto.
 Mantener A como referencia independiente hasta cerrar esa revisión; no
 reutilizar la fuente ni llamar rollback a una restauración de datos.

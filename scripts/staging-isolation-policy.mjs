@@ -139,6 +139,27 @@ function validateSecretFingerprints(value, field) {
   }
 }
 
+function validateProductionSecretFingerprints(value, field) {
+  exactKeys(value, SECRET_REF_KEYS, field);
+  const fingerprints = [];
+  const unavailableKeys = [];
+  for (const key of SECRET_REF_KEYS) {
+    const fingerprint = value[key];
+    if (fingerprint === null) {
+      unavailableKeys.push(key);
+      continue;
+    }
+    if (typeof fingerprint !== "string" || !SHA256.test(fingerprint)) {
+      fail("INVALID_SECRET_FINGERPRINT", `${field}.${key}`, "Use a lowercase SHA-256 fingerprint or null when no creation-time receipt exists.");
+    }
+    fingerprints.push(fingerprint);
+  }
+  if (new Set(fingerprints).size !== fingerprints.length) {
+    fail("REUSED_SECRET_FINGERPRINT", field, "Each available production secret fingerprint must be distinct.");
+  }
+  return unavailableKeys;
+}
+
 function validateTelegramBotId(value, field) {
   if (typeof value !== "string" || !TELEGRAM_BOT_ID.test(value)) {
     fail("INVALID_TELEGRAM_BOT_ID", field, `${field} must be the numeric provider-issued bot id.`);
@@ -249,13 +270,19 @@ export function validateStagingIsolation(stagingInput, productionInput) {
   validateSecretRefs(staging.secretRefs, "secretRefs");
   validateSecretRefs(production.secretRefs, "productionReference.secretRefs");
   validateSecretFingerprints(staging.secretFingerprints, "secretFingerprints");
-  validateSecretFingerprints(production.secretFingerprints, "productionReference.secretFingerprints");
+  const unavailableProductionFingerprintKeys = validateProductionSecretFingerprints(
+    production.secretFingerprints,
+    "productionReference.secretFingerprints",
+  );
+  const availableProductionFingerprints = new Set(
+    Object.values(production.secretFingerprints).filter((fingerprint) => fingerprint !== null),
+  );
   for (const key of SECRET_REF_KEYS) {
     if (staging.secretRefs[key] === production.secretRefs[key]) {
       fail("PRODUCTION_COLLISION", `secretRefs.${key}`, "A staging secret reference matches production.");
     }
-    if (staging.secretFingerprints[key] === production.secretFingerprints[key]) {
-      fail("PRODUCTION_COLLISION", `secretFingerprints.${key}`, "A staging secret resolves to the production fingerprint.");
+    if (availableProductionFingerprints.has(staging.secretFingerprints[key])) {
+      fail("PRODUCTION_COLLISION", `secretFingerprints.${key}`, "A staging secret resolves to an available production fingerprint.");
     }
   }
 
@@ -287,6 +314,12 @@ export function validateStagingIsolation(stagingInput, productionInput) {
     trustLevel: "unverified-local-declaration",
     environment: "staging",
     releaseSha: staging.releaseSha,
+    productionFingerprintComparison: unavailableProductionFingerprintKeys.length === SECRET_REF_KEYS.length
+      ? "unavailable"
+      : unavailableProductionFingerprintKeys.length === 0
+        ? "complete"
+        : "partial",
+    unavailableProductionFingerprintKeys,
     checks: [
       "declared-distinct-vercel-project",
       "declared-distinct-app",
@@ -294,7 +327,8 @@ export function validateStagingIsolation(stagingInput, productionInput) {
       "declared-distinct-telegram-bot",
       "declared-distinct-webhook",
       "declared-distinct-cookie",
-      "declared-distinct-secret-references-and-fingerprints",
+      "declared-distinct-secret-references",
+      "staging-secret-fingerprints-present",
       "synthetic-data-only",
       "notifications-disabled",
       "telegram-flags-disabled",

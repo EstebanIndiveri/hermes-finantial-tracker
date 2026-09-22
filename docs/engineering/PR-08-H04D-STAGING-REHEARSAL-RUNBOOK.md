@@ -47,7 +47,8 @@ tokens. Ambos archivos locales están ignorados. El manifiesto exige:
 
 - ID inmutable de proyecto Vercel, origen, ID/host de DB, ID numérico de bot,
   webhook y cookie distintos de producción;
-- referencias y fingerprints SHA-256 de secretos resueltos independientes;
+- referencias distintas y fingerprints SHA-256 de los secretos de staging;
+  fingerprints productivos solo cuando existe un recibo previo autorizado;
 - host bajo el sufijo de staging aprobado y rechazo explícito del dominio
   productivo conocido y de todos los aliases cargados en la denylist versionada;
 - datos exclusivamente sintéticos, notificaciones deshabilitadas y AI/OCR en
@@ -67,8 +68,11 @@ npm run staging:verify-isolation -- \
 mantiene `isolationVerified: false`,
 mantiene `providerVerificationRequired: true` y
 `trustLevel: unverified-local-declaration`: no habilita uso remoto hasta
-contrastar los IDs/fingerprints contra metadata autenticada de Vercel, Turso y
-Telegram. Un resultado distinto de `ok: true` bloquea todo el ensayo.
+contrastar identidades, bindings y los fingerprints disponibles contra metadata
+autenticada de Vercel, Turso y Telegram. Un resultado distinto de `ok: true`
+bloquea todo el ensayo. `productionFingerprintComparison: unavailable` no
+autoriza a leer o rotar producción: hace explícito que esa comparación opcional
+no existe.
 
 ## 2. Backup y restauración a destino local
 
@@ -169,6 +173,51 @@ bloqueos posteriores. Una tabla aditiva solo se admite declarando cada nombre
 revisado con `--allow-added-table`; una diferencia se investiga, no se ajusta la
 expectativa para hacerla pasar.
 
+## 4.1. Siguiente corte local: evidencia de aislamiento
+
+Antes de pedir cualquier smoke remoto, cerrar el manifiesto de aislamiento con
+fingerprints reales de los secretos de staging. Calcularlos offline por stdin en
+el momento de creación o rotación del secreto, usando la herramienta local
+`staging:fingerprint-secret`:
+
+```bash
+read -r -s HERMES_SECRET_VALUE
+printf '%s' "$HERMES_SECRET_VALUE" | npm run --silent staging:fingerprint-secret
+unset HERMES_SECRET_VALUE
+```
+
+No pegar secretos en comandos, logs ni archivos. No recuperar valores sensibles
+desde Vercel después de cargarlos como sensitive. Si falta un fingerprint de
+staging, el punto seguro para obtenerlo es una rotación beta autorizada. Un
+fingerprint productivo ausente queda en `null`: nunca se rota ni se lee legacy
+solo para satisfacer este gate. Las claves deben mapear exactamente:
+
+| Clave de manifiesto | Variable de runtime |
+| --- | --- |
+| `database` | `TURSO_AUTH_TOKEN` |
+| `telegramBot` | `TELEGRAM_BOT_TOKEN` |
+| `telegramWebhook` | `TELEGRAM_SECRET_TOKEN` |
+| `session` | `SESSION_SECRET` |
+| `cron` | `CRON_SECRET` |
+| `webAccess` | `WEB_ACCESS_TOKEN` |
+
+`TURSO_DATABASE_URL` queda cubierto por DB host/ID, no por el fingerprint
+`database`. No hace falta relogin de Turso para este corte: H04d.3 ya obtuvo
+metadata productiva read-only suficiente para distinguir cuenta, DB ID y host.
+
+El ID numerico del bot Telegram productivo sigue siendo evidencia no sensible.
+Puede derivarse localmente del prefijo numerico de un token ya disponible en un
+canal autorizado de rotacion, o consultarse con `getMe` read-only solo con
+autorizacion explicita. No ejecutar `setWebhook`, `deleteWebhook`, envio de
+mensajes, lectura de updates ni ningun cambio de configuracion productiva.
+
+El inventario autenticado de aliases Vercel del 22/09/2026 debe cargarse completo
+en `productionHostDenylist` y revalidarse inmediatamente antes de cualquier
+actividad remota. La evidencia de H04d.2 confirma que el webhook beta estaba
+vacío; falta evidencia read-only del webhook productivo y una nueva comprobación
+beta antes de habilitar tráfico. Un `ok: true` local del manifiesto no reemplaza
+esos gates ni habilita mutaciones remotas.
+
 ## 5. Activación futura por etapas
 
 Después de migración y conciliación verdes:
@@ -198,8 +247,8 @@ diagnosticar read-only y producir otro forward-fix idempotente y conciliado.
 - DB Turso independiente y credencial de alcance mínimo;
 - segundo bot Telegram, webhook y chat/usuarios sintéticos;
 - cookies y secretos independientes;
-- metadata autenticada de proveedores: Vercel project ID/dominios, Turso DB ID,
-  Telegram bot ID/webhook y fingerprints de secretos resueltos;
+- metadata autenticada de proveedores: Vercel project ID/dominios/bindings,
+  Turso DB ID, Telegram bot ID/webhook y recibos de secretos de staging;
 - backup/restauración verificados y, si aplica, autorización de anonimización;
 - autorización explícita para conectar, migrar y ejecutar smoke en esos recursos.
 

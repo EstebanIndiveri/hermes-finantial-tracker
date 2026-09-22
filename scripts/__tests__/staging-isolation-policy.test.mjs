@@ -10,14 +10,26 @@ function copy(value) {
   return structuredClone(value);
 }
 
-test("accepts a fully isolated staging manifest without exposing secret references", () => {
+test("accepts all-null production fingerprints as unavailable without exposing secret references", () => {
   const result = validateStagingIsolation(copy(staging), copy(production));
   assert.equal(result.ok, true);
   assert.equal(result.localManifestConsistent, true);
   assert.equal(result.isolationVerified, false);
   assert.equal(result.providerVerificationRequired, true);
   assert.equal(result.trustLevel, "unverified-local-declaration");
-  assert.equal(result.checks.length, 14);
+  assert.equal(result.productionFingerprintComparison, "unavailable");
+  assert.deepEqual(result.unavailableProductionFingerprintKeys, [
+    "cron",
+    "database",
+    "session",
+    "telegramBot",
+    "telegramWebhook",
+    "webAccess",
+  ]);
+  assert.equal(result.checks.length, 15);
+  assert.equal(result.checks.includes("declared-distinct-secret-references"), true);
+  assert.equal(result.checks.includes("staging-secret-fingerprints-present"), true);
+  assert.equal(result.checks.includes("declared-distinct-secret-references-and-fingerprints"), false);
   assert.equal(JSON.stringify(result).includes("vercel:"), false);
 });
 
@@ -82,7 +94,31 @@ test("rejects known production hosts and hosts outside the approved staging suff
   );
 });
 
-test("rejects provider identity and resolved secret fingerprint collisions", () => {
+test("accepts partial production fingerprints when each supplied fingerprint differs", () => {
+  const partial = copy(production);
+  partial.secretFingerprints.database = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+  const result = validateStagingIsolation(copy(staging), partial);
+
+  assert.equal(result.productionFingerprintComparison, "partial");
+  assert.deepEqual(result.unavailableProductionFingerprintKeys, [
+    "cron",
+    "session",
+    "telegramBot",
+    "telegramWebhook",
+    "webAccess",
+  ]);
+
+  const complete = copy(production);
+  for (const [index, key] of Object.keys(complete.secretFingerprints).entries()) {
+    complete.secretFingerprints[key] = String.fromCharCode(97 + index).repeat(64);
+  }
+  const completeResult = validateStagingIsolation(copy(staging), complete);
+  assert.equal(completeResult.productionFingerprintComparison, "complete");
+  assert.deepEqual(completeResult.unavailableProductionFingerprintKeys, []);
+});
+
+test("rejects provider identity and supplied production fingerprint collisions", () => {
   for (const field of ["vercelProjectId", "databaseId", "telegramBotId"]) {
     const colliding = copy(staging);
     colliding[field] = production[field];
@@ -92,11 +128,36 @@ test("rejects provider identity and resolved secret fingerprint collisions", () 
     );
   }
 
+  const fingerprintReference = copy(production);
+  fingerprintReference.secretFingerprints.database = staging.secretFingerprints.database;
   const aliasedSecret = copy(staging);
-  aliasedSecret.secretFingerprints.database = production.secretFingerprints.database;
   assert.throws(
-    () => validateStagingIsolation(aliasedSecret, copy(production)),
+    () => validateStagingIsolation(aliasedSecret, fingerprintReference),
     (error) => error.code === "PRODUCTION_COLLISION" && error.field === "secretFingerprints.database",
+  );
+
+  const crossKeyReference = copy(production);
+  crossKeyReference.secretFingerprints.database = staging.secretFingerprints.cron;
+  assert.throws(
+    () => validateStagingIsolation(copy(staging), crossKeyReference),
+    (error) => error.code === "PRODUCTION_COLLISION" && error.field === "secretFingerprints.cron",
+  );
+});
+
+test("rejects invalid or reused supplied production fingerprints", () => {
+  const invalid = copy(production);
+  invalid.secretFingerprints.database = "not-a-sha256-fingerprint";
+  assert.throws(
+    () => validateStagingIsolation(copy(staging), invalid),
+    (error) => error.code === "INVALID_SECRET_FINGERPRINT" && error.field === "productionReference.secretFingerprints.database",
+  );
+
+  const reused = copy(production);
+  reused.secretFingerprints.database = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  reused.secretFingerprints.telegramBot = reused.secretFingerprints.database;
+  assert.throws(
+    () => validateStagingIsolation(copy(staging), reused),
+    (error) => error.code === "REUSED_SECRET_FINGERPRINT" && error.field === "productionReference.secretFingerprints",
   );
 });
 

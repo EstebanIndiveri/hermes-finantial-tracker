@@ -23,11 +23,11 @@
     "webAccess": "vercel:production-web-access"
   },
   "secretFingerprints": {
-    "database": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "telegramBot": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "telegramWebhook": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-    "session": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-    "cron": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-    "webAccess": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    "database": null,
+    "telegramBot": null,
+    "telegramWebhook": null,
+    "session": null,
+    "cron": null,
+    "webAccess": null
   }
 }
