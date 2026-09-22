@@ -103,12 +103,12 @@ los artefactos correspondientes y coincidir. El ejemplo no constituye evidencia.
 ## 3. Captura y plan read-only
 
 ```bash
-npm run staging:reconcile:capture -- \
+npm run --silent staging:reconcile:capture -- \
   --url file:/ruta/absoluta/staging-restaurado.db \
   --salt-file /ruta/segura/evidence-salt \
   > artifacts/staging/before.json
 
-npm run staging:adoption:plan -- \
+npm run --silent staging:adoption:plan -- \
   --url file:/ruta/absoluta/staging-restaurado.db \
   --salt-file /ruta/segura/evidence-salt \
   --backup-evidence config/staging-backup-evidence.local.json \
