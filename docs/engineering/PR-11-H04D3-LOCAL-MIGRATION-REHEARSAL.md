@@ -48,7 +48,7 @@ cerrada de las 16 tablas observadas por el reconciliador, devolvió `ok: true` y
 porque la firma incluye `databaseEvidenceId`, ligado a la ruta de cada DB; la
 verificación cruzada fue que ambas llegaron al mismo fingerprint canónico, sin
 pendientes, drift ni violaciones. Las pruebas dirigidas que ejercitan las flags
-apagadas pasaron: 6 suites y 41 tests, confirmando el no-op de entregas
+apagadas pasaron: 6 suites y 46 tests, confirmando el no-op de entregas
 proactivas. No se alternaron flags de Vercel ni se ejecutó una release: esta es
 evidencia local de idempotencia e invariancia, no un rollback operativo de
 runtime.
@@ -66,22 +66,19 @@ de instalación desde cero; no valida adopción ni conciliación de datos legacy
 
 ## Contraste de identidad productiva
 
-El usuario identificó como productiva la DB `hermes-acme` bajo la cuenta
-`eindiveri`. En la sesión CLI disponible durante este corte no se pudo
-reproducir esa metadata: `turso auth whoami` devolvió `esteban-indiveri`,
-`turso db list` mostró solamente `atlas` y `beta-hermes`, y
-`turso db show hermes-acme` respondió `database hermes-acme not found`. No se
-consultaron tablas ni se ejecutó `db shell` contra producción. Por lo tanto, el
-contraste productivo queda pendiente de una sesión Turso que vea `eindiveri`.
+Mediante un perfil CLI temporal separado se verificó, sin consultar tablas, la
+cuenta productiva `eindiveri` y su DB `hermes-acme`: ID
+`019e71ab-9501-7c05-a672-b41db7a2cb27`, host
+`hermes-acme-eindiveri.aws-ap-northeast-1.turso.io`. ID, host, cuenta y región
+son distintos de `beta-hermes`. La sesión beta principal no fue reemplazada.
+El perfil temporal productivo se cerró con `turso auth logout` al concluir la
+consulta de metadata.
 
 ## Gates que permanecen bloqueados
 
 - Falta verificar el ID numérico del bot Telegram productivo: el proyecto
   legacy no declara `TELEGRAM_BOT_ID` y Vercel no devuelve el valor del token
   marcado como sensitive.
-- Falta reproducir por CLI la metadata no secreta de Turso producción
-  `hermes-acme` en la cuenta `eindiveri`; la sesión actual sigue apuntando a
-  `esteban-indiveri`.
 - Faltan fingerprints reales de secretos para contrastar los manifiestos de
   staging y producción; no se sustituyen por placeholders ni IDs de Vercel.
 - En consecuencia, el manifiesto de aislamiento no puede cerrarse y toda
@@ -89,10 +86,9 @@ contraste productivo queda pendiente de una sesión Turso que vea `eindiveri`.
 
 ## Siguiente paso autorizado
 
-Repetir `turso db show hermes-acme` desde una sesión CLI que vea la cuenta
-`eindiveri`, obtener por un canal autorizado el ID no secreto del bot Telegram
-productivo y los fingerprints de las referencias de secretos en el momento de
-su carga o rotación, sin imprimir ni persistir sus valores. Contrastar ambos
-lados contra el manifiesto antes de pedir autorización explícita para un ensayo
-remoto. Mantener A como referencia independiente hasta cerrar esa revisión; no
+Obtener por un canal autorizado el ID no secreto del bot Telegram productivo y
+los fingerprints de las referencias de secretos en el momento de su carga o
+rotación, sin imprimir ni persistir sus valores. Contrastar ambos lados contra
+el manifiesto antes de pedir autorización explícita para un ensayo remoto.
+Mantener A como referencia independiente hasta cerrar esa revisión; no
 reutilizar la fuente ni llamar rollback a una restauración de datos.
