@@ -83,7 +83,12 @@ Antes de planificar adopción se necesita evidencia externa de:
 
 La restauración debe terminar como un archivo local fuera del repositorio. H04d
 se niega a crear un archivo inexistente, para no confundir una DB vacía con la
-copia que debía inspeccionarse.
+copia que debía inspeccionarse. La fuente restaurada es siempre origen
+read-only, nunca destino del ensayo: crear A y B de forma independiente con
+`sqlite .backup`, no copiar B desde A. El directorio temporal debe ser `0700`;
+antes de operar, comprobar `realpath`, inode y hash de cada artefacto. Tratar el
+backup como bundle SQLite (archivo principal, WAL y metadata), de modo que la
+verificación y la restauración no pierdan un WAL asociado.
 
 Crear además un archivo de salt aleatorio, exclusivo de staging, con permisos
 restringidos y fuera del repositorio. El salt debe tener al menos 16 caracteres
@@ -136,12 +141,18 @@ Con el schema real observado, un corte posterior debe escribir un plan específi
 de forward-fix aditivo. Cada paso tendrá migración nueva, transacción, checksum,
 preflight y fingerprint esperado. No se marcan IDs canónicos por similitud.
 
-Sobre otra copia desechable:
+Sobre copias locales desechables e independientes de la misma fuente (migrar A
+primero, verificarla contra el fingerprint canónico y congelarla como
+referencia; usar B para el ensayo repetible):
 
 1. capturar `before.json`;
 2. aplicar el forward-fix revisado con las tres flags apagadas;
 3. capturar `after.json` con el mismo salt;
-4. comparar contra el fingerprint objetivo aprobado:
+4. comparar contra el fingerprint objetivo aprobado;
+5. repetir la migración en B: debe devolver `appliedMigrationIds: []`;
+6. apagar inbox, outbox y worker y verificar invariancia de schema/evidencia.
+   Esto es rollback funcional de flags, no rollback de datos, migraciones,
+   deployment ni tráfico.
 
 ```bash
 npm run staging:reconcile:compare -- \
