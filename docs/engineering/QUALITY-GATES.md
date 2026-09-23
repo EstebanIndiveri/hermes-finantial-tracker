@@ -36,6 +36,9 @@ fuente compiló y generó las 36 páginas con Webpack. No agregar
 el módulo faltante pertenece al resolver interno de Next/Turbopack. Se mantiene
 Webpack como workaround hasta verificar una versión de Next que corrija el
 fallo; cualquier cambio de bundler requiere volver a ejecutar el build aislado.
+La actualización posterior a Next 16.3.6 pasó el build canónico con Webpack;
+Turbopack todavía no se volvió a probar con esa versión, por lo que no se
+afirma que el fallo del resolver esté corregido.
 
 `test:harness` comprueba que secretos, proxies y `NODE_OPTIONS` centinela no se
 propaguen al proceso aislado y que la DB utilizada sea local y temporal.
@@ -220,3 +223,21 @@ La repetición de Turbopack después de reemplazar el symlink confirma que el
 diagnóstico anterior de PR-07 no explica este fallo. La evidencia actual apunta
 al resolver interno de `next/font/google` en Next 16.3.2; no se agregó ese
 módulo privado como dependencia ni se cambió la carga visual de fuentes.
+
+## Evidencia ACT-03 / parche compatible de dependencias (23/09/2026)
+
+Se actualizó el lockfile con Node 22.23.2/npm 10.9.8 y se ejecutó `npm ci`.
+Next.js quedó en 16.3.6, junto con parches compatibles de sharp, js-yaml,
+qs y hono. No hubo cambios de código funcional. Las puertas posteriores a la
+actualización pasaron: harness 43/43, Jest 88 suites y 731/731 tests,
+TypeScript, ESLint con 0 errores y 64 warnings existentes, y build canónico
+con Webpack (36 páginas estáticas; warnings conocidos de middleware/Edge).
+No se ejecutó E2E contra ningún servicio remoto.
+
+`npm audit --json` pasó de 10 hallazgos (1 crítico, 3 altos, 6 moderados) a 5
+(0 críticos, 1 alto, 4 moderados). El alto restante corresponde a `xlsx` y no
+tiene corrección automática; los cuatro moderados pertenecen a la cadena de
+herramientas Drizzle Kit/esbuild, cuya solución sugerida por npm implica un
+downgrade mayor fuera de alcance. Ver el
+[contrato ACT-03 de dependencias](ACT-03-DEPENDENCY-SECURITY-CONTRACT.md).
+Este resultado no cierra ACT-03 completo ni autoriza deploy o smoke remoto.

@@ -57,10 +57,22 @@ Subsequent remote rehearsal gates follow the [runbook](PR-08-H04D-STAGING-REHEAR
    in that order; do not reverse schema/data or restore over an active DB.
 
 ACT-03 (runtime, Jest, lint, and mandatory CI) is **in progress in a separate
-workstream**; it is not claimed complete by this ledger. The isolated build
+workstream**. Its compatible dependency-security subcut is complete locally:
+Next.js and four transitive dependency families were patched, full local gates
+passed, and the audit dropped from 10 to 5 findings. The remaining `xlsx` high
+finding and four moderate Drizzle tooling-chain findings are tracked in the
+[ACT-03 dependency contract](ACT-03-DEPENDENCY-SECURITY-CONTRACT.md); neither
+ACT-03 as a whole nor dependency remediation is claimed complete. The isolated build
 workaround at `e51f313` (`fix(build): pin isolated production build to webpack`)
 is an independent quality gate: it addresses the Next.js/Turbopack build
 failure, and does not close ACT-03 or any H04d isolation/rehearsal gate.
+
+The next independent local security cut is to replace the XLSX writer under
+the existing export API contract and verify the downloaded workbook with an
+independent reader. The Drizzle tooling findings need a separate non-breaking
+resolution assessment; do not force npm's suggested downgrade or change the
+migration runner merely to reduce an audit count. Neither security cut
+substitutes for H04d.4c's provider-identity gate.
 
 ## Scope boundary for this cut
 
