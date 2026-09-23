@@ -26,6 +26,16 @@ fingerprints `null` when no authorized historical receipt exists. Load the
 versioned production host denylist and include the six beta fingerprints and
 their provenance as defined by the [contract](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md).
 
+The user supplied the bot profile usernames `HermesFinanceAssistBot` and
+`Hermes_beta_finantial_bot`; these identify the expected accounts but are not
+provider evidence of the production numeric ID or current webhook configuration.
+The beta numeric ID `8739389202` was recorded in H04d.2; its webhook was empty
+at that inspection and must be rechecked before any remote activity. A local helper now
+supports user-operated, read-only `getMe`/`getWebhookInfo` capture with token
+stdin and whitelisted output. H04d.4c remains open until the resulting
+nonsecret production metadata and the remaining provider identities are
+verified and the ignored manifests pass the local isolation verifier.
+
 Proposed H04d.4c — local manifest gate: complete both ignored local manifests
 from verified non-secret metadata and existing beta fingerprint receipts; run
 `staging:verify-isolation` and record a passing local result, while preserving
@@ -70,12 +80,15 @@ workaround at `e51f313` (`fix(build): pin isolated production build to webpack`)
 is an independent quality gate: it addresses the Next.js/Turbopack build
 failure, and does not close ACT-03 or any H04d isolation/rehearsal gate.
 
-The next independent local security cut is a bounded Drizzle Kit tooling
-remediation. Its four moderate findings come from the dev-only
-`drizzle-kit` -> `@esbuild-kit` -> `esbuild` chain. Test any scoped override
-against disposable local migration generation and compare generated SQL before
-accepting it; do not force npm's suggested breaking downgrade or alter the
-canonical migration runner merely to reduce an audit count. This cut does not
+A bounded Drizzle Kit tooling assessment is documented in the
+[toolchain security contract](DRIZZLE-TOOLCHAIN-SECURITY-CONTRACT.md). Its four
+moderate findings come from the dev-only `drizzle-kit` -> `@esbuild-kit` ->
+`esbuild` chain. A global override was rejected because it conflicted with
+other consumers' peer ranges; package files were restored. A subsequent
+remediation cut needs a supported replacement or a scoped compatibility proof
+against disposable local migration generation and generated-SQL comparison.
+Do not force npm's breaking downgrade or alter the canonical migration runner
+merely to reduce an audit count. This assessment does not close ACT-03 or
 substitute for H04d.4c's provider-identity gate.
 
 ## Scope boundary for this cut

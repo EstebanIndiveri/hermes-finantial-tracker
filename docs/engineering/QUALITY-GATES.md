@@ -257,3 +257,20 @@ TypeScript, ESLint con 0 errores y 64 warnings existentes y el build canónico
 Next 16.3.6/Webpack. No se corrió E2E remoto. `npm audit --omit=dev` reporta
 0 hallazgos; el audit completo reporta 4 moderados de la cadena de Drizzle Kit
 y ninguno alto o crítico. No hubo despliegue ni cambios en proveedores.
+
+## Evidencia H04d.4c / helper de identidad Telegram (23/09/2026)
+
+El helper local lee un token por stdin y consulta exclusivamente `getMe` y
+`getWebhookInfo`; imprime solo ID, username y webhook canónico sin query ni
+fragmento. Rechaza argumentos, entrada malformada y URL potencialmente
+sensible sin imprimir token ni respuesta cruda. Sus seis pruebas simuladas
+pasaron en Node 22; el harness completo quedó en 49/49. Ningún token real fue
+leído y no se consultó Telegram. Los usernames facilitados por el usuario no
+cierran todavía el manifiesto: falta el ID numérico productivo y confirmar el
+webhook efectivo, entre otros campos de aislamiento. El ID beta ya consta en
+H04d.2, con webhook vacío en aquella inspección.
+
+La evaluación del tooling Drizzle permanece documentada sin cambio de
+dependencias. No se forzó el override global que interfería con Vite; el audit
+completo sigue con cuatro avisos moderados dev-only. No se corrió generación
+de migraciones con una combinación de paquetes no respaldada.

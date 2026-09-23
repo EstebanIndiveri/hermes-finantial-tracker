@@ -134,6 +134,30 @@ El inventario no mostro aliases del proyecto beta y ese proyecto continuaba sin
 deployments. Debe repetirse inmediatamente antes de autorizar actividad remota,
 porque aliases y deployments son estado mutable del proveedor.
 
+### Captura local de metadata Telegram productiva
+
+Para completar la evidencia del bot productivo, el operador ejecuta en su propia
+maquina (zsh) con entrada oculta, sin escribir el token como argumento, variable
+de entorno ni archivo:
+
+```zsh
+read -r -s 'HERMES_BOT_TOKEN?Token productivo (oculto): '
+printf '\n'
+printf '%s' "$HERMES_BOT_TOKEN" | node scripts/read-telegram-bot-metadata.mjs
+unset HERMES_BOT_TOKEN
+```
+
+El helper consulta solamente `getMe` y `getWebhookInfo` por GET y emite un
+JSON con `botId`, `username` y `webhookUrl` si la URL usa la ruta canónica y no
+contiene query, fragmento ni credenciales que puedan ocultar secretos. No
+ejecuta cambios ni obtiene updates. El token nunca se imprime; errores no
+incluyen token ni URL cruda. Compartir solamente el JSON
+resultante como metadata restringida, nunca el token ni la salida de diagnóstico
+de otra herramienta. No correr esta consulta desde este corte automatizado.
+
+La salida puede verificarse con respuestas simuladas, sin llamar a Telegram:
+`node --test scripts/__tests__/read-telegram-bot-metadata.test.mjs`.
+
 La evidencia que permanece externa al repo y bloquea el cierre de aislamiento:
 
 - evidencia read-only del ID/username y webhook productivos;
