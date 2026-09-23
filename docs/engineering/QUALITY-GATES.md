@@ -27,6 +27,16 @@ npm run build
 - usa una DB libSQL temporal y valores sinteticos;
 - elimina su directorio temporal al terminar.
 
+El comando canónico de build selecciona Webpack explícitamente. Next 16.3.2
+falló en dos intentos con Turbopack al resolver los módulos virtuales de
+`next/font/google` para Fraunces y DM Sans: primero con el symlink compartido de
+dependencias y luego con un `npm ci` limpio y aislado en este worktree. La misma
+fuente compiló y generó las 36 páginas con Webpack. No agregar
+`@vercel/turbopack-next` como dependencia:
+el módulo faltante pertenece al resolver interno de Next/Turbopack. Se mantiene
+Webpack como workaround hasta verificar una versión de Next que corrija el
+fallo; cualquier cambio de bundler requiere volver a ejecutar el build aislado.
+
 `test:harness` comprueba que secretos, proxies y `NODE_OPTIONS` centinela no se
 propaguen al proceso aislado y que la DB utilizada sea local y temporal.
 
@@ -188,3 +198,24 @@ consistencia local, mantiene `isolationVerified: false` y
 `providerVerificationRequired: true`; no prueba
 identidades reales. Producción, `main`, flags, E2E, push y deploy permanecieron
 inmutables.
+
+## Evidencia PR-12 / H04d.4b (23/09/2026)
+
+En Node 22 pasan el harness (43/43), Jest (88/88 suites; 731/731 tests),
+TypeScript y ESLint (0 errores; 64 warnings). El build default con Turbopack
+falló al resolver el módulo virtual de Google Fonts de Next.js 16.3.2, pero el
+mismo build completó con Webpack. Por eso `npm run build` selecciona ahora
+Webpack explícitamente dentro del runner aislado. El intento con Turbopack y
+los warnings de ESLint quedan registrados para revisión futura; no se cambió
+la configuración de fuentes ni se añadió una dependencia.
+
+`npm ci` reportó 10 avisos de vulnerabilidades del árbol de dependencias
+(6 moderadas, 3 altas y 1 crítica); no se aplicaron actualizaciones automáticas.
+No hubo conexiones a proveedores, DBs, bots, webhooks ni deploys. Las variables
+actualizadas permanecen solo en el proyecto Vercel beta y no están aplicadas a
+un deployment por este corte.
+
+La repetición de Turbopack después de reemplazar el symlink confirma que el
+diagnóstico anterior de PR-07 no explica este fallo. La evidencia actual apunta
+al resolver interno de `next/font/google` en Next 16.3.2; no se agregó ese
+módulo privado como dependencia ni se cambió la carga visual de fuentes.

@@ -11,7 +11,7 @@
     "dev": "next dev",
     "preinstall": "node scripts/verify-runtime.mjs",
     "check:node": "node scripts/verify-runtime.mjs",
-    "build": "node scripts/run-isolated.mjs build next build",
+    "build": "node scripts/run-isolated.mjs build next build --webpack",
     "start": "next start",
     "lint": "node scripts/verify-runtime.mjs && eslint .",
     "typecheck": "node scripts/verify-runtime.mjs && tsc --noEmit --incremental false",
