@@ -97,7 +97,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       });
     }
 
-    const buffer = generateXLSX(exportTxs, exportCats);
+    const buffer = await generateXLSX(exportTxs, exportCats);
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {

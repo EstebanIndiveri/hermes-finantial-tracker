@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 export interface ExportTransaction {
   date: string;
@@ -71,8 +71,8 @@ export function generateCSV(txs: ExportTransaction[]): string {
 export function generateXLSX(
   txs: ExportTransaction[],
   cats: ExportCategory[],
-): Buffer {
-  const workbook = XLSX.utils.book_new();
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
 
   const transactionRows = [
     ["Fecha", "Comercio", "Categoría", "Monto (ARS)", "Descripción"],
@@ -84,8 +84,8 @@ export function generateXLSX(
       tx.description ?? "",
     ]),
   ];
-  const transactionsSheet = XLSX.utils.aoa_to_sheet(transactionRows);
-  XLSX.utils.book_append_sheet(workbook, transactionsSheet, "Movimientos");
+  const transactionsSheet = workbook.addWorksheet("Movimientos");
+  transactionsSheet.addRows(transactionRows);
 
   const summaryRows = [
     ["Categoría", "Presupuesto (ARS)", "Gastado (ARS)", "Saldo (ARS)", "% Usado"],
@@ -102,8 +102,8 @@ export function generateXLSX(
       ];
     }),
   ];
-  const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
-  XLSX.utils.book_append_sheet(workbook, summarySheet, "Resumen por categoría");
+  const summarySheet = workbook.addWorksheet("Resumen por categoría");
+  summarySheet.addRows(summaryRows);
 
   const budgetRows = [
     ["Categoría", "Límite mensual (ARS)", "Estado"],
@@ -113,8 +113,8 @@ export function generateXLSX(
       cat.hard_limit === 1 ? "activo" : "cerrado",
     ]),
   ];
-  const budgetSheet = XLSX.utils.aoa_to_sheet(budgetRows);
-  XLSX.utils.book_append_sheet(workbook, budgetSheet, "Presupuestos");
+  const budgetSheet = workbook.addWorksheet("Presupuestos");
+  budgetSheet.addRows(budgetRows);
 
-  return Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+  return workbook.xlsx.writeBuffer().then((buffer) => Buffer.from(buffer));
 }

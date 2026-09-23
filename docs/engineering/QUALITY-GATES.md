@@ -241,3 +241,19 @@ herramientas Drizzle Kit/esbuild, cuya solución sugerida por npm implica un
 downgrade mayor fuera de alcance. Ver el
 [contrato ACT-03 de dependencias](ACT-03-DEPENDENCY-SECURITY-CONTRACT.md).
 Este resultado no cierra ACT-03 completo ni autoriza deploy o smoke remoto.
+
+## Evidencia ACT-03 / reemplazo del writer XLSX (23/09/2026)
+
+Se reemplazó `xlsx@0.18.5` por ExcelJS en la exportación, preservando las tres
+hojas, sus valores y tipos de celda, la ruta CSV y el contrato HTTP del XLSX.
+La generación es ahora asíncrona y la ruta la espera. Las pruebas incluyen una
+lectura independiente del ZIP/OOXML para comprobar que texto parecido a una
+fórmula se serializa como texto sin nodo de fórmula. El override de `uuid` se
+limita a ExcelJS y cruza su rango de versión mayor declarado; queda como
+riesgo explícito que debe revalidarse al actualizar esa biblioteca.
+
+Tras `npm ci` limpio, pasaron harness 43/43, Jest 88 suites y 735/735 tests,
+TypeScript, ESLint con 0 errores y 64 warnings existentes y el build canónico
+Next 16.3.6/Webpack. No se corrió E2E remoto. `npm audit --omit=dev` reporta
+0 hallazgos; el audit completo reporta 4 moderados de la cadena de Drizzle Kit
+y ninguno alto o crítico. No hubo despliegue ni cambios en proveedores.
