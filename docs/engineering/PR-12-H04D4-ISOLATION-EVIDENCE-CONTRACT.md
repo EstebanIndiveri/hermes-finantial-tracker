@@ -180,3 +180,41 @@ La evidencia que permanece externa al repo y bloquea el cierre de aislamiento:
 - Rehacer login de Turso para repetir metadata ya documentada.
 - Ejecutar migraciones, despliegues, smokes, webhooks o trafico real.
 - Push, PR, merge o deploy.
+
+## Addendum de cierre H04d.4b — 23/09/2026
+
+Este addendum registra el estado alcanzado en H04d.4b y sustituye las
+afirmaciones de estado y pendientes temporales de las secciones históricas
+anteriores. Las prohibiciones originales describen el corte documental inicial;
+el usuario autorizó después, de forma específica, configurar secretos beta.
+Las afirmaciones históricas de que los fingerprints beta seguían pendientes
+quedan sustituidas por esta sección.
+
+- Proyecto Vercel beta: `prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`.
+- Base Turso beta: `01a0c0bd-0601-7f27-b147-915d105b19f2`.
+- Bot beta: `8739389202` (`@Hermes_beta_finantial_bot`).
+- Los seis bindings sensibles de Vercel beta tienen fingerprints SHA-256
+  locales registrados en `config/staging-secret-fingerprints.local.json`, un
+  archivo ignorado por Git. Los fingerprints no son los valores secretos y no
+  se reproducen aquí. El recibo clasifica la procedencia por secreto.
+- Se generaron cuatro secretos propios de staging. Se creó y configuró un
+  token Turso para la DB beta. El token anterior sigue válido: el CLI exige
+  invalidar tokens del grupo `default`, que también contiene `atlas`, y el
+  usuario decidió no revocarlo.
+- Se configuró en Vercel el token de Telegram beta suministrado. No se hizo una
+  rotación vía BotFather.
+- No hubo cambios de esquema ni datos en DB, despliegues, cambios de webhook ni
+  modificaciones de recursos productivos.
+
+Una consulta autenticada y read-only de `vercel env ls production` el
+23/09/2026, vinculada al ID del proyecto beta anterior, reconfirmó los seis
+nombres de variables en el target `Production` de ese proyecto. El CLI no
+mostró sus valores. La tabla de fechas del 20/09/2026 arriba es evidencia
+histórica, no el estado temporal actual de los bindings.
+
+Este avance no demuestra aislamiento completo: no se declara
+`isolationVerified`. Siguen pendientes los manifiestos locales completos, el
+ID/username/webhook del bot productivo y una metadata fresca de proveedores
+antes de cualquier smoke remoto. Los fingerprints productivos pueden seguir
+siendo `null`; no se consultaron ni rotaron secretos productivos para completar
+esa comparación.

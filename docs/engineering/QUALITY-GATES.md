@@ -211,9 +211,10 @@ la configuración de fuentes ni se añadió una dependencia.
 
 `npm ci` reportó 10 avisos de vulnerabilidades del árbol de dependencias
 (6 moderadas, 3 altas y 1 crítica); no se aplicaron actualizaciones automáticas.
-No hubo conexiones a proveedores, DBs, bots, webhooks ni deploys. Las variables
-actualizadas permanecen solo en el proyecto Vercel beta y no están aplicadas a
-un deployment por este corte.
+En H04d.4b se crearon o configuraron credenciales exclusivamente para Turso
+beta y el proyecto Vercel beta. No se consultaron ni modificaron tablas o datos,
+ni se cambió un webhook, deployment o recurso productivo. Las variables
+actualizadas todavía no están aplicadas a un deployment.
 
 La repetición de Turbopack después de reemplazar el symlink confirma que el
 diagnóstico anterior de PR-07 no explica este fallo. La evidencia actual apunta
