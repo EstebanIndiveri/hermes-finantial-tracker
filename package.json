@@ -23,6 +23,7 @@
     "staging:reconcile:compare": "node scripts/verify-runtime.mjs && node scripts/compare-staging-reconciliation.mjs",
     "staging:adoption:plan": "node scripts/verify-runtime.mjs && node scripts/plan-staging-adoption.mjs",
     "staging:fingerprint-secret": "node scripts/verify-runtime.mjs && node scripts/fingerprint-isolation-secret.mjs",
+    "staging:install-beta-telegram-token": "node scripts/verify-runtime.mjs && node scripts/install-beta-telegram-token.mjs",
     "db:seed": "tsx lib/db/seed.ts",
     "test": "npm run test:harness && npm run test:unit",
     "test:harness": "node scripts/verify-runtime.mjs && node --test scripts/__tests__/*.test.mjs",

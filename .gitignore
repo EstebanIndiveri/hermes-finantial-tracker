@@ -49,4 +49,5 @@ test-results/
 config/staging-isolation.local.json
 config/production-reference.local.json
 config/staging-backup-evidence.local.json
+config/staging-secret-fingerprints.local.json
 artifacts/staging/
