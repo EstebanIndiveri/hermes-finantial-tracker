@@ -310,3 +310,39 @@ rechaza URLs con corchetes, parámetros o rutas distintas, por lo que este
 registro toma la URL canónica reportada. Codex no ejecutó esa consulta ni vio
 el token. La evidencia es una declaración del operador sobre una consulta
 autenticada; no verifica por sí sola otros bindings, aliases o el estado beta.
+
+## Addendum H04d.4d — reconciliación beta read-only (24/09/2026)
+
+Se hicieron las consultas beta acotadas siguientes, sin leer tablas financieras
+ni modificar proveedores:
+
+- **Telegram beta, 22:51 UTC:** el helper local con el token beta devolvió ID
+  `8739389202`, username `Hermes_beta_finantial_bot` y URL vacía. El webhook
+  beta seguía sin configurar en esa consulta.
+- **Turso beta, 22:48:23 UTC:** `turso db show beta-hermes` devolvió ID
+  `01a0c0bd-0601-7f27-b147-915d105b19f2`, host
+  `beta-hermes-esteban-indiveri.aws-us-east-2.turso.io` y región
+  `aws-us-east-2`; coincide con el manifiesto.
+- **Vercel beta, 22:49:58 UTC:** el ID local coincidió con el proyecto
+  `hermes-finantial-tracker-z2` de `eindi-acme`; el proyecto indica Node.js
+  22.x. `vercel ls` no encontró deployments y `vercel inspect` no encontró
+  deployment asociado al host beta. `domains inspect` devolvió acceso denegado;
+  eso no prueba que el alias exista ni que no exista. No se consultó el
+  inventario global de proyectos o aliases.
+- La lista de **nombres** de variables del target Preview mostró bindings de DB,
+  Telegram, cron y sesión como `Encrypted`; no se leyeron valores. No aparecieron
+  `AI_MODE`, `OCR_MODE`, `NOTIFICATIONS_ENABLED`, `SESSION_COOKIE_NAME`,
+  `TELEGRAM_INBOX_ENABLED`, `TELEGRAM_OUTBOX_ENABLED`,
+  `TELEGRAM_OUTBOX_WORKER_ENABLED` ni `NEXT_PUBLIC_APP_URL`.
+
+La ausencia de controles tiene efectos concretos en el código actual: AI y OCR
+quedan en modo `live`, notificaciones habilitadas, la sesión usa el nombre
+legacy `hermes_session`, y el webhook usa el handler legacy cuando inbox no está
+explícitamente en `true`. Por eso Preview no está listo para deploy o smoke.
+El proyecto tampoco tiene deployment y el estado del alias beta sigue sin
+confirmación de Vercel.
+
+No se consultó Vercel ni Turso productivos. La metadata productiva sigue siendo
+la salida que el operador informó del helper, no una consulta independiente de
+Codex. Este addendum no declara aislamiento completo ni autoriza cambios de
+configuración, deploy, webhook o tráfico.

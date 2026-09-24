@@ -15,6 +15,7 @@ production readiness. Source of scope: [stabilization plan](../audit/PLAN-DE-ACC
 | H04d.4a — isolation evidence tooling | Complete at `1ee9515` (`feat(staging): harden isolation evidence`). Adds the local secret fingerprint helper and isolation policy checks; see the [evidence contract](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md). A local verifier result alone does not establish provider-verified isolation. |
 | H04d.4b — beta secret evidence cut | Complete at `ff2bd6f` and recorded at `646d095`. Six beta secret fingerprints and provenance receipts are local/ignored; the beta Telegram token configuration helper is at `ff2bd6f`. The addendum records the beta project/DB/bot identities and confirms no DB data/schema, deployment, webhook, or production resource change. See the [H04d.4b addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-de-cierre-h04d4b--23092026). |
 | H04d.4c — local manifest consistency | Implemented locally with ignored manifests and a generator; the verifier returns `ok: true`, `localManifestConsistent: true`, `isolationVerified: false`. On 24/09 the operator reported the helper's `getMe`/`getWebhookInfo` output matching the canonical production bot ID, username and webhook URL; Codex has not independently queried production. See the [H04d.4c addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-de-implementación-h04d4c--23092026). |
+| H04d.4d — beta read-only provider reconciliation | Partial, 24/09/2026: beta bot identity/webhook, Turso identity and Vercel project/runtime/environment names were rechecked. Vercel has no deployment; Preview lacks required isolation variables and alias access was denied. No production provider was queried. See the [H04d.4d addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-h04d4d-reconciliacion-beta-read-only-24092026). |
 
 ## Open parent gate and next cuts
 
@@ -33,12 +34,13 @@ helper supports user-operated, read-only `getMe`/`getWebhookInfo` capture with
 token stdin and whitelisted output. H04d.4c's local consistency work is done;
 provider reconciliation remains an open parent gate.
 
-The next H04d.4 gate is provider reconciliation: obtain fresh authenticated
-read-only checks of relevant beta and
-production identities/bindings/aliases/webhook state under separate
-authorization, and reconcile them with these manifests. Recheck the production
-alias inventory and beta webhook immediately before any remote activity. No
-sensitive value retrieval or remote apply is authorized by the local result.
+The next gate is a separately authorized beta-only configuration cut: add and
+verify missing Preview isolation variables, resolve beta domain/alias access,
+and keep rollout flags false. Deploy only after that gate and separate user
+authorization. Reconcile production metadata only after separate
+authorization; no production provider was queried in H04d.4d. Recheck aliases
+and beta webhook immediately before remote activity. Local manifests do not
+authorize deploy or traffic.
 
 Subsequent remote rehearsal gates follow the [runbook](PR-08-H04D-STAGING-REHEARSAL-RUNBOOK.md):
 

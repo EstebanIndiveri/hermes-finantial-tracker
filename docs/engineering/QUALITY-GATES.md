@@ -275,6 +275,19 @@ dependencias. No se forzó el override global que interfería con Vite; el audit
 completo sigue con cuatro avisos moderados dev-only. No se corrió generación
 de migraciones con una combinación de paquetes no respaldada.
 
+## Evidencia H04d.4d / reconciliación beta read-only (24/09/2026)
+
+El helper de Telegram beta confirmó el bot `8739389202` y devolvió webhook
+vacío. Turso confirmó ID/host/región esperados sin consultar tablas. Vercel
+confirmó el proyecto beta y Node 22.x; no encontró deployments. La consulta de
+alias fue denegada y no se tomó como evidencia de ausencia. La lista Preview
+mostró nombres de bindings, pero no sus valores: faltan las variables de
+aislamiento (`AI_MODE`, `OCR_MODE`, notificaciones, cookie de sesión y tres
+flags Telegram), además de `NEXT_PUBLIC_APP_URL`. Como el código conserva
+valores legacy si esas variables faltan, Preview queda bloqueado para deploy y
+smoke hasta un corte de configuración aprobado. Producción no fue consultada;
+no hubo escrituras ni cambios de proveedor.
+
 ## Evidencia H04d.4c / manifiestos locales (23/09/2026)
 
 Se crearon ambos manifiestos ignorados usando la evidencia beta local, la
