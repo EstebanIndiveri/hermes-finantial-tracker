@@ -242,3 +242,61 @@ ID/username/webhook del bot productivo y una metadata fresca de proveedores
 antes de cualquier smoke remoto. Los fingerprints productivos pueden seguir
 siendo `null`; no se consultaron ni rotaron secretos productivos para completar
 esa comparación.
+
+## Addendum de implementación H04d.4c — 23/09/2026
+
+El helper `scripts/create-h04d4c-local-manifests.mjs` construye los dos
+manifiestos ignorados desde las identidades no secretas documentadas y el
+recibo local restringido de fingerprints. Comprueba que proyecto, DB y bot del
+recibo sean los de beta y que los seis fingerprints SHA-256 y sus procedencias
+sean válidos y distintos. No consulta proveedores ni lee valores secretos.
+
+El manifiesto de staging declara como destino futuro
+`https://hermes-finantial-tracker-z2.vercel.app/api/telegram/webhook`. No afirma
+que ese webhook esté configurado: la última evidencia efectiva de H04d.2 fue
+webhook beta vacío. Una comprobación read-only fresca sigue siendo obligatoria
+antes de habilitar tráfico.
+
+El ID `8884948884`, username `HermesFinanceAssistBot` y URL de webhook
+productivo `https://hermes-finantial-tracker.vercel.app/api/telegram/webhook`
+fueron suministrados por el usuario en el chat. El helper registra esos datos
+como declaraciones locales no verificadas; la URL aparente se normalizó desde
+el enlace compartido. No equivalen a evidencia autenticada de Telegram ni
+demuestran el estado actual del webhook.
+
+Crear los archivos ausentes, sin sobrescribirlos:
+
+```bash
+node scripts/create-h04d4c-local-manifests.mjs
+npm run staging:verify-isolation -- --staging config/staging-isolation.local.json --production-reference config/production-reference.local.json
+```
+
+El helper rehúsa sobrescribir cualquiera de los dos manifiestos si ya existe.
+Después de confirmar el commit final del código, refrescar únicamente el campo
+`releaseSha` con la opción explícita siguiente; el helper conserva el resto de
+los metadatos y fingerprints:
+
+```bash
+node scripts/create-h04d4c-local-manifests.mjs --refresh-release-sha
+npm run staging:verify-isolation -- --staging config/staging-isolation.local.json --production-reference config/production-reference.local.json
+```
+
+Los fingerprints no se imprimen. Aun con `ok: true`, la verificación local
+mantiene `isolationVerified: false` y `trustLevel:
+unverified-local-declaration`; faltan contraste autenticado actualizado de
+proveedores y verificación efectiva de webhooks antes de cualquier actividad
+remota.
+
+El recibo local y ambos manifiestos deben tener permisos `0600`. El generador
+rechaza un recibo legible por grupo/otros, un `config/` enlazado simbólicamente
+y cualquier manifiesto existente al crear. La actualización explícita del SHA
+solo acepta los manifiestos generados a partir del mismo recibo y conserva
+intacta la referencia productiva. Las seis `secretRefs` se expresan como
+`vercel:<project-id>:<environment-variable-name>`; son referencias declaradas,
+no prueba de que el binding productivo exista o tenga un valor concreto.
+
+En el ensayo local de este corte, ambos manifiestos fueron creados como
+archivos ignorados con permisos `0600` y el verificador devolvió `ok: true`,
+`localManifestConsistent: true`, `isolationVerified: false` y
+`productionFingerprintComparison: unavailable`. Los fingerprints productivos
+permanecen `null`; no se consultó producción para completarlos.

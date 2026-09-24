@@ -274,3 +274,15 @@ La evaluación del tooling Drizzle permanece documentada sin cambio de
 dependencias. No se forzó el override global que interfería con Vite; el audit
 completo sigue con cuatro avisos moderados dev-only. No se corrió generación
 de migraciones con una combinación de paquetes no respaldada.
+
+## Evidencia H04d.4c / manifiestos locales (23/09/2026)
+
+Se crearon ambos manifiestos ignorados usando la evidencia beta local, la
+referencia productiva documentada y los datos de bot aportados por el usuario.
+El recibo de fingerprints y ambos manifiestos tienen permisos `0600`. El
+generador rechaza recibos legibles por otros, directorios `config/` enlazados y
+sobrescrituras implícitas. El harness completo pasó 52/52 en Node 22. El
+verificador con rutas explícitas informó `ok: true` y
+`localManifestConsistent: true`, conservando `isolationVerified: false` y
+`trustLevel: unverified-local-declaration`; la comparación de fingerprints
+productivos sigue indisponible. No se consultaron ni modificaron proveedores.

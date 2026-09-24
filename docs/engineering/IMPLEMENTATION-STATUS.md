@@ -14,35 +14,30 @@ production readiness. Source of scope: [stabilization plan](../audit/PLAN-DE-ACC
 | H04d.3 — local migration rehearsal | Complete at `80286a0`, with production-identity evidence corrected at `87a69c1`. The [local rehearsal record](PR-11-H04D3-LOCAL-MIGRATION-REHEARSAL.md) reports independent local A/B copies, canonical migration fingerprint, idempotent rerun, and clean before/after comparison. No remote DB was migrated. |
 | H04d.4a — isolation evidence tooling | Complete at `1ee9515` (`feat(staging): harden isolation evidence`). Adds the local secret fingerprint helper and isolation policy checks; see the [evidence contract](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md). A local verifier result alone does not establish provider-verified isolation. |
 | H04d.4b — beta secret evidence cut | Complete at `ff2bd6f` and recorded at `646d095`. Six beta secret fingerprints and provenance receipts are local/ignored; the beta Telegram token configuration helper is at `ff2bd6f`. The addendum records the beta project/DB/bot identities and confirms no DB data/schema, deployment, webhook, or production resource change. See the [H04d.4b addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-de-cierre-h04d4b--23092026). |
+| H04d.4c — local manifest consistency | Implemented locally with ignored manifests and a generator; the verifier returns `ok: true`, `localManifestConsistent: true`, `isolationVerified: false`. The production bot metadata is user-supplied, with exact webhook URL confirmation pending; no provider-authenticated closeout is claimed. See the [H04d.4c addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-de-implementación-h04d4c--23092026). |
 
 ## Open parent gate and next cuts
 
-H04d.4 is not closed. The local `config/staging-isolation.local.json` and
-`config/production-reference.local.json` manifests and verifier still need
-complete, verified provider metadata, especially the production Telegram bot
-ID/username and webhook state. This is non-secret identity/configuration
-metadata; production secrets need not be read or rotated. Keep production secret
-fingerprints `null` when no authorized historical receipt exists. Load the
-versioned production host denylist and include the six beta fingerprints and
-their provenance as defined by the [contract](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md).
+H04d.4 is not closed. The two ignored manifests now exist and pass the local
+verifier, but this result is a consistent declaration, not verified provider
+state. The production Telegram bot ID/username/webhook are user-supplied, and
+the webhook URL awaits exact-format confirmation. Production secret
+fingerprints remain `null`; no production secret needs to be read or rotated.
+The versioned host denylist and six beta fingerprints/provenance are included
+as defined by the [contract](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md).
 
-The user supplied the bot profile usernames `HermesFinanceAssistBot` and
-`Hermes_beta_finantial_bot`; these identify the expected accounts but are not
-provider evidence of the production numeric ID or current webhook configuration.
 The beta numeric ID `8739389202` was recorded in H04d.2; its webhook was empty
-at that inspection and must be rechecked before any remote activity. A local helper now
-supports user-operated, read-only `getMe`/`getWebhookInfo` capture with token
-stdin and whitelisted output. H04d.4c remains open until the resulting
-nonsecret production metadata and the remaining provider identities are
-verified and the ignored manifests pass the local isolation verifier.
+at that inspection and must be rechecked before any remote activity. The local
+helper supports user-operated, read-only `getMe`/`getWebhookInfo` capture with
+token stdin and whitelisted output. H04d.4c's local consistency work is done;
+provider reconciliation remains an open parent gate.
 
-Proposed H04d.4c — local manifest gate: complete both ignored local manifests
-from verified non-secret metadata and existing beta fingerprint receipts; run
-`staging:verify-isolation` and record a passing local result, while preserving
-`isolationVerified: false` / provider-verification-required until fresh
-authenticated provider checks are reconciled. Recheck the production alias
-inventory and beta webhook immediately before any remote activity. This cut
-does not fetch sensitive values or authorize remote apply.
+The next H04d.4 gate is provider reconciliation: confirm the exact production
+webhook URL, obtain fresh authenticated read-only checks of relevant beta and
+production identities/bindings/aliases/webhook state under separate
+authorization, and reconcile them with these manifests. Recheck the production
+alias inventory and beta webhook immediately before any remote activity. No
+sensitive value retrieval or remote apply is authorized by the local result.
 
 Subsequent remote rehearsal gates follow the [runbook](PR-08-H04D-STAGING-REHEARSAL-RUNBOOK.md):
 
