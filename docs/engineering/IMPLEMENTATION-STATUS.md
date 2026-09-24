@@ -14,14 +14,15 @@ production readiness. Source of scope: [stabilization plan](../audit/PLAN-DE-ACC
 | H04d.3 — local migration rehearsal | Complete at `80286a0`, with production-identity evidence corrected at `87a69c1`. The [local rehearsal record](PR-11-H04D3-LOCAL-MIGRATION-REHEARSAL.md) reports independent local A/B copies, canonical migration fingerprint, idempotent rerun, and clean before/after comparison. No remote DB was migrated. |
 | H04d.4a — isolation evidence tooling | Complete at `1ee9515` (`feat(staging): harden isolation evidence`). Adds the local secret fingerprint helper and isolation policy checks; see the [evidence contract](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md). A local verifier result alone does not establish provider-verified isolation. |
 | H04d.4b — beta secret evidence cut | Complete at `ff2bd6f` and recorded at `646d095`. Six beta secret fingerprints and provenance receipts are local/ignored; the beta Telegram token configuration helper is at `ff2bd6f`. The addendum records the beta project/DB/bot identities and confirms no DB data/schema, deployment, webhook, or production resource change. See the [H04d.4b addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-de-cierre-h04d4b--23092026). |
-| H04d.4c — local manifest consistency | Implemented locally with ignored manifests and a generator; the verifier returns `ok: true`, `localManifestConsistent: true`, `isolationVerified: false`. The production bot metadata is user-supplied, with exact webhook URL confirmation pending; no provider-authenticated closeout is claimed. See the [H04d.4c addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-de-implementación-h04d4c--23092026). |
+| H04d.4c — local manifest consistency | Implemented locally with ignored manifests and a generator; the verifier returns `ok: true`, `localManifestConsistent: true`, `isolationVerified: false`. On 24/09 the operator reported the helper's `getMe`/`getWebhookInfo` output matching the canonical production bot ID, username and webhook URL; Codex has not independently queried production. See the [H04d.4c addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-de-implementación-h04d4c--23092026). |
 
 ## Open parent gate and next cuts
 
 H04d.4 is not closed. The two ignored manifests now exist and pass the local
 verifier, but this result is a consistent declaration, not verified provider
-state. The production Telegram bot ID/username/webhook are user-supplied, and
-the webhook URL awaits exact-format confirmation. Production secret
+state. The production Telegram bot ID/username/webhook are supported by the
+operator-reported output of the local read-only helper, not an independent
+Codex provider query. Production secret
 fingerprints remain `null`; no production secret needs to be read or rotated.
 The versioned host denylist and six beta fingerprints/provenance are included
 as defined by the [contract](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md).
@@ -32,8 +33,8 @@ helper supports user-operated, read-only `getMe`/`getWebhookInfo` capture with
 token stdin and whitelisted output. H04d.4c's local consistency work is done;
 provider reconciliation remains an open parent gate.
 
-The next H04d.4 gate is provider reconciliation: confirm the exact production
-webhook URL, obtain fresh authenticated read-only checks of relevant beta and
+The next H04d.4 gate is provider reconciliation: obtain fresh authenticated
+read-only checks of relevant beta and
 production identities/bindings/aliases/webhook state under separate
 authorization, and reconcile them with these manifests. Recheck the production
 alias inventory and beta webhook immediately before any remote activity. No

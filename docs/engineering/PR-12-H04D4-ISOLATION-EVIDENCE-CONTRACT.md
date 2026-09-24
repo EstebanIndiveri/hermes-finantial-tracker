@@ -300,3 +300,13 @@ archivos ignorados con permisos `0600` y el verificador devolvió `ok: true`,
 `localManifestConsistent: true`, `isolationVerified: false` y
 `productionFingerprintComparison: unavailable`. Los fingerprints productivos
 permanecen `null`; no se consultó producción para completarlos.
+
+El 24/09/2026 el operador informó que ejecutó el helper con el token productivo
+ingresado de forma oculta en su Terminal. La salida reportada fue bot ID
+`8884948884`, username `HermesFinanceAssistBot` y webhook canónico
+`https://hermes-finantial-tracker.vercel.app/api/telegram/webhook`. El cliente
+del chat convirtió la URL en un enlace Markdown al pegarla; el helper local
+rechaza URLs con corchetes, parámetros o rutas distintas, por lo que este
+registro toma la URL canónica reportada. Codex no ejecutó esa consulta ni vio
+el token. La evidencia es una declaración del operador sobre una consulta
+autenticada; no verifica por sí sola otros bindings, aliases o el estado beta.
