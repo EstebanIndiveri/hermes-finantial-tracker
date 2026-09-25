@@ -346,3 +346,33 @@ No se consultó Vercel ni Turso productivos. La metadata productiva sigue siendo
 la salida que el operador informó del helper, no una consulta independiente de
 Codex. Este addendum no declara aislamiento completo ni autoriza cambios de
 configuración, deploy, webhook o tráfico.
+
+### Actualización beta autorizada — alcance Vercel Preview (24/09/2026)
+
+El operador autorizó modificar Vercel y Telegram exclusivamente para los
+recursos beta. No se accedió a producción. Para preparar Preview se inspeccionó
+`hermes-finantial-tracker-z2` (`prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`): Node.js
+22.x, rama Production configurada como `codex/staging`. `vercel env ls` confirmó
+que los ocho controles de aislamiento (`AI_MODE`, `OCR_MODE`,
+`NOTIFICATIONS_ENABLED`, `SESSION_COOKIE_NAME`, `TELEGRAM_INBOX_ENABLED`,
+`TELEGRAM_OUTBOX_ENABLED`, `TELEGRAM_OUTBOX_WORKER_ENABLED` y
+`NEXT_PUBLIC_APP_URL`) ya aparecen vinculados al target Production de este
+proyecto beta. No se recuperaron sus valores.
+
+Preview sigue sin esos ocho bindings. No se pudo crear una configuración
+Preview segura: Vercel rechazó `codex/staging` porque es la rama Production, y
+rechazó `codex/h04d-staging-rehearsal` porque esa rama local no existe en el
+repositorio Git conectado. Los intentos fueron rechazados antes de escribir;
+`vercel env ls` confirmó que no se añadieron variables. La CLI tampoco aceptó
+el target Preview sin rama explícita. No hacer push ni disparar un deployment
+con el estado actual: Preview heredaría defaults runtime inseguros (IA/OCR
+live, notificaciones activas y webhook legacy). La rama beta debe estar
+disponible para Vercel antes de agregar bindings Preview y confirmar sus
+nombres/targets.
+
+No se modificaron Vercel, Telegram, Turso, DB, webhook, aliases ni deployment;
+no hubo tráfico beta ni acceso a recursos productivos. Para cerrar este punto
+hace falta acordar una rama beta existente/conectada que no sea
+`codex/staging` y configurar en ella los ocho valores seguros antes de permitir
+un deployment Preview. El nombre de la rama es una decisión operativa; no se
+debe sustituir por `main` ni por otra feature branch arbitraria.
