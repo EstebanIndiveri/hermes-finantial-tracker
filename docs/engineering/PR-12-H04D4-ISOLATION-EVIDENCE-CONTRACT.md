@@ -447,3 +447,38 @@ remotas, deploy, webhook ni tráfico; no hubo acceso a producción. El siguiente
 paso remoto, si se quiere inicializar el schema canónico en `beta-hermes`, debe
 ser una autorización específica para ese cambio de schema, manteniendo las
 flags apagadas. La autorización de deployment sigue pendiente por separado.
+
+### H04d.4f — bootstrap canónico repetido sobre copias locales (25/09/2026)
+
+Para conservar la exportación restaurada como fuente intacta, se crearon dos
+copias independientes A/B mediante SQLite `.backup` en un directorio temporal
+privado (`0700`), con cada DB en modo `0600`. Ambas comenzaron vacías: la
+inspección inicial indicó `state: empty`, cero tablas y nueve migraciones
+pendientes. No se modificó la exportación, Turso ni ningún recurso remoto.
+
+En A se ejecutaron las nueve migraciones del manifiesto canónico. La inspección
+final informó `state: canonical`, cero pendientes, conflictos o drift y cero
+violaciones FK. La captura before/after, con el mismo salt y el mismo archivo,
+se comparó contra el fingerprint canónico
+`309646a60fcdfc1566e6110cc4e5ec8eb32cbfdb1ffa4ee03a3d838d54014701` y el
+digest de manifiesto
+`03e5b07cd70bb5b96c65cccb8ac3565f1e772ab5b0426948505a59c7942c1a3f`;
+resultado `ok: true`, `differences: []`. Las 16 tablas monitoreadas se
+permitieron explícitamente como adiciones esperadas del bootstrap vacío. La
+captura posterior fue `readOnlyVerified: true`, sin findings bloqueantes,
+huérfanos, duplicados ni agregados financieros.
+
+En B, independiente de A, se repitió el bootstrap y la inspección final dio el
+mismo fingerprint, sin drift, conflictos, pendientes ni violaciones FK. La
+segunda ejecución sobre B devolvió `appliedMigrationIds: []`, confirmando
+idempotencia. No se compararon firmas A contra B porque la identidad de
+evidencia incluye la ruta local de cada destino.
+
+La evidencia detallada queda únicamente fuera del repo en el directorio
+temporal restringido del operador; no se versionan DBs, snapshots ni salts. Este
+corte completa el ensayo local del bootstrap canónico desde una base vacía, no
+valida adopción legacy ni autoriza inicializar el schema en `beta-hermes`.
+Continúan apagadas las flags; el proyecto Vercel sigue con builds ignorados y
+sin deployment. El próximo gate que requiere decisión del operador es la
+autorización específica para escribir el schema canónico en la DB beta. Deploy,
+webhook y tráfico requieren autorizaciones separadas.
