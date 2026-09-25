@@ -376,3 +376,74 @@ hace falta acordar una rama beta existente/conectada que no sea
 `codex/staging` y configurar en ella los ocho valores seguros antes de permitir
 un deployment Preview. El nombre de la rama es una decisión operativa; no se
 debe sustituir por `main` ni por otra feature branch arbitraria.
+
+### Cierre beta de H04d.4d — Preview preparado y deploys pausados (25/09/2026)
+
+El operador autorizó pausar auto-deploys solo del proyecto beta, publicar la
+rama de trabajo, configurar/verificar Preview y mantener los deploys pausados.
+La rama `codex/h04d-staging-rehearsal` quedó publicada en el repositorio GitHub
+con HEAD `584a27f549df74f4b5e4e07b3bdab1459f9c376f`. La configuración Vercel
+se verificó contra el proyecto beta `prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`, no
+contra el proyecto legacy.
+
+El Ignored Build Step del proyecto ya estaba configurado como “Don’t build
+anything” (`exit 0`); no fue necesario cambiarlo. Vercel mantiene así los
+deploys pausados. Después del push, `vercel ls hermes-finantial-tracker-z2`
+devolvió cero deployments; la vista de proyecto también mostró “No Production
+Deployment”. No se activó ni ejecutó deployment manual. Mantener el build
+ignorado hasta autorización posterior; no revertirlo automáticamente.
+
+Se agregaron y luego enumeraron por rama los siguientes Preview bindings; la
+consulta de verificación confirmó `target: preview` y
+`gitBranch: codex/h04d-staging-rehearsal` en los ocho, tipo `encrypted`:
+
+| Variable | Valor configurado |
+| --- | --- |
+| `AI_MODE` | `stub` |
+| `OCR_MODE` | `stub` |
+| `NOTIFICATIONS_ENABLED` | `false` |
+| `SESSION_COOKIE_NAME` | `hermes_beta_session` |
+| `TELEGRAM_INBOX_ENABLED` | `false` |
+| `TELEGRAM_OUTBOX_ENABLED` | `false` |
+| `TELEGRAM_OUTBOX_WORKER_ENABLED` | `false` |
+| `NEXT_PUBLIC_APP_URL` | `https://hermes-finantial-tracker-z2.vercel.app` |
+
+No se recuperaron valores desde Vercel. El hostname beta está asignado a este
+proyecto; la página de dominios indica “No Deployment”, así que todavía no
+resuelve a una release activa. La rama, los bindings y el hostname pertenecen
+al proyecto beta aislado. No se tocó el webhook beta ni se consultó producción.
+
+### H04d.4e — backup/restauración beta y preflight local read-only (25/09/2026)
+
+Con `turso db show beta-hermes` se reconfirmó únicamente el recurso beta:
+ID `01a0c0bd-0601-7f27-b147-915d105b19f2`, host
+`beta-hermes-esteban-indiveri.aws-us-east-2.turso.io`, tamaño reportado 4.1 kB
+y `Is Schema: No`. No se consultaron filas ni se escribió en Turso.
+
+Se creó un export local del recurso beta con metadata, fuera del repositorio,
+en un directorio temporal modo `0700`. Los tres miembros (`beta-hermes.db`,
+`.db-info`, `.db-wal`) se copiaron a un destino de restauración también privado,
+quedaron modo `0600` y fueron comparados byte a byte. El digest de bundle
+`dde6f8558e7ca94be5ff70f0d4effdebdecce0afcba54c5747040158a213e70c` se calculó
+determinísticamente sobre los registros ordenados por nombre de miembro:
+`nombre NUL tamaño NUL SHA-256-del-miembro LF`. La restauración devolvió
+`PRAGMA integrity_check = ok`, cero violaciones de FK y cero objetos de esquema
+de aplicación. El recibo no secreto se actualizó en el archivo local ignorado
+`config/staging-backup-evidence.local.json`; el salt y los artefactos permanecen
+fuera del repositorio.
+
+La captura `artifacts/staging/before-20260925.json` fue `readOnlyVerified: true`,
+con fingerprint de schema vacío
+`4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`, sin
+violaciones de integridad y con agregados financieros vacíos. El plan de
+adopción concluyó `decision: blocked`, `applyAuthorized: false`, porque la DB no
+es una base legacy administrada y faltan forward-fix, fingerprint objetivo,
+reconciliación before/after y autorización explícita de apply. Eso es lo
+esperado: no corresponde adoptar ni migrar una DB beta vacía como si tuviera
+datos legacy.
+
+El export local es temporal y no se versiona. No se ejecutaron migraciones
+remotas, deploy, webhook ni tráfico; no hubo acceso a producción. El siguiente
+paso remoto, si se quiere inicializar el schema canónico en `beta-hermes`, debe
+ser una autorización específica para ese cambio de schema, manteniendo las
+flags apagadas. La autorización de deployment sigue pendiente por separado.
