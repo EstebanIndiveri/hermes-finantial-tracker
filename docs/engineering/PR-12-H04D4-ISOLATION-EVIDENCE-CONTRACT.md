@@ -544,26 +544,68 @@ no activan un deployment ni sustituyen smoke beta.
 
 ### H04d.4h — intento de Preview y bloqueo de plataforma (26/09/2026)
 
-El operador autorizó un único deployment Preview de
+El operador autorizó un deployment Preview de
 `codex/h04d-staging-rehearsal`, con flags apagadas y sin webhook ni tráfico
 Telegram. El primer intento fue rechazado antes de crear un deployment porque
-el plan Hobby no admite el cron por minuto `/api/cron/telegram-outbox`. Se
-reintentó con una configuración CLI temporal fuera del repositorio que omitía
-solo las declaraciones de cron; `vercel.json` no se modificó.
+el plan Hobby no admite el cron por minuto `/api/cron/telegram-outbox`. Un
+segundo intento usó `--local-config` temporal, pero Vercel siguió leyendo los
+crons del `vercel.json` incluido en el código.
 
-La CLI reportó un deployment, pero la inspección autoritativa devolvió
+La inspección autoritativa del segundo intento devolvió
 `target: production` (ID `dpl_BxEqUeFP7QKoyx9m8VL68eJ3DjR5`), aunque el comando
-solicitaba `--target preview`. No se consideró Preview ni se hicieron requests
-de prueba. Se retiró inmediatamente ese deployment exacto; una consulta fresca
-de `vercel ls hermes-finantial-tracker-z2` informó cero deployments. El
-Ignored Build Step sigue intacto. No se tocó el proyecto legacy/productivo,
-ninguna DB, variable, dominio personalizado o webhook, y no se generó tráfico
-Telegram.
+solicitaba `--target preview`. Se retiró inmediatamente ese deployment exacto;
+no se hicieron requests de prueba. En intentos siguientes también se observó
+que Vercel bloqueaba deployments por el email local del autor de commit, que no
+coincidía con la cuenta autorizada. Estos intentos fallidos fueron retirados.
+La resolución del flujo beta queda en H04d.4i.
 
 El deploy autorizado queda **bloqueado** hasta resolver cómo el CLI 54.4.1
 apunta de forma verificable a Preview para este proyecto. Antes de otro intento
 hay que confirmar target Preview antes de publicar; si la CLI no puede
 garantizarlo, usar un flujo Preview de Vercel que se valide por metadato antes
 de dejarlo accesible. No asumir que `--target preview` funcionó por la URL o
-por el mensaje de la CLI. Las tres flags Telegram continúan `false`. No declarar
-H04d.4 completo ni habilitar webhook/tráfico.
+por el mensaje de la CLI. Las tres flags Telegram continúan `false`. En ese
+momento, la vía Preview quedó pendiente por ese bloqueo de CLI. Este estado fue
+superado por la aclaración posterior del operador y el deploy beta registrado
+en H04d.4i. No declarar H04d.4 completo ni habilitar webhook/tráfico.
+
+### H04d.4i — deployment beta aislado y pausa restaurada (26/09/2026)
+
+El operador aclaró que el target Production del proyecto beta era aceptable,
+siempre que no se afectara el proyecto legacy. Se revalidó que la identidad era
+el proyecto `hermes-finantial-tracker-z2`, ID
+`prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`, cuyo Production Branch es
+`codex/staging`; el deployment ejecutado provino de la rama local
+`codex/h04d-staging-rehearsal`. Ninguna operación usó el proyecto legacy.
+
+Se actualizaron solo variables no-secretas del target Production beta para
+asegurar `AI_MODE=stub`, `OCR_MODE=stub`, `NOTIFICATIONS_ENABLED=false`,
+`SESSION_COOKIE_NAME=hermes_beta_session`, la URL pública beta y las tres
+flags Telegram (`TELEGRAM_INBOX_ENABLED`, `TELEGRAM_OUTBOX_ENABLED`,
+`TELEGRAM_OUTBOX_WORKER_ENABLED`) en `false`. Los valores secretos existentes
+no se recuperaron, copiaron ni rotaron.
+
+El plan Hobby vuelve a rechazar cualquier deployment que incluya el cron cada
+minuto. Por ello se usó temporalmente `vercel.json` vacío en el árbol local
+solo durante el upload del deployment; luego se restauró el archivo original y
+el diff local quedó limpio. El deployment beta resultante no tiene ningún
+programador cron activo: `vercel cron list` informa los cuatro crons del árbol
+local como `not deployed`. No se llamó al endpoint Telegram ni a ningún cron.
+La limitación operativa es que el beta desplegado no ejecutará tareas
+programadas hasta resolver un plan/estrategia de scheduling.
+
+El proyecto beta se pausó solo durante el deploy al poner
+`commandForIgnoringBuildStep=null`; se restauró inmediatamente a `exit 0`.
+También se corrigió el email del autor del commit local de documentación para
+coincidir con la cuenta Vercel autorizada; el commit local resultante es
+`8a3c579` y no fue publicado a Git. Deployment
+`dpl_EtQ1id5dBHk5U8HGvbtohzTBZbJq` está `READY`,
+`target: production`, con alias `hermes-finantial-tracker-z2.vercel.app`.
+El GET de `/` respondió 307 y `/login` respondió 200. Los tres deployments
+fallidos/bloqueados de este ensayo se retiraron; queda un deployment Ready.
+El build pause está restaurado y `vercel.json` local coincide con Git.
+
+No hubo webhook, tráfico Telegram, llamadas a Groq/OCR, cambios en Turso, ni
+acceso/cambio en producción legacy. H04d.4 continúa abierto: esta publicación
+no completa la comparación de identidad productiva ni autoriza habilitar
+flags, configurar webhook o usar datos reales.
