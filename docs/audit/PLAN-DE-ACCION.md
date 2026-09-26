@@ -6,6 +6,11 @@ Fecha: 16/09/2026 UTC, noche del 15/09 en Argentina.
 
 Actualización: la [validación legacy y propuesta de ejecución segura](/Users/estebanindiveri/Downloads/hermes-finantial-tracker/docs/audit/VALIDACION-LEGACY-Y-EJECUCION.md) contrasta la respuesta de Copilot, corrige el inventario del backlog y reemplaza la secuencia/estimación de ejecución de este documento. Sus reglas de aislamiento, migración y rollback tienen precedencia. Los contratos y casos de aceptación aquí detallados siguen siendo material de trabajo, sujetos a las decisiones explícitas de esa revisión.
 
+Estado ejecutable y responsables vigentes: consultar el [registro de cierre,
+owners, bloqueos y condiciones de reentrada](../engineering/IMPLEMENTATION-STATUS.md#operational-closure-register--authoritative-26092026).
+Ningún corte se considera cerrado solo por terminar código; los stoppers deben
+conservar owner y condición explícita de desbloqueo allí.
+
 ## 1. Resultado buscado
 
 Que cualquier miembro autorizado pueda registrar un movimiento desde Telegram —texto, audio, foto o botones— y verlo reflejado correctamente en el dashboard, con monto, tipo, categoría, período y grupo correctos, sin duplicaciones ni pérdidas silenciosas.

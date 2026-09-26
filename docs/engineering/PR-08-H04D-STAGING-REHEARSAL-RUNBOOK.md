@@ -1,6 +1,8 @@
 # Runbook H04d — staging aislado, adopción y conciliación
 
-Fecha: 20/09/2026. Estado: preparación local; apply remoto bloqueado.
+Fecha base: 20/09/2026. Estado actualizado: beta desplegada e inbox-only activo;
+outbox/worker y la certificación completa de aislamiento siguen con los gates
+del addendum H04d.4j al final de este runbook.
 
 ## Qué queda habilitado en este corte
 
@@ -253,3 +255,57 @@ diagnosticar read-only y producir otro forward-fix idempotente y conciliado.
 - autorización explícita para conectar, migrar y ejecutar smoke en esos recursos.
 
 Hasta recibirlos, el flujo remoto y cualquier apply permanecen bloqueados.
+
+## Addendum operativo H04d.4j — webhook beta e inbox-only (26/09/2026)
+
+Este addendum actualiza las autorizaciones y hechos que cambiaron desde el
+runbook original. Se trabajó exclusivamente sobre Vercel beta
+`prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`, Turso `beta-hermes` y el bot
+`Hermes_beta_finantial_bot`. Producción legacy no se consultó ni modificó.
+
+Antes de conectar Telegram se revalidaron el deployment beta y el bot. La app
+respondió `/` → `/login` (307) y `/login` (200). `getMe` confirmó el ID
+`8739389202`; `getWebhookInfo` reportó webhook vacío y cero actualizaciones
+pendientes. Se reemplazó únicamente el `TELEGRAM_SECRET_TOKEN` del proyecto
+beta porque Vercel lo entrega como sensitive y el valor previo no era legible
+para configurar Telegram. Su SHA-256 queda solo en los manifiestos locales
+ignorados; no se rotó el token del bot.
+
+El deployment `dpl_6JrckEZP5Wj8xHqVzFNqdM5gqQpx` quedó `READY` en el target
+Production **del proyecto beta** y conserva el alias beta. Sus controles son
+`AI_MODE=stub`, `OCR_MODE=stub`, `NOTIFICATIONS_ENABLED=false`, cookie beta,
+inbox `true`, outbox `false` y worker `false`. Se configuró el webhook exacto
+`https://hermes-finantial-tracker-z2.vercel.app/api/telegram/webhook`, limitado
+a `message` y `callback_query`, sin descartar updates pendientes. La
+verificación posterior mostró URL coincidente, cero pendientes y sin último
+error. Un POST sin header secreto obtuvo 401.
+
+Se envió dos veces un update sintético sin mensaje/chat al endpoint beta. Ambas
+respuestas fueron 200; la fila única de `telegram_update_inbox` en la DB beta
+quedó `completed`, `attempt_count=1`. No generó movimientos ni mensajes a
+usuarios. Esto cierra el smoke web y el gate inbox/deduplicación; todavía no
+prueba el ciclo financiero, el envío de respuesta a un chat autorizado ni el
+outbox.
+
+Vercel Hobby rechazó `/api/cron/telegram-outbox` con `* * * * *`; para este
+deployment se omitieron temporalmente las definiciones cron al empaquetar y se
+restauró `vercel.json` local inmediatamente. Las cuatro definiciones siguen
+sin desplegar y el build-ignore del proyecto beta volvió a `exit 0`. Según la
+[matriz oficial de Vercel](https://vercel.com/docs/cron-jobs/usage-and-pricing),
+Hobby acepta cron una vez por día, con precisión de una hora; Pro acepta
+frecuencia por minuto. No activar `TELEGRAM_OUTBOX_WORKER_ENABLED` hasta que
+Esteban elija plan o scheduler y se verifique el comportamiento.
+
+### Cierre, owners y reentrada
+
+| Estado | Owner | Criterio de cierre / reentrada |
+| --- | --- | --- |
+| Inbox-only beta | Codex — cerrado | DB muestra una sola claim completada ante replay; evidencia anterior. |
+| Outbox beta | Esteban — facilitar chat beta vinculado; Codex — operar | Reingresar al contar con un usuario/canal beta autorizado; activar outbox sin worker y comprobar respuesta/delivery durable. |
+| Worker/recuperación | Esteban — seleccionar infraestructura/costo; Codex — implementar | Habilitar solo tras decisión explícita: Vercel Pro, scheduler externo autorizado o aceptación de reintento diario degradado. Mientras tanto worker apagado y corte señalado como bloqueado. |
+| Aislamiento certificado | Esteban — decidir alcance; Codex — ejecutar solo si autoriza | La operación beta no requiere leer producción. Para declarar `isolationVerified`, autorizar una comparación metadata read-only de proyecto/DB/bot legacy; nunca recuperar fingerprints secretos ni leer filas o modificar recursos productivos. |
+| Smoke financiero beta | Esteban — crear/iniciar sesión y vincular su usuario de prueba; Codex — verificar | Ejecutar gasto sintético confirmado y conciliar ledger/dashboard una vez que exista una cuenta beta autorizada. DB beta estaba vacía antes del smoke. |
+
+No declarar H04d completo como certificación integral mientras outbox/worker,
+smoke financiero y el gate formal de aislamiento sigan abiertos. La operación
+inbox-only beta sí está lista para que el operador vincule su cuenta de prueba.

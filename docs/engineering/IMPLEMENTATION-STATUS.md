@@ -10,17 +10,23 @@ production readiness. Source of scope: [stabilization plan](../audit/PLAN-DE-ACC
 | Cut | Status and evidence |
 | --- | --- |
 | H04d.1 — isolated runtime controls | Complete at `1e1f912` (`feat(staging): enforce isolated runtime controls`). Runtime identity, auth/session, AI/OCR, notifications, and cron controls are covered by the [runtime isolation contract](PR-09-H04D1-RUNTIME-ISOLATION-CONTRACT.md). Flags remain off; this does not enable traffic. |
-| H04d.2 — provider rehearsal | Complete at `0ab71de` (`docs(staging): record provider rehearsal evidence`). The [provider record](PR-10-H04D2-PROVIDER-EVIDENCE.md) documents beta Vercel/Turso/Telegram metadata, the empty beta webhook, and verified backup/restore metadata. It establishes distinct beta resources, not complete production isolation. |
+| H04d.2 — provider rehearsal | Complete at `0ab71de` (`docs(staging): record provider rehearsal evidence`). Its historical evidence is summarized in the [H04d.4 contract/addenda](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md). It establishes distinct beta resources, not complete production isolation. |
 | H04d.3 — local migration rehearsal | Complete at `80286a0`, with production-identity evidence corrected at `87a69c1`. The [local rehearsal record](PR-11-H04D3-LOCAL-MIGRATION-REHEARSAL.md) reports independent local A/B copies, canonical migration fingerprint, idempotent rerun, and clean before/after comparison. No remote DB was migrated. |
 | H04d.4a — isolation evidence tooling | Complete at `1ee9515` (`feat(staging): harden isolation evidence`). Adds the local secret fingerprint helper and isolation policy checks; see the [evidence contract](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md). A local verifier result alone does not establish provider-verified isolation. |
 | H04d.4b — beta secret evidence cut | Complete at `ff2bd6f` and recorded at `646d095`. Six beta secret fingerprints and provenance receipts are local/ignored; the beta Telegram token configuration helper is at `ff2bd6f`. The addendum records the beta project/DB/bot identities and confirms no DB data/schema, deployment, webhook, or production resource change. See the [H04d.4b addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-de-cierre-h04d4b--23092026). |
 | H04d.4c — local manifest consistency | Implemented locally with ignored manifests and a generator; the verifier returns `ok: true`, `localManifestConsistent: true`, `isolationVerified: false`. On 24/09 the operator reported the helper's `getMe`/`getWebhookInfo` output matching the canonical production bot ID, username and webhook URL; Codex has not independently queried production. See the [H04d.4c addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-de-implementación-h04d4c--23092026). |
-| H04d.4d — beta provider reconciliation/configuration | Complete for beta-only setup, 25/09/2026: the published branch has eight branch-scoped Preview controls, the beta hostname is assigned, and the project remains build-paused (`Don’t build anything`/`exit 0`) with no deployments. This does not close production identity/fingerprint comparison or authorize deploy/traffic. See the [H04d.4d addenda](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-h04d4d-reconciliacion-beta-read-only-24092026). |
+| H04d.4d — beta provider reconciliation/configuration | Complete for beta-only setup, 25/09/2026. Its Preview configuration was superseded by H04d.4i's beta Production-target deployment; see the [H04d.4d addenda](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-h04d4d-reconciliacion-beta-read-only-24092026). |
 | H04d.4e — fresh beta backup/restore and read-only preflight | Local-only preflight complete, 25/09/2026: a fresh export was copied/restored outside the repository, verified with SQLite, and reconciled read-only. The beta DB is empty; the adoption plan correctly remains `blocked` and `applyAuthorized: false`. No remote migration or deployment. See the [H04d.4e addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-h04d4e-backup-restauracion-y-preflight-local-25092026). |
 | H04d.4f — repetir bootstrap canónico en copias locales | Complete, 25/09/2026: independent A/B copies from the fresh beta export reached the canonical schema fingerprint; A's before/after reconciliation returned `ok: true`, B's second migration applied zero migrations, and both inspections had no pending migrations, drift, conflicts, or FK violations. Evidence remains in a permission-restricted temporary directory outside the repository. This validates only the empty-DB bootstrap mechanism; it does not authorize a remote schema write. |
 | H04d.4g — bootstrap canónico en Turso beta | Complete, 26/09/2026, with specific operator authorization: the nine migrations selected by the verified Hermes manifest were applied to the exact beta DB ID in individual transactions. A fresh post-migration export/restore passed integrity; the local inspector reports `canonical`, zero pending/drift/conflicts/FK violations, and an idempotent rerun applied zero migrations. Same-target before/after reconciliation returned `ok: true`, `differences: []`. No production, webhook, traffic, or deployment action. |
+| H04d.4h–4i — beta deployment | Complete, 26/09/2026: deployment `dpl_EtQ1id5dBHk5U8HGvbtohzTBZbJq` was READY in the isolated beta project; Hobby rejected the minute cron, so that deployment had no schedules. A later activation deployment is recorded below. |
+| H04d.4j — beta webhook + inbox-only rehearsal | Complete for the inbox-only gate, 26/09/2026; details and the remaining outbox/worker gates are in the live closure register below. This is not full Telegram certification. |
 
 ## Open parent gate and next cuts
+
+> Historical snapshot: the notes in this section predate the later H04d.4i/j
+> beta deployment and inbox activation. The authoritative current state, owners,
+> blockers, and re-entry criteria are in “Operational closure register” below.
 
 H04d.4 is not closed. The two ignored manifests now exist and pass the local
 verifier, but this result is a consistent declaration, not verified provider
@@ -135,3 +141,43 @@ un push autorizado de esta rama o una ejecución equivalente; completar ACT-03
 sin debilitar controles; mantener H04d separado y bloqueado para cualquier
 tráfico Telegram hasta revalidar el webhook beta y obtener autorización
 específica. No promover ni desplegar a producción legacy.
+
+## Operational closure register — authoritative (26/09/2026)
+
+This register supersedes the earlier “Open parent gate” snapshot. Owners are
+named so an open item cannot silently become unowned technical debt. “Codex” is
+the technical executor in this worktree; “Esteban Indiveri” is the project,
+provider, and release decision owner.
+
+### H04d — beta rehearsal and isolation
+
+| Gate | State / evidence | Owner | Remaining work and exact re-entry condition |
+| --- | --- | --- | --- |
+| H04d-BETA-WEB | Complete. Beta Production alias returns `/` → `/login` (307) and `/login` 200 after deployment `dpl_6JrckEZP5Wj8xHqVzFNqdM5gqQpx`. | Codex | None for basic web availability. This is not account or financial-flow QA. |
+| H04d-BETA-INBOX | Complete, inbox-only. Bot metadata verified as ID `8739389202` / `Hermes_beta_finantial_bot`; webhook now targets the beta URL, had zero pending updates before setup, and has no recorded provider error. A synthetic update posted twice returned 200 twice; Turso beta contains one completed claim with `attempt_count=1`. | Codex | No financial write was tested. Re-enter end-to-end QA after Esteban creates/uses a beta account and links the intended Telegram user. |
+| H04d-BETA-OUTBOX | Not started; `TELEGRAM_OUTBOX_ENABLED=false`. | Esteban Indiveri (provide/operate a beta Telegram test account); Codex (deploy and verify) | Enable only after a real, authorized beta chat is linked, then verify one successful direct response and durable delivery record without using production users/data. |
+| H04d-BETA-WORKER | Blocked; `TELEGRAM_OUTBOX_WORKER_ENABLED=false`, and deployment has zero cron schedules. | Esteban Indiveri (choose platform/scheduler and any paid plan); Codex (implement after choice) | Vercel Hobby only permits once-daily cron execution; the required every-minute expression is rejected. Unblock by explicitly choosing (a) Vercel Pro, (b) an authorized external scheduler, or (c) a once-daily degraded beta retry policy with accepted latency/capacity. Until then, do not enable the worker or claim retry recovery. [Vercel cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing). |
+| H04d-ISOLATION-CERT | Blocked/deferred; local manifests are consistent, but `isolationVerified=false`. Production fingerprints remain null intentionally; legacy resources were not accessed. | Esteban Indiveri (scope decision); Codex (read-only comparison only if authorized) | Either explicitly authorize read-only metadata comparison for legacy project/DB/bot identities (no secret values, rows, writes, webhook, or traffic), or accept the residual and leave the formal isolation certificate open. This does not block the beta inbox-only pilot. |
+
+Beta runtime controls set for deployment `dpl_6JrckEZP5Wj8xHqVzFNqdM5gqQpx`:
+`AI_MODE=stub`, `OCR_MODE=stub`, `NOTIFICATIONS_ENABLED=false`, beta session
+cookie, inbox `true`, outbox/worker `false`. A new beta-only webhook secret was
+generated and fingerprinted locally; the bot token was not rotated. Build
+ignore was restored to `exit 0` after deployment. Vercel Hobby rejected the
+minute cron, so `vercel.json` was omitted only from this deployment package and
+restored in the worktree; the four schedules remain undeployed. No production
+project, DB, token, webhook, or traffic was accessed or changed.
+
+### ACT-03 — quality barrier (still open; plan priority 1)
+
+| Gate | State / evidence | Owner | Remaining work and exact re-entry condition |
+| --- | --- | --- | --- |
+| ACT03-LOCAL | Complete for current local baseline: production dependency audit 0 findings; harness 52/52; Jest 88 suites / 735 tests; typecheck; lint 0 errors (67 warnings); Webpack build passed. CI workflow adds `npm audit --omit=dev --audit-level=moderate` at `626026a`. | Codex | No further local action unless remote CI reports a failure. |
+| ACT03-REMOTE-CI | Open; local branch commit has not yet been published after the latest CI change. | Codex (push and repair, under existing branch-publication authorization) | Publish only `codex/h04d-staging-rehearsal` while Vercel beta's ignore-build setting is `exit 0`; close after GitHub Actions is green on the exact SHA. |
+| ACT03-BRANCH-GATE | Blocked on repository-owner policy decision. GitHub branch-protection GET returned 404 for `main`; repository ruleset list is empty. | Esteban Indiveri (repo owner) | Decide the merge/deploy model first (direct-to-main legacy deployment vs PR). Then require the exact quality workflow before merge without preventing the approved legacy release path. Until changed, a green workflow is not a mandatory merge barrier. |
+| ACT03-DRIZZLE | Open, low-risk dev-only findings: four moderate advisories in `drizzle-kit` → `@esbuild-kit` → `esbuild`; no compatible patch proven. | Codex (compatibility experiment); Esteban Indiveri (accept residual if no safe replacement) | Test a supported toolchain replacement or scoped override on disposable DB copies, compare generated SQL byte-for-byte/semantically, and run canonical migration harness. If impossible, record risk acceptance, owner and review date; never force the breaking downgrade or global override. |
+
+No new feature cut should start until the owner actions above are either closed
+or explicitly recorded as deferred with a chosen risk, owner, and re-entry
+condition. Production legacy remains outside the deployment, data, and webhook
+scope.
