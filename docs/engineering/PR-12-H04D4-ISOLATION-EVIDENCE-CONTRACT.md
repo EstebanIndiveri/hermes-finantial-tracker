@@ -541,3 +541,29 @@ En la validación local posterior pasaron harness (52/52), Jest (88 suites,
 conserva warnings preexistentes; el build mostró la deprecación de `middleware`
 y avisos de `process.cwd` en dependencias ejecutadas bajo Edge. Estos resultados
 no activan un deployment ni sustituyen smoke beta.
+
+### H04d.4h — intento de Preview y bloqueo de plataforma (26/09/2026)
+
+El operador autorizó un único deployment Preview de
+`codex/h04d-staging-rehearsal`, con flags apagadas y sin webhook ni tráfico
+Telegram. El primer intento fue rechazado antes de crear un deployment porque
+el plan Hobby no admite el cron por minuto `/api/cron/telegram-outbox`. Se
+reintentó con una configuración CLI temporal fuera del repositorio que omitía
+solo las declaraciones de cron; `vercel.json` no se modificó.
+
+La CLI reportó un deployment, pero la inspección autoritativa devolvió
+`target: production` (ID `dpl_BxEqUeFP7QKoyx9m8VL68eJ3DjR5`), aunque el comando
+solicitaba `--target preview`. No se consideró Preview ni se hicieron requests
+de prueba. Se retiró inmediatamente ese deployment exacto; una consulta fresca
+de `vercel ls hermes-finantial-tracker-z2` informó cero deployments. El
+Ignored Build Step sigue intacto. No se tocó el proyecto legacy/productivo,
+ninguna DB, variable, dominio personalizado o webhook, y no se generó tráfico
+Telegram.
+
+El deploy autorizado queda **bloqueado** hasta resolver cómo el CLI 54.4.1
+apunta de forma verificable a Preview para este proyecto. Antes de otro intento
+hay que confirmar target Preview antes de publicar; si la CLI no puede
+garantizarlo, usar un flujo Preview de Vercel que se valide por metadato antes
+de dejarlo accesible. No asumir que `--target preview` funcionó por la URL o
+por el mensaje de la CLI. Las tres flags Telegram continúan `false`. No declarar
+H04d.4 completo ni habilitar webhook/tráfico.

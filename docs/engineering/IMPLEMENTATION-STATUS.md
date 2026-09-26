@@ -68,6 +68,15 @@ Subsequent remote rehearsal gates follow the [runbook](PR-08-H04D-STAGING-REHEAR
    the open provider-identity evidence is addressed without reading or rotating
    production secrets by inference.
 
+The separately authorized beta Preview deployment did not complete safely:
+Vercel Hobby first rejected the every-minute cron, and a second CLI attempt was
+reported by Vercel as `target: production` despite requesting Preview. That
+exact beta-project deployment was removed immediately and a fresh listing
+showed zero deployments. No requests, webhook, Telegram traffic, DB changes,
+secret changes, or legacy-production access occurred. The ignored-build pause
+and Telegram flags remain unchanged. See the H04d.4h incident record in the
+[isolation evidence contract](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md).
+
 ACT-03 (runtime, Jest, lint, and mandatory CI) is **in progress in a separate
 workstream**. Its compatible dependency-security subcut is complete locally:
 Next.js and four transitive dependency families were patched, full local gates
