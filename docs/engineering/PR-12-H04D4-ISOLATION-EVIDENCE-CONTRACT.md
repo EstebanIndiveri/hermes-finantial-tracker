@@ -526,11 +526,15 @@ cero deployments; el Ignored Build Step continúa pausando builds. No hubo
 acceso ni cambios en producción.
 
 La DB beta ahora está inicializada con schema, no con datos de usuarios. Esta
-autorización no extiende permisos a deployment ni tráfico. El siguiente gate es
-cerrar localmente la reconciliación del journal Drizzle y los quality gates de
-la rama; después se requerirá aprobación separada para desplegar Preview beta.
-H04d.4 sigue abierto porque la evidencia de proveedor/producción permanece
-incompleta; no declarar `isolationVerified`.
+autorización no extiende permisos a deployment ni tráfico. H04c declara el
+manifiesto/ledger Hermes como la ruta activa; el journal Drizzle de dos entradas
+es histórico. La inspección de package scripts, CI, runtime y configuración de
+build no encontró una llamada nativa a `drizzle-kit migrate`, así que reconstruir
+ese journal no es requisito para un Preview de esta rama. No usar el migrator
+nativo contra beta salvo que un corte de toolchain separado alinee explícitamente
+ambas cadenas. Los quality gates locales ya pasaron; desplegar Preview beta
+requiere aprobación separada. H04d.4 sigue abierto porque la evidencia de
+proveedor/producción permanece incompleta; no declarar `isolationVerified`.
 
 En la validación local posterior pasaron harness (52/52), Jest (88 suites,
 735/735 tests), typecheck, lint (0 errores; 67 warnings) y build Webpack. Lint

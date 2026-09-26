@@ -51,13 +51,14 @@ traffic. Deployment, webhook configuration and traffic remain separate gates.
 
 Subsequent remote rehearsal gates follow the [runbook](PR-08-H04D-STAGING-REHEARSAL-RUNBOOK.md):
 
-1. The empty-beta bootstrap is complete and backed up. Keep the custom Hermes
-   migration manifest/ledger as the only migration path for this DB until the
-   two-entry legacy Drizzle journal is reconciled in a separate local cut; do
-   not run `drizzle-kit migrate` against beta in the interim.
-2. Before a Preview deployment, obtain its separate authorization, keep the
-   ignored-build setting in place until then, and run the branch's quality
-   gates. A Git push by itself must not publish a build.
+1. The beta bootstrap is complete and backed up. H04c defines the Hermes
+   manifest/ledger as the active migration path; the two-entry Drizzle journal
+   is historical. Build and CI do not invoke `drizzle-kit migrate`, so journal
+   reconstruction is not a prerequisite for this Preview. Do not run the native
+   Drizzle migrator against beta unless a separate toolchain cut reconciles it.
+2. Before a Preview deployment, obtain its separate authorization and keep the
+   ignored-build setting in place until then. The branch's local quality gates
+   have passed. A Git push by itself must not publish a build.
 3. Before any Telegram traffic, obtain separate webhook/traffic authorization,
    freshly verify the beta bot webhook read-only, and use synthetic staging
    users/chats only. Enable inbox, outbox, then worker in separately observed
