@@ -18,6 +18,7 @@ production readiness. Source of scope: [stabilization plan](../audit/PLAN-DE-ACC
 | H04d.4d — beta provider reconciliation/configuration | Complete for beta-only setup, 25/09/2026: the published branch has eight branch-scoped Preview controls, the beta hostname is assigned, and the project remains build-paused (`Don’t build anything`/`exit 0`) with no deployments. This does not close production identity/fingerprint comparison or authorize deploy/traffic. See the [H04d.4d addenda](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-h04d4d-reconciliacion-beta-read-only-24092026). |
 | H04d.4e — fresh beta backup/restore and read-only preflight | Local-only preflight complete, 25/09/2026: a fresh export was copied/restored outside the repository, verified with SQLite, and reconciled read-only. The beta DB is empty; the adoption plan correctly remains `blocked` and `applyAuthorized: false`. No remote migration or deployment. See the [H04d.4e addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-h04d4e-backup-restauracion-y-preflight-local-25092026). |
 | H04d.4f — repetir bootstrap canónico en copias locales | Complete, 25/09/2026: independent A/B copies from the fresh beta export reached the canonical schema fingerprint; A's before/after reconciliation returned `ok: true`, B's second migration applied zero migrations, and both inspections had no pending migrations, drift, conflicts, or FK violations. Evidence remains in a permission-restricted temporary directory outside the repository. This validates only the empty-DB bootstrap mechanism; it does not authorize a remote schema write. |
+| H04d.4g — bootstrap canónico en Turso beta | Complete, 26/09/2026, with specific operator authorization: the nine migrations selected by the verified Hermes manifest were applied to the exact beta DB ID in individual transactions. A fresh post-migration export/restore passed integrity; the local inspector reports `canonical`, zero pending/drift/conflicts/FK violations, and an idempotent rerun applied zero migrations. Same-target before/after reconciliation returned `ok: true`, `differences: []`. No production, webhook, traffic, or deployment action. |
 
 ## Open parent gate and next cuts
 
@@ -37,39 +38,34 @@ token stdin and whitelisted output. H04d.4c's local consistency work is done;
 provider reconciliation remains an open parent gate.
 
 The beta-only Preview configuration is present and verified for
-`codex/h04d-staging-rehearsal`. The Vercel project’s Ignored Build Step is
-already set to “Don’t build anything” (`exit 0`); it was not changed. The branch
-push created no deployment, and this setting remains in place pending a later
-deployment authorization. The beta hostname is assigned to the project but
-shows “No Deployment.” The fresh beta export and local preflight found an empty
-schema; they do not justify legacy adoption. No production provider was
-queried, and production metadata/fingerprints remain outside this beta-only
-cut. The next remote mutation is blocked until the operator explicitly
-authorizes initialization of the empty beta DB; deploy, webhook and traffic
-remain separately blocked. Recheck beta bot webhook immediately before any
-traffic. Local manifests do not authorize traffic.
+`codex/h04d-staging-rehearsal`; a fresh environment listing still shows the
+eight branch-scoped Preview bindings without exposing values. The Vercel
+project’s Ignored Build Step remains “Don’t build anything” (`exit 0`), and its
+deployment list is empty. The operator authorized only schema initialization
+in the exact beta DB; H04d.4g applied it and verified its canonical fingerprint
+from a fresh export/restore. The database now has the canonical schema but no
+application traffic or deployment has been started. Production metadata and
+fingerprint comparison remain unavailable, so `isolationVerified` stays false.
+The beta webhook must be checked read-only immediately before any authorized
+traffic. Deployment, webhook configuration and traffic remain separate gates.
 
 Subsequent remote rehearsal gates follow the [runbook](PR-08-H04D-STAGING-REHEARSAL-RUNBOOK.md):
 
-1. Obtain explicit authorization and fresh authenticated metadata for beta and
-   production identities, bindings, aliases, and webhook state. Keep production
-   read-only; never point the production webhook at the beta bot or send one
-   update to two writers.
-2. Verify an approved staging backup and restore, checksums, retention/access,
-   and synthetic or authorized anonymized data. Keep artifacts and evidence
-   outside the repository.
-3. Validate the local manifests and resource identities before connecting;
-   capture read-only before evidence and an adoption plan. Adoption remains
-   blocked until its backup, schema, forward-fix, fingerprint, reconciliation,
-   and authorization blockers are explicitly cleared.
-4. Review an additive forward-fix against the observed schema and rehearse it
-   on independent disposable local copies. Require matching approved schema
-   and manifest fingerprints, clean reconciliation, and an idempotent rerun.
-5. Only after those gates and specific authorization, run the staged beta
-   rehearsal with flags initially off; enable inbox, outbox, then worker in
-   separate observed steps, using synthetic staging users/chats and reconciling
-   after each step. Roll back operationally by disabling worker, outbox, inbox
-   in that order; do not reverse schema/data or restore over an active DB.
+1. The empty-beta bootstrap is complete and backed up. Keep the custom Hermes
+   migration manifest/ledger as the only migration path for this DB until the
+   two-entry legacy Drizzle journal is reconciled in a separate local cut; do
+   not run `drizzle-kit migrate` against beta in the interim.
+2. Before a Preview deployment, obtain its separate authorization, keep the
+   ignored-build setting in place until then, and run the branch's quality
+   gates. A Git push by itself must not publish a build.
+3. Before any Telegram traffic, obtain separate webhook/traffic authorization,
+   freshly verify the beta bot webhook read-only, and use synthetic staging
+   users/chats only. Enable inbox, outbox, then worker in separately observed
+   steps, reconciling after each; operational rollback disables worker, outbox,
+   inbox in that order. Never reverse schema/data or restore over an active DB.
+4. Keep the production reference read-only. Do not claim full isolation until
+   the open provider-identity evidence is addressed without reading or rotating
+   production secrets by inference.
 
 ACT-03 (runtime, Jest, lint, and mandatory CI) is **in progress in a separate
 workstream**. Its compatible dependency-security subcut is complete locally:

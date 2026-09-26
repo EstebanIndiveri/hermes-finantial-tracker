@@ -482,3 +482,58 @@ Continúan apagadas las flags; el proyecto Vercel sigue con builds ignorados y
 sin deployment. El próximo gate que requiere decisión del operador es la
 autorización específica para escribir el schema canónico en la DB beta. Deploy,
 webhook y tráfico requieren autorizaciones separadas.
+
+### H04d.4g — bootstrap remoto autorizado en Turso beta (26/09/2026)
+
+El operador autorizó aplicar únicamente las nueve migraciones canónicas a
+`beta-hermes`, sin deploy, webhook ni tráfico. Justo antes de escribir se
+reconfirmó por CLI el ID `01a0c0bd-0601-7f27-b147-915d105b19f2` y el host
+`beta-hermes-esteban-indiveri.aws-us-east-2.turso.io`; la consulta read-only de
+`sqlite_schema` devolvió cero objetos. Una exportación fresca previa fue
+inspeccionada localmente: `state: empty`, cero tablas, cero FK inválidas y las
+nueve migraciones pendientes.
+
+La ejecución tomó su selección exclusivamente de
+`lib/db/migrations/manifest.json`, que define los IDs `0000-base` hasta
+`0080-telegram-operations-outbox`, asigna los nueve SQL canónicos y clasifica
+los SQL históricos solapados como excluidos. Cada migración se aplicó en una
+transacción independiente a través del CLI autenticado de Turso, con su
+checksum y orden registrados en `hermes_schema_migrations`. Se verificó el
+incremento consecutivo del ledger hasta nueve; la migración de outbox incluyó
+el preflight de ejecuciones recurrentes duplicadas y cada transacción exigió
+cero violaciones FK antes del commit.
+
+Luego se creó y restauró una nueva exportación de beta fuera del repositorio.
+El bundle de backup y restauración coincide byte a byte; digest
+`29e4ab60de09268199b9cad91f1a1416d5ec8d85225c8f5d388413567925be63` y
+`PRAGMA integrity_check = ok`. La inspección del restore con el runner Hermes
+informó `state: canonical`, los nueve IDs aplicados, cero pendientes, conflictos
+o drift, fingerprint
+`309646a60fcdfc1566e6110cc4e5ec8eb32cbfdb1ffa4ee03a3d838d54014701` y cero
+violaciones FK. Una segunda ejecución local del runner sobre ese restore
+devolvió `appliedMigrationIds: []`. La reconciliación before/after sobre el
+mismo destino local, con el manifiesto aprobado y las 16 tablas de aplicación
+permitidas como adiciones del bootstrap, devolvió `ok: true` y `differences: []`;
+no encontró blockers, huérfanos, duplicados ni agregados financieros.
+
+El manifiesto de Hermes fue la fuente de aplicación; no se ejecutó
+`drizzle-kit migrate` ni se modificó el journal histórico de Drizzle. Ese
+journal todavía enumera dos entradas antiguas y debe reconciliarse en un corte
+local separado antes de considerar otra herramienta de migración sobre beta.
+No se realizó deploy, cambio de variables, webhook, envío/recepción Telegram ni
+tráfico. La consulta de Vercel confirmó los ocho controles Preview de la rama y
+cero deployments; el Ignored Build Step continúa pausando builds. No hubo
+acceso ni cambios en producción.
+
+La DB beta ahora está inicializada con schema, no con datos de usuarios. Esta
+autorización no extiende permisos a deployment ni tráfico. El siguiente gate es
+cerrar localmente la reconciliación del journal Drizzle y los quality gates de
+la rama; después se requerirá aprobación separada para desplegar Preview beta.
+H04d.4 sigue abierto porque la evidencia de proveedor/producción permanece
+incompleta; no declarar `isolationVerified`.
+
+En la validación local posterior pasaron harness (52/52), Jest (88 suites,
+735/735 tests), typecheck, lint (0 errores; 67 warnings) y build Webpack. Lint
+conserva warnings preexistentes; el build mostró la deprecación de `middleware`
+y avisos de `process.cwd` en dependencias ejecutadas bajo Edge. Estos resultados
+no activan un deployment ni sustituyen smoke beta.
