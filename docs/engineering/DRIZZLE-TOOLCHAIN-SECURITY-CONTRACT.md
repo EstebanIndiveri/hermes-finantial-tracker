@@ -45,3 +45,24 @@ identified to verify. This spike does not resolve the findings.
   but emitted the Vite peer-range warning described above, then was reverted.
 - `package.json` and `package-lock.json` are restored to their original content.
   SQL drift is unassessed because generation was not run.
+
+## Follow-up bounded compatibility experiment (26/09/2026)
+
+Checked current registry metadata: `drizzle-kit@0.31.11` still depends on
+`@esbuild-kit/esm-loader`; upgrading within the supported 0.31 line does not
+remove the legacy chain. In disposable copies of the committed tree, two
+path-scoped npm override shapes were tested. The override under `drizzle-kit`
+did not replace the transitive `esbuild@0.18.20` and left all four audit
+findings. Overriding only the `esbuild` child of `@esbuild-kit/core-utils` also
+left `0.18.20` in the lock/install tree, marked it invalid against `0.25.12`,
+and caused `npm ls esbuild --all` to fail. Neither candidate is acceptable;
+package files in the working repository were not changed.
+
+The experiment closes this compatibility-investigation subtask as
+**no-supported-fix-found**, not the vulnerability. Do not add either override
+or force npm to resolve the invalid tree. Four moderate findings remain in
+development-only migration tooling. Owner: Esteban Indiveri for accepting that
+residual risk or waiting for a maintained upstream replacement; Codex will
+reopen only when a supported `drizzle-kit` release removes the loader or npm
+can resolve the scoped replacement without invalid packages, then prove clean
+install, audit, disposable migration generation, and SQL equivalence.
