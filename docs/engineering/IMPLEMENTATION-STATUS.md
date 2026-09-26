@@ -109,3 +109,29 @@ This documentation cut makes no production or beta DB data/schema changes and
 no deployment, webhook, traffic, or provider configuration changes. No
 production secret values are needed for the open identity gate. H04d remains a
 preparation/rehearsal track; it is not a production release authorization.
+
+## Plan central — estado reconciliado (26/09/2026)
+
+La prioridad de ingeniería sigue siendo **ACT-03**, según
+[`PLAN-DE-ACCION.md`](../audit/PLAN-DE-ACCION.md) y su secuencia validada. Este
+corte incorporó al workflow CI una auditoría bloqueante de dependencias de
+producción (`npm audit --omit=dev --audit-level=moderate`). Con Node 22.23.2,
+la auditoría encontró cero vulnerabilidades; harness 52/52, Jest 88/88 suites
+(735/735 tests), typecheck, lint (0 errores, 67 warnings) y build Webpack
+pasaron localmente. El cambio está pendiente de CI remoto y no cierra ACT-03.
+Los cuatro hallazgos moderados de Drizzle Kit/esbuild siguen aislados a la
+cadena dev-only; se mantienen bajo su evaluación acotada, sin downgrade ni
+override incompatible.
+
+El subcorte H04d.4i posterior a este registro histórico sí dejó un deployment
+READY en el **proyecto beta** (`hermes-finantial-tracker-z2`), con alias
+`hermes-finantial-tracker-z2.vercel.app`. Las tres flags Telegram permanecen
+apagadas; la pausa de build fue restaurada. Por limitación Hobby no hay crons
+desplegados. No hubo webhook, tráfico Telegram, cambio de DB ni acceso a legacy
+Production. H04d.4 sigue abierto y `isolationVerified` no está demostrado.
+
+Siguiente secuencia conforme al plan: obtener el resultado del workflow sobre
+un push autorizado de esta rama o una ejecución equivalente; completar ACT-03
+sin debilitar controles; mantener H04d separado y bloqueado para cualquier
+tráfico Telegram hasta revalidar el webhook beta y obtener autorización
+específica. No promover ni desplegar a producción legacy.

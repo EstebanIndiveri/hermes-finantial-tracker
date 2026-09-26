@@ -56,6 +56,21 @@ Las credenciales se suministran con `E2E_USERNAME` y `E2E_PASSWORD`; no existen
 valores por defecto. No ejecutar E2E remoto hasta disponer de proyecto, DB, bot,
 secretos y usuario sintetico de staging independientes.
 
+## Evidencia ACT-03 — auditoría de dependencias runtime en CI (26/09/2026)
+
+El workflow `quality.yml` ahora ejecuta `npm audit --omit=dev
+--audit-level=moderate` después de `npm ci`. Se limita a dependencias de
+producción para que vulnerabilidades conocidas de herramientas dev-only no
+oculten una regresión del runtime ni fuercen un downgrade incompatible. La
+cadena Drizzle Kit/esbuild continúa bajo su contrato de evaluación separado.
+
+Con Node 22.23.2/npm 10.9.8, el comando reportó cero vulnerabilidades. En el
+mismo checkout pasaron harness (52/52), Jest (88 suites, 735/735 tests),
+TypeScript, ESLint (0 errores, 67 warnings) y build Webpack (36 páginas). No se
+ejecutaron E2E ni acciones remotas. Este subcorte añade una puerta repetible,
+pero no cierra ACT-03: siguen pendientes los controles y decisiones restantes
+del contrato de calidad y la evidencia de CI remoto/protección de rama.
+
 ## Estado verificado de PR-01
 
 El SHA productivo `7034107` tenia como baseline auditado 58 suites aprobadas y

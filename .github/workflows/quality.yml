@@ -24,6 +24,8 @@ jobs:
           node-version: 22.23.2
           cache: npm
       - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:harness
