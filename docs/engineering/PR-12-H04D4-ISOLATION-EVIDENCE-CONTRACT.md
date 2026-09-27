@@ -696,9 +696,31 @@ datos, variables ni tráfico de producción legacy.
 
 | Gate | Owner | Criterio de cierre |
 | --- | --- | --- |
-| Confirmación de NLP beta con Groq live | Esteban envía/acepta confirmación; Codex concilia | Un segundo movimiento sintético desde frase natural, fuente/categoría/importe correctos y reflejado una sola vez en dashboard. |
+| NLP funcional beta — cerrado, 27/09/2026 | Esteban envió/confirmó; Codex concilió | Una sola fila activa: ARS 1.381, `Supermercado`, source `telegram`, fecha 2026-09-27. La fila DB no demuestra por sí sola qué proveedor/modelo procesó la solicitud. |
 | OCR beta | Esteban envía recibo sintético; Codex concilia | OCR.Space lee el recibo sintético, propuesta correcta y movimiento solo tras confirmación. Si falla la key beta, reemplazarla directamente en Vercel beta. |
 
 H04d-BETA-FINANCIAL-E2E permanece parcial hasta cerrar ambos canarios. No
 avanzar el cierre outbox/scheduler ni declarar aislamiento formal certificado
 en base a este deployment.
+
+### H04d.4m — canario de lenguaje natural conciliado (27/09/2026)
+
+Esteban confirmó que envió `Gasto de supermercado 1381` al bot beta y que este
+registró el gasto. La consulta de solo lectura a `beta-hermes`, limitada al
+usuario `esteban_beta_qa`, amount ARS 1.381, `source='telegram'` y
+`status='active'`, encontró exactamente una fila: categoría `Supermercado`,
+fecha 2026-09-27. No se leyó ni cambió ningún dato productivo.
+
+Se cierra el canario funcional de texto natural en beta. Esto confirma el
+recorrido usuario → Telegram beta → registro durable en Turso beta; no es por
+sí solo una prueba de telemetría que demuestre qué proveedor/modelo atendió la
+solicitud. `AI_MODE=live` continúa configurado solo en el proyecto beta.
+
+| Gate restante | Owner | Reentrada/cierre |
+| --- | --- | --- |
+| OCR imagen beta | Esteban — enviar recibo sintético por el bot beta; Codex — verificar propuesta y reconciliar | Comprobar extracción de OCR.Space, mostrar monto/categoría/fecha correctos, confirmar únicamente si coinciden y verificar una sola transacción en beta + dashboard. Si falla el proveedor, revisar/reemplazar solo la credencial beta. |
+| Outbox y worker/scheduler | Se mantienen como cortes posteriores, con owners y decisión de plataforma en `IMPLEMENTATION-STATUS.md` | No habilitar flags ni cron dentro de este canario financiero. |
+
+No se accedió ni modificó producción legacy. El gate financiero H04d queda
+parcial hasta la prueba de imagen OCR; el certificado formal de aislamiento
+permanece diferido según el alcance ya registrado.
