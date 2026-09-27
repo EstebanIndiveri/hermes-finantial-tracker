@@ -965,3 +965,40 @@ Este subcorte cierra la brecha técnica de diagnóstico STT en local, no la
 prueba real de voz. H04d-BETA-FINANCIAL-E2E y ACT-11/13/14 continúan abiertos
 bajo los owners existentes. Worker/scheduler, aislamiento formal, ACT-03 branch
 gate y producción legacy no cambian.
+
+#### Reconciliación de provider y deploy beta para el canario STT (27/09/2026)
+
+Solo en el proyecto `hermes-finantial-tracker-z2`, el target Production de
+`AI_MODE` quedó en `live` para habilitar Whisper. La lista de variables
+confirmó por nombre/target `GROQ_API_KEY` y `GROQ_WHISPER_MODEL` en Production;
+no se leyeron ni copiaron valores de producción legacy o de Groq.
+
+El primer upload quedó bloqueado con `readyStateReason` de Vercel: el autor
+local del commit no tenía permiso para crear deployments en el proyecto. Los
+deployments bloqueados no se promovieron (`aliasAssigned=false`). Se corrigió
+el autor local al email de la cuenta autorizada y el deployment
+`dpl_BFhewP7Fhgy6DFR33Cq28q8kUvgq` terminó `READY`, target Production del
+proyecto beta. Su alias de proyecto es
+`hermes-finantial-tracker-z2-eindi-acme.vercel.app`; `/login` devolvió HTTP
+200. No se promovió nada a `main` ni al proyecto legacy.
+
+Por Hobby, el paquete de este deploy omitió únicamente `vercel.json`; el
+archivo canónico fue restaurado inmediatamente en la rama. La inspección del
+proyecto beta muestra cero cron definitions desplegadas. El valor de
+`commandForIgnoringBuildStep` se dejó en `exit 0` después del deploy, de modo
+que los builds Git/automáticos continúan pausados como acordado. Inbox continúa
+siendo la puerta ya habilitada; Outbox y Worker siguen apagados. No se cambió
+webhook, DB, filas financieras ni datos de Telegram.
+
+| Gate | Estado / owner | Reentrada precisa |
+| --- | --- | --- |
+| Gate local STT | Cerrado por Codex en `9b4dcdd`; 88 suites / 745 tests, harness 53/53, typecheck, lint 0 errores y build pasan. | Reabrir solo por regresión o código de error no clasificado. |
+| Beta `AI_MODE` | Configurado `live` por Codex solo en beta; variable Groq presente por nombre/target, valor secreto no leído. | Un canario de voz inocuo decide si hay éxito STT o código diagnóstico; no enviar gasto ni monto. |
+| Beta deployment | `READY`, `dpl_BFhewP7Fhgy6DFR33Cq28q8kUvgq`. Codex. | No requiere otra publicación para el canario. |
+| Canario de voz | Pendiente. Owner Esteban para enviar “Hola Hermes, esta es una prueba de audio” a `@Hermes_beta_finantial_bot`; Codex para conciliar Inbox beta. | Confirmar transcripción/resultado, un update Inbox no exitoso o completado según caso y cero transacciones. Si falla, usar `last_error_code` para el siguiente fix. |
+
+H04d-BETA-FINANCIAL-E2E y ACT-11/13/14 continúan abiertos bajo sus owners
+existentes hasta pasar voz real, convergencia multimodal y la matriz de
+reintegros. No se inicia otro corte funcional antes de cerrar o replanificar
+este canario. El worker, scheduler, aislamiento formal y `main` permanecen sin
+cambios.
