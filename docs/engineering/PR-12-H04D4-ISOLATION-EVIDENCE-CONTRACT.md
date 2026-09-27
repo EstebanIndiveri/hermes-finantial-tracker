@@ -779,3 +779,35 @@ sintética desde `Hermes_beta_finantial_bot`.
 
 Producción legacy permaneció sin intervención. El corte OCR no se declara
 cerrado hasta pasar el canario con esta nueva versión.
+
+### H04d.4p — OCR happy path y brecha de reintegro (27/09/2026)
+
+Esteban envió intencionalmente dos veces el mismo ticket por el bot beta. La
+consulta read-only a `beta-hermes`, restringida a `esteban_beta_qa` y a los
+imports del monto reconocido, encontró exactamente dos imports `confirmed`
+y dos transacciones activas: ARS 23.971,15, categoría `Supermercado`, ambas
+con `requires_reimbursement=0`. No apareció una tercera fila accidental. El
+reconocimiento OCR y la propuesta/confirmación quedaron funcionalmente
+validados para gasto ordinario.
+
+#### Hallazgo funcional
+
+El flujo actual de recibo no pregunta si corresponde reintegro. La propuesta
+de OCR solo muestra monto, categoría, comercio/fecha y botones de confirmar,
+editar o cancelar (`buildReceiptProposalMessage`). Al confirmar, el callback
+invoca `registerPersonalTransaction(..., false, ...)`, fijando
+`requires_reimbursement=false`. Es consistente con los dos registros, pero
+impide que el usuario marque desde OCR un gasto que debe reintegrarse.
+
+No se ejecutó una tercera operación. Los dos gastos duplicados fueron
+intencionales y quedaron en beta. Producción legacy no se consultó ni modificó.
+
+| Siguiente tarea | Owner | Criterio de cierre |
+| --- | --- | --- |
+| Añadir elección de reintegro al flujo de recibo | Codex — implementar en corte propio con pruebas; Esteban — validar UX beta | La propuesta pregunta explícitamente si el gasto requiere reintegro; la elección se conserva al confirmar; “no” conserva el comportamiento actual; cancelar/editar no escribe una transacción. |
+| QA de recibos reembolsables/no reembolsables | Esteban — enviar dos canarios sintéticos tras el cambio; Codex — conciliar | Un recibo marcado sí produce `requires_reimbursement=1` y el flujo esperado de solicitud; otro marcado no queda en `0`; cada uno aparece una vez. |
+| Duplicados | Codex — evaluar deduplicación sin impedir gastos legítimos iguales | Mantener documentado que cada reenvío explícito crea una importación nueva; proponer confirmación/alerta por mismo `telegram_file_id` o huella solo después de definir falsos positivos. |
+
+H04d-BETA-FINANCIAL-E2E sigue parcial por la brecha de reintegro OCR. El
+worker/outbox y la certificación formal de aislamiento continúan siendo gates
+separados; no se abrieron en este corte.
