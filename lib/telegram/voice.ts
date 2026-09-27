@@ -1,8 +1,22 @@
-import { transcribeAudio } from "@/lib/ai/groq";
+import { TranscriptionError, transcribeAudio, type TranscriptionErrorCode } from "@/lib/ai/groq";
 
-export async function downloadTelegramFile(fileId: string): Promise<Buffer | null> {
+export type VoiceProcessingErrorCode =
+  | TranscriptionErrorCode
+  | "TELEGRAM_BOT_TOKEN_MISSING"
+  | "TELEGRAM_FILE_LOOKUP_FAILED"
+  | "TELEGRAM_FILE_DOWNLOAD_FAILED"
+  | "TELEGRAM_FILE_EMPTY";
+
+export class VoiceProcessingError extends Error {
+  constructor(readonly code: VoiceProcessingErrorCode) {
+    super(code);
+    this.name = "VoiceProcessingError";
+  }
+}
+
+export async function downloadTelegramFile(fileId: string): Promise<Buffer> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return null;
+  if (!token) throw new VoiceProcessingError("TELEGRAM_BOT_TOKEN_MISSING");
 
   try {
     const fileInfoRes = await fetch(
@@ -15,8 +29,7 @@ export async function downloadTelegramFile(fileId: string): Promise<Buffer | nul
     };
 
     if (!fileInfo.ok || !fileInfo.result?.file_path) {
-      console.error("Failed to get Telegram file path:", fileInfo.description ?? "unknown");
-      return null;
+      throw new VoiceProcessingError("TELEGRAM_FILE_LOOKUP_FAILED");
     }
 
     const fileRes = await fetch(
@@ -24,22 +37,27 @@ export async function downloadTelegramFile(fileId: string): Promise<Buffer | nul
     );
 
     if (!fileRes.ok) {
-      console.error("Failed to download Telegram file:", fileRes.status);
-      return null;
+      throw new VoiceProcessingError("TELEGRAM_FILE_DOWNLOAD_FAILED");
     }
 
     const arrayBuffer = await fileRes.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    const audioBuffer = Buffer.from(arrayBuffer);
+    if (audioBuffer.length === 0) throw new VoiceProcessingError("TELEGRAM_FILE_EMPTY");
+    return audioBuffer;
   } catch (err) {
-    console.error("Error downloading Telegram file:", err instanceof Error ? err.message : err);
-    return null;
+    if (err instanceof VoiceProcessingError) throw err;
+    throw new VoiceProcessingError("TELEGRAM_FILE_DOWNLOAD_FAILED");
   }
 }
 
-export async function transcribeVoiceMessage(fileId: string): Promise<string | null> {
+export async function transcribeVoiceMessage(fileId: string): Promise<string> {
   const audioBuffer = await downloadTelegramFile(fileId);
-  if (!audioBuffer) return null;
-
-  const transcription = await transcribeAudio(audioBuffer, "voice.ogg");
-  return transcription;
+  try {
+    return await transcribeAudio(audioBuffer, "voice.ogg");
+  } catch (err) {
+    if (err instanceof TranscriptionError) {
+      throw new VoiceProcessingError(err.code);
+    }
+    throw err;
+  }
 }

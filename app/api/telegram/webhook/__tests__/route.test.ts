@@ -589,6 +589,35 @@ describe("Telegram webhook authorized personal context", () => {
       expect(completeTelegramUpdate).not.toHaveBeenCalled();
     });
 
+    it("leaves voice provider failures retryable and stores only the stable code", async () => {
+      (resolveAuthorizedTelegramGroup as jest.Mock).mockResolvedValue("group-1");
+      (transcribeVoiceMessage as jest.Mock).mockRejectedValue(
+        Object.assign(new Error("provider response must not be persisted"), { code: "GROQ_HTTP_5XX" }),
+      );
+
+      const response = await POST(request({
+        update_id: 47,
+        message: {
+          chat: { id: 10, type: "private" },
+          from: { id: 20 },
+          voice: { file_id: "voice-retryable" },
+        },
+      }));
+
+      expect(response.status).toBe(503);
+      expect(failTelegramUpdate).toHaveBeenCalledWith({
+        botId: "test-bot",
+        updateId: "47",
+        leaseToken: "lease-1",
+        errorCode: "GROQ_HTTP_5XX",
+      });
+      expect(completeTelegramUpdate).not.toHaveBeenCalled();
+      expect(sendPersonalMessage).not.toHaveBeenCalledWith(
+        "10",
+        expect.stringContaining("provider response"),
+      );
+    });
+
     it.each([
       ["callback", { callback_query: { id: "kind-cb", from: { id: 20 }, data: "expense:cancel", message: { message_id: 4, chat: { id: 10, type: "private" } } } }],
       ["voice", { message: { chat: { id: 10, type: "private" }, from: { id: 20 }, voice: { file_id: "voice-kind" } } }],

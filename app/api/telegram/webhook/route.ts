@@ -152,8 +152,29 @@ function classifyTelegramUpdate(update: unknown): TelegramUpdateKind {
   return "other";
 }
 
+const VOICE_PROCESSING_ERROR_CODES = new Set([
+  "AI_MODE_STUB",
+  "AI_MODE_INVALID",
+  "GROQ_API_KEY_MISSING",
+  "AUDIO_EMPTY",
+  "GROQ_HTTP_4XX",
+  "GROQ_HTTP_5XX",
+  "GROQ_NETWORK_ERROR",
+  "GROQ_EMPTY_TRANSCRIPTION",
+  "TELEGRAM_BOT_TOKEN_MISSING",
+  "TELEGRAM_FILE_LOOKUP_FAILED",
+  "TELEGRAM_FILE_DOWNLOAD_FAILED",
+  "TELEGRAM_FILE_EMPTY",
+]);
+
 function stableTelegramErrorCode(error: unknown): string {
-  void error;
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    VOICE_PROCESSING_ERROR_CODES.has(error.code)
+  ) return error.code;
   return "HANDLER_ERROR";
 }
 
@@ -303,10 +324,7 @@ async function processTelegramUpdate(
 
       try {
         const transcription = await transcribeVoiceMessage(voiceFileId);
-        if (!transcription) {
-          await sendSplitMessage(chatId, "❌ No pude transcribir el audio. Intentá de nuevo o escribí el mensaje.");
-          return NextResponse.json({ ok: true });
-        }
+        if (!transcription) throw Object.assign(new Error("VOICE_TRANSCRIPTION_EMPTY"), { code: "GROQ_EMPTY_TRANSCRIPTION" });
 
         const groupMessage = { ...msg, text: transcription };
         const splitResponse = await handleSplitGroupMessage(groupMessage);
@@ -318,12 +336,12 @@ async function processTelegramUpdate(
           }
         }
       } catch (err) {
-        console.error("Group voice processing error:", {
-          message: err instanceof Error ? err.message : "Unknown error",
+        console.error("Group voice processing failed:", {
+          code: stableTelegramErrorCode(err),
         });
-        await sendSplitMessage(chatId, "❌ Error procesando el audio. Intentá de nuevo.").catch(() => {
-          // Best-effort: Telegram delivery failure must not turn the webhook into a retryable 5xx.
-        });
+        if (process.env.TELEGRAM_INBOX_ENABLED === "true") throw err;
+        await sendSplitMessage(chatId, "❌ No pude procesar el audio. Intentá de nuevo o escribí el mensaje.").catch(() => {});
+        return NextResponse.json({ ok: true });
       }
       return NextResponse.json({ ok: true });
     }
@@ -354,11 +372,7 @@ async function processTelegramUpdate(
 
     try {
       const transcription = await transcribeVoiceMessage(voiceFileId);
-      
-      if (!transcription) {
-        await sendTelegramMessage(chatId, "❌ No pude transcribir el audio. Intentá de nuevo o escribí el mensaje.");
-        return NextResponse.json({ ok: true });
-      }
+      if (!transcription) throw Object.assign(new Error("VOICE_TRANSCRIPTION_EMPTY"), { code: "GROQ_EMPTY_TRANSCRIPTION" });
 
       // Process transcribed text through normal flow
       const fakeUpdate = { 
@@ -384,9 +398,11 @@ async function processTelegramUpdate(
       return NextResponse.json({ ok: true });
 
     } catch (err) {
-      console.error("Voice processing error:", err);
-      if (operationSeed) throw err;
-      await sendTelegramMessage(chatId, "❌ Error procesando el audio: " + (err instanceof Error ? err.message : "desconocido"));
+      console.error("Voice processing failed:", {
+        code: stableTelegramErrorCode(err),
+      });
+      if (process.env.TELEGRAM_INBOX_ENABLED === "true") throw err;
+      await sendTelegramMessage(chatId, "❌ No pude procesar el audio. Intentá de nuevo o escribí el mensaje.");
       return NextResponse.json({ ok: true });
     }
   }

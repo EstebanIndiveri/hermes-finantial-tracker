@@ -927,3 +927,41 @@ técnico. Faltan diagnóstico STT tipado/reintentable, convergencia del draft
 validado para transcripción y OCR, ejecución del canary con flags beta
 reconciliadas y evidencia de conciliación. No se abre otro corte hasta cerrar
 estos entregables o registrar un bloqueo con owner, impacto y reentrada exacta.
+
+#### Subcorte local 2 — diagnóstico STT y fallo recuperable del Inbox (27/09/2026)
+
+En `codex/h04d-natural-language-e2e`, la transcripción ya no colapsa
+configuración, descarga, proveedor y salida vacía en `null`. `transcribeAudio`
+y `transcribeVoiceMessage` ahora fallan con códigos acotados: modo IA stub o
+inválido, credencial Groq ausente, archivo de Telegram no disponible,
+respuesta HTTP 4xx/5xx, error de red y transcripción vacía. El cuerpo del
+proveedor, el token, el audio y el texto transcripto no se incluyen en los
+errores ni en el registro estructurado.
+
+Con `TELEGRAM_INBOX_ENABLED=true`, un fallo STT no se cierra como update exitoso:
+el webhook devuelve 503 y el Inbox conserva estado retryable y solo el código
+estable, permitiendo el replay del mismo update sin ejecutar el writer
+financiero. Con Inbox apagado se conserva compatibilidad y se envía un mensaje
+genérico sin filtrar detalles del proveedor. El indicador “Procesando audio”
+se envía antes del STT; al haber retry podría repetirse, aspecto a revisar al
+probar el webhook beta. No se registra una transcripción fallida ni se crea
+transacción.
+
+Regresiones locales: 56 pruebas enfocadas en Groq, descarga Telegram y webhook;
+suite completa 88 suites / 745 tests; harness 53/53; typecheck y build Webpack
+pasaron. Lint: 0 errores y 67 warnings existentes. Un primer typecheck ejecutado
+en paralelo al build tuvo fallos espurios porque Next regeneraba `.next/types`;
+se repitió después del build y pasó. No hubo cambios en Vercel, webhook, DB,
+tráfico beta, `main` ni producción.
+
+| Estado | Owner | Acción exacta / cierre |
+| --- | --- | --- |
+| Código y diagnóstico STT | Codex — corte local completo | Mantener códigos estables y seguros; reabrir si aparece un nuevo proveedor o caso no clasificado. |
+| AI_MODE / Groq beta | Codex — metadata beta solamente | Verificar binding/environment efectivo por nombre y target sin leer ni mostrar valor; corregir `AI_MODE`/binding solo en beta si está mal, luego crear deployment beta de esta rama. |
+| Canario de audio sin escritura financiera | Esteban — enviar una frase de prueba inocua al bot beta; Codex — revisar status/error code del Inbox beta | Debe aparecer transcripción procesada (o una causa retryable específica), un update reconciliado y cero transacciones. No usar audio que ordene un gasto en este primer ensayo. |
+| Canario financiero por audio | Esteban + Codex | Solo después de verificar el anterior y activar outbox beta para la ruta de consentimiento: un gasto sintético sin reintegro y luego la matriz sí/no; conciliar transacción, solicitud y entrega sin duplicados. |
+
+Este subcorte cierra la brecha técnica de diagnóstico STT en local, no la
+prueba real de voz. H04d-BETA-FINANCIAL-E2E y ACT-11/13/14 continúan abiertos
+bajo los owners existentes. Worker/scheduler, aislamiento formal, ACT-03 branch
+gate y producción legacy no cambian.

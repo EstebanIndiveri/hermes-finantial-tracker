@@ -1,4 +1,4 @@
-import { downloadTelegramFile, transcribeVoiceMessage } from "../voice";
+import { downloadTelegramFile, transcribeVoiceMessage, VoiceProcessingError } from "../voice";
 
 jest.mock("@/lib/ai/groq", () => ({
   transcribeAudio: jest.fn(),
@@ -46,20 +46,22 @@ describe("Voice message handling", () => {
       );
     });
 
-    it("returns null when getFile fails", async () => {
+    it("returns a stable failure when getFile fails", async () => {
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         json: async () => ({ ok: false }),
       });
 
-      const result = await downloadTelegramFile("invalid-file");
-      expect(result).toBeNull();
+      await expect(downloadTelegramFile("invalid-file")).rejects.toMatchObject({
+        code: "TELEGRAM_FILE_LOOKUP_FAILED",
+      });
     });
 
-    it("returns null when TELEGRAM_BOT_TOKEN is not set", async () => {
+    it("reports missing Telegram configuration", async () => {
       delete process.env.TELEGRAM_BOT_TOKEN;
-      const result = await downloadTelegramFile("file-id-123");
-      expect(result).toBeNull();
+      await expect(downloadTelegramFile("file-id-123")).rejects.toMatchObject({
+        code: "TELEGRAM_BOT_TOKEN_MISSING",
+      });
     });
   });
 
@@ -86,14 +88,15 @@ describe("Voice message handling", () => {
       expect(transcribeAudio).toHaveBeenCalled();
     });
 
-    it("returns null when download fails", async () => {
+    it("reports download failures with a stable code", async () => {
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         json: async () => ({ ok: false }),
       });
 
-      const result = await transcribeVoiceMessage("invalid-file");
-      expect(result).toBeNull();
+      const result = transcribeVoiceMessage("invalid-file");
+      await expect(result).rejects.toBeInstanceOf(VoiceProcessingError);
+      await expect(result).rejects.toMatchObject({ code: "TELEGRAM_FILE_LOOKUP_FAILED" });
     });
   });
 });

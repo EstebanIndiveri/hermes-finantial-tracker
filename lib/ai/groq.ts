@@ -4,6 +4,23 @@ interface GroqClient {
 
 export type AiRuntimeMode = "live" | "stub" | "invalid";
 
+export type TranscriptionErrorCode =
+  | "AI_MODE_STUB"
+  | "AI_MODE_INVALID"
+  | "GROQ_API_KEY_MISSING"
+  | "AUDIO_EMPTY"
+  | "GROQ_HTTP_4XX"
+  | "GROQ_HTTP_5XX"
+  | "GROQ_NETWORK_ERROR"
+  | "GROQ_EMPTY_TRANSCRIPTION";
+
+export class TranscriptionError extends Error {
+  constructor(readonly code: TranscriptionErrorCode) {
+    super(code);
+    this.name = "TranscriptionError";
+  }
+}
+
 /**
  * Missing AI_MODE retains the legacy live behavior. A supplied value must be
  * recognized so an ambiguous staging configuration can never reach Groq.
@@ -52,11 +69,14 @@ export function getGroqClient(): GroqClient | null {
 export async function transcribeAudio(
   audioBuffer: Buffer,
   filename: string = "voice.ogg"
-): Promise<string | null> {
-  if (getAiRuntimeMode() !== "live") return null;
+): Promise<string> {
+  const runtimeMode = getAiRuntimeMode();
+  if (runtimeMode === "stub") throw new TranscriptionError("AI_MODE_STUB");
+  if (runtimeMode === "invalid") throw new TranscriptionError("AI_MODE_INVALID");
+  if (audioBuffer.length === 0) throw new TranscriptionError("AUDIO_EMPTY");
 
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) throw new TranscriptionError("GROQ_API_KEY_MISSING");
 
   const model = process.env.GROQ_WHISPER_MODEL ?? "whisper-large-v3-turbo";
 
@@ -76,14 +96,17 @@ export async function transcribeAudio(
     });
 
     if (!res.ok) {
-      console.error("Groq Whisper API error:", res.status);
-      return null;
+      throw new TranscriptionError(
+        res.status >= 500 ? "GROQ_HTTP_5XX" : "GROQ_HTTP_4XX",
+      );
     }
 
     const data = (await res.json()) as { text?: string };
-    return data.text ?? null;
+    const text = data.text?.trim();
+    if (!text) throw new TranscriptionError("GROQ_EMPTY_TRANSCRIPTION");
+    return text;
   } catch (err) {
-    console.error("Groq transcription error:", err instanceof Error ? err.message : err);
-    return null;
+    if (err instanceof TranscriptionError) throw err;
+    throw new TranscriptionError("GROQ_NETWORK_ERROR");
   }
 }
