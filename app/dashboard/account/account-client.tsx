@@ -245,8 +245,8 @@ function ConectarTelegram() {
     }
   }
 
-  const botName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "HermesFinanceAssistBot";
-  const deepLink = code ? `https://t.me/${botName}?start=link_${code}` : null;
+  const botName = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+  const deepLink = code && botName ? `https://t.me/${botName}?start=link_${code}` : undefined;
 
   if (linked === null) return (
     <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
@@ -264,7 +264,7 @@ function ConectarTelegram() {
           <span style={{ fontSize: "1.2rem" }}>✅</span>
           <div>
             <p style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--hgreen)", margin: 0 }}>Telegram conectado</p>
-            <p style={{ fontSize: "0.78rem", color: "var(--htext2)", margin: "2px 0 0" }}>Tu cuenta ya está vinculada al bot <strong>@{botName}</strong></p>
+            <p style={{ fontSize: "0.78rem", color: "var(--htext2)", margin: "2px 0 0" }}>Tu cuenta ya está vinculada al bot <strong>{botName ? `@${botName}` : "configurado en este entorno"}</strong></p>
           </div>
         </div>
       ) : (
@@ -272,14 +272,18 @@ function ConectarTelegram() {
           <p style={{ fontSize: "0.85rem", color: "var(--htext2)", marginBottom: 16 }}>
             Vinculá tu cuenta de Telegram para usar el bot con tu usuario.
           </p>
-          {code ? (
+          {code ? !botName ? (
+            <p style={{ fontSize: "0.82rem", color: "var(--hred)" }}>
+              El bot de Telegram no está configurado para este entorno. No abras un enlace de otro bot.
+            </p>
+          ) : (
             <div>
               <div style={{ background: "var(--haccent-soft)", border: "1px solid var(--haccent)", borderRadius: 8, padding: "14px 16px", marginBottom: 12 }}>
                 <p style={{ fontSize: "0.82rem", color: "var(--htext2)", marginBottom: 10 }}>
                   Tocá el botón para vincular automáticamente desde Telegram:
                 </p>
                 <a
-                  href={deepLink!}
+                  href={deepLink}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{

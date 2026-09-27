@@ -576,9 +576,11 @@ export default function OnboardingPage() {
                     </div>
                     <button
                       onClick={() => {
-                        const botUsername =
-                          process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ||
-                          "HermesFinanceAssistBot";
+                        const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+                        if (!botUsername) {
+                          setError("El bot de Telegram no está configurado para este entorno.");
+                          return;
+                        }
                         window.open(
                           `https://t.me/${botUsername}?start=link_${telegramCode}`,
                           "_blank"

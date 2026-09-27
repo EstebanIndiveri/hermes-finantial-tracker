@@ -35,11 +35,26 @@ test("build mode uses production NODE_ENV with synthetic local resources", () =>
   const environment = createIsolatedEnvironment({
     mode: "build",
     temporaryDirectory: "/tmp/hermes-build-test",
-    parentEnvironment: {},
+    parentEnvironment: {
+      NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: "Hermes_beta_finantial_bot",
+      TELEGRAM_BOT_TOKEN: "sentinel-telegram",
+    },
   });
 
   assert.equal(environment.NODE_ENV, "production");
   assert.equal(environment.NEXT_PUBLIC_APP_URL, "http://127.0.0.1:3000");
+  assert.equal(environment.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME, "Hermes_beta_finantial_bot");
+  assert.equal("TELEGRAM_BOT_TOKEN" in environment, false);
   assert.match(environment.SESSION_SECRET, /^synthetic-/);
   assert.match(environment.CRON_SECRET, /^synthetic-/);
+});
+
+test("test mode does not inherit the public Telegram bot handle", () => {
+  const environment = createIsolatedEnvironment({
+    mode: "test",
+    temporaryDirectory: "/tmp/hermes-test-policy",
+    parentEnvironment: { NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: "Hermes_beta_finantial_bot" },
+  });
+
+  assert.equal("NEXT_PUBLIC_TELEGRAM_BOT_USERNAME" in environment, false);
 });

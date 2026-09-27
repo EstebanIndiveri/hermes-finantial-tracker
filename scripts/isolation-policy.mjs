@@ -34,5 +34,16 @@ export function createIsolatedEnvironment({ mode, temporaryDirectory, parentEnvi
     if (value) environment[name] = value;
   }
 
+  // The bot username is public client configuration, not a credential. Let
+  // production builds inline the target environment's bot handle while keeping
+  // provider tokens and every other inherited variable out of the isolated
+  // build process.
+  if (mode === "build") {
+    const botUsername = parentEnvironment.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+    if (typeof botUsername === "string" && /^[A-Za-z0-9_]{5,32}$/.test(botUsername)) {
+      environment.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME = botUsername;
+    }
+  }
+
   return environment;
 }
