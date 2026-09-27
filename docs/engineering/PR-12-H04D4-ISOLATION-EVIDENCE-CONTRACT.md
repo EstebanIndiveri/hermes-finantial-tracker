@@ -724,3 +724,34 @@ solicitud. `AI_MODE=live` continúa configurado solo en el proyecto beta.
 No se accedió ni modificó producción legacy. El gate financiero H04d queda
 parcial hasta la prueba de imagen OCR; el certificado formal de aislamiento
 permanece diferido según el alcance ya registrado.
+
+### H04d.4n — diagnóstico de fallo OCR en beta (27/09/2026)
+
+La imagen enviada al bot beta llegó al webhook y el handler inició OCR. La
+revisión de logs del deployment beta exacto `dpl_3krXMJ84Z1DsCTMUMhn8xTQRPfAW`,
+filtrada al intervalo de la captura, encontró el warning
+`OCR_SPACE_API_KEY not set — OCR skipped` para `POST /api/telegram/webhook`
+(17:09:53 -03, HTTP 200). La fila `receipt_imports` correspondiente en
+`beta-hermes` quedó `failed`, `fail_reason='OCR returned no text'` y
+`transaction_id=NULL` (17:09:57 -03). No se consultó el texto OCR ni se creó
+un movimiento financiero.
+
+Esto localiza el fallo antes de OCR.Space: no fue un rechazo del formato del
+recibo ni un parseo de Groq. Aunque `vercel env ls production` muestra el
+nombre `OCR_SPACE_API_KEY` asociado a Production/Preview, el runtime de este
+deployment no recibe un valor utilizable. La inspección metadata-only no
+permite saber si la variable tiene valor incorrecto/vacío o si el binding no
+se propagó a ese deployment. Los valores beta configurados como Secret son
+write-only; Vercel los conserva en forma no legible tras guardarlos.
+
+#### Bloqueo y responsable
+
+| Estado | Owner | Reentrada/cierre |
+| --- | --- | --- |
+| Credencial OCR beta | Esteban — reingresar/reemplazar una clave OCR.Space válida directamente en Production del proyecto beta; Codex — validar metadata de target, volver a desplegar únicamente beta y revisar runtime | Tras actualizar la variable, crear un deployment beta nuevo; verificar que desaparezca el warning, que OCR.Space devuelva texto suficiente y que el bot presente una propuesta antes de cualquier escritura. Si vuelve a faltar la variable, corregir el binding/target beta. No copiar ni rotar secretos legacy. |
+| Importe/DB para esta imagen | Cerrado | La importación fallida no produjo transacción (`transaction_id=NULL`); el handler pidió usar `/gasto`. |
+
+No intentar concluir OCR E2E ni habilitar otra feature mientras esta
+dependencia beta siga sin resolver. El flujo NLP queda funcional y conciliado;
+H04d-BETA-FINANCIAL-E2E continúa parcial. Producción legacy, su configuración,
+webhook, DB y tráfico no fueron consultados ni modificados.
