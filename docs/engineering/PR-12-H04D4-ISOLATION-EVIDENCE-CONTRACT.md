@@ -811,3 +811,87 @@ intencionales y quedaron en beta. Producción legacy no se consultó ni modific�
 H04d-BETA-FINANCIAL-E2E sigue parcial por la brecha de reintegro OCR. El
 worker/outbox y la certificación formal de aislamiento continúan siendo gates
 separados; no se abrieron en este corte.
+
+### H04d.4q — reintegro inconsistente y voz sin diagnóstico; integración ACT-11/13/14 (27/09/2026)
+
+#### Evidencia beta
+
+Esteban reportó y mostró `Gasté 5000 en supermercado con reintegro`. El bot
+respondió que el gasto quedó registrado y que el reintegro fue solicitado
+automáticamente, sin una elección Sí/No. Una consulta de solo lectura en
+`beta-hermes`, limitada a la cuenta QA y a ese importe, encontró una
+transacción activa Telegram ARS 5.000, una solicitud de reintegro `pending`
+por ARS 5.000, pero `transactions.requires_reimbursement=0`. Es una
+inconsistencia entre intención/proyección y datos persistidos, aunque la
+solicitud sí fue creada.
+
+La captura previa del ticket OCR confirmó el otro lado: el callback OCR
+confirma el gasto con `requires_reimbursement=false` y el mensaje de propuesta
+no contiene una pregunta de reintegro. Para el caso de gasto normal, Esteban
+reporta que tampoco vio la opción. No se hizo otra escritura de prueba.
+
+Esteban además probó dos mensajes de voz (1–2 segundos); ambos recibieron
+“No pude transcribir el audio”. En `telegram_update_inbox` aparecen dos
+updates `voice` completados, `attempt_count=1`, `last_error_code=NULL`; el
+webhook los respondió HTTP 200. Los logs consultados en el deployment beta no
+contienen excepción ni diagnóstico de STT. El código actual confirma que
+`transcribeAudio` puede devolver `null` sin log cuando AI está apagada/no
+reconocida o `GROQ_API_KEY` no está disponible; la descarga de Telegram y los
+errores HTTP Groq tienen logs, pero no hubo datos que permitan distinguir la
+causa de estos dos intentos. Resultado: fallo reportado confirmado; causa
+raíz de voz aún no demostrada.
+
+#### Lectura arquitectónica y secuencia recomendada
+
+Estos casos se asignan a los entregables ya existentes **ACT-11
+(enrutamiento voz/texto/foto)**, **ACT-13 (parser monetario e intenciones)** y
+**ACT-14 (OCR verificable)**; no se crea un ACT paralelo ni se debe corregir
+cada handler con reglas aisladas. El siguiente corte propuesto es un contrato
+y luego una implementación vertical de una sola entrada de dominio para
+Telegram:
+
+1. Adaptadores finos normalizan comando/texto, transcripción, extracción OCR y
+   callback en el mismo `InboundTelegramMessage`, conservando modalidad y
+   evidencia sin escribir datos.
+2. Un intérprete devuelve un `FinancialDraft` discriminado —gasto/ingreso/
+   consulta/acción— con monto, moneda, categoría, fecha, grupo, comercio,
+   intención de reintegro (`yes`/`no`/`unknown`), evidencia y confianza. El
+   modelo no llama DB ni decide permisos.
+3. Una sola política de conversación valida autorización y catálogo, pide
+   aclaraciones y produce una propuesta confirmable; comandos son entradas
+   deterministas al mismo draft, no writers alternativos.
+4. Una sola confirmación versionada dispara el writer financiero y, cuando el
+   usuario eligió Sí, el reintegro dentro de la misma operación durable. Nunca
+   crear gasto/solicitud por parsear texto ni notificar al grupo antes del
+   consentimiento.
+5. STT/OCR tienen errores tipados (credencial/modo, descarga, tamaño, timeout,
+   rechazo del proveedor, salida vacía). Persistir estado reintentable y
+   responder con instrucción concreta; no cerrar inbox como éxito silencioso
+   si el contenido no llegó al parser.
+
+No significa enviar todo a un único prompt de IA. El formato se reconoce con
+adaptadores deterministas; todos convergen en un único contrato de intención,
+validación, propuesta, confirmación y writer. La IA solo apoya interpretación
+ambigua. Mantener el monolito modular y migrar un canal a la vez, con flags de
+beta, reduce el riesgo de un refactor big-bang.
+
+#### Matriz de aceptación del corte
+
+| Entrada | Caso | Resultado requerido |
+| --- | --- | --- |
+| `/gasto` y texto natural | gasto claro; monto ambiguo; categoría ausente | Una propuesta compartida; pregunta concreta; sin registro antes de confirmar. |
+| Texto explícito de reintegro | `con reintegro` / sin mención / `sin reintegro` | La propuesta ofrece `Gasto + reintegro`, `Solo gasto`, `Cancelar`; persistir gasto y request coherentes únicamente al confirmar. |
+| Audio Telegram | frase de gasto/reintegro; Groq key ausente o 401/429/timeout | Transcripción entra al mismo parser; error visible y reintentable con código diagnóstico seguro, cero writer al fallar. |
+| Foto/imagen OCR | recibo con total, subtotal, OCR vacío, reintegro sí/no/unknown | Mismo draft/propuesta y política; nada se escribe hasta confirmar. |
+| Callback/doble entrega | confirmar dos veces, cancelar, callback viejo | Operación idempotente; una escritura máxima; expirado/cancelado no genera side effects. |
+
+| Owner | Siguiente corte / cierre |
+| --- | --- |
+| Codex | Definir contrato y regresiones; implementar primero detrás de la beta y migrar texto/comando, luego voz y OCR sin reabrir writers. |
+| Esteban | Validar en el bot beta las frases de reintegro sí/no y aprobar copy/acciones de propuesta antes del rollout. |
+
+ACT-11/13/14 queda abierto con owner y criterio de reentrada en el registro
+central. H04d-BETA-FINANCIAL-E2E no se cierra hasta validar multimodalidad,
+reintegro y errores recuperables en beta. Outbox/scheduler, ACT03 branch gate y
+certificado formal de aislamiento siguen siendo cortes separados con sus
+owners actuales; producción legacy no se toca.
