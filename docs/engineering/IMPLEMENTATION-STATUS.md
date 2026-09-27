@@ -157,8 +157,8 @@ provider, and release decision owner.
 | H04d-BETA-QA-ACCOUNT | Complete for account bootstrap, 26/09/2026. The beta DB had zero users/groups/members and public registration requires an invitation; one `esteban_beta_qa` owner/personal group was initialized in beta only. Beta login and `/api/auth/me` returned 200. | Codex | Product follow-up: assign invitation/first-user bootstrap UX before onboarding additional beta users. |
 | H04d-BETA-TELEGRAM-LINK | Complete. Esteban confirmed `esteban_beta_qa` is linked to `Hermes_beta_finantial_bot`; the deployed UI has the beta username in onboarding/account surfaces and not the legacy bot. | Codex | None. Production resources unchanged. |
 | H04d-BETA-INBOX | Complete. The beta webhook points only to the beta URL; replay of the synthetic update created one completed claim (`attempt_count=1`). The user-authored expense also reached the beta financial handler and yielded the reconciled transaction below. | Codex | None for inbox/deduplication. |
-| H04d-BETA-FINANCIAL-E2E | Partial, 27/09/2026. NLP and ordinary OCR canaries passed. Same receipt was uploaded twice intentionally: exactly two confirmed imports and two active transactions, ARS 23,971.15 / `Supermercado`; no extra duplicates. Reimbursement behavior is inconsistent by modality/intent: explicit `con reintegro` caused an automatic pending request without Sí/No; plain receipt had no choice and stored no reimbursement. For the ARS 5,000 text canary, beta has one active Telegram transaction plus one pending reimbursement request, while `transactions.requires_reimbursement=0`. Two voice updates at 18:09 were acknowledged `completed` (attempt_count=1, no error code), but user received transcription failures; Vercel logs have no diagnostic payload. Code can silently return null for absent/invalid Groq mode/key, and handler acknowledges failure as HTTP 200. | Codex — own ACT-11/13/14 integration slice; Esteban — validate beta matrix after release. | Unify modality adapters into one validated intent/draft/confirmation policy and common financial action; no automatic writes or reimbursement side effects before explicit confirmation; classify and retain STT/OCR failures. Verify text, command, voice, and receipt paths plus yes/no/unknown reimbursement. Legacy production untouched. |
-| H04d-BETA-OUTBOX | Not started; `TELEGRAM_OUTBOX_ENABLED=false`. | Codex | After financial E2E closes, separately enable outbox only in beta and verify one immediate response plus its durable delivery record. Worker remains off pending scheduler decision. |
+| H04d-BETA-FINANCIAL-E2E | Partial, 27/09/2026. NLP and ordinary OCR canaries passed. Same receipt was uploaded twice intentionally: exactly two confirmed imports and two active transactions, ARS 23,971.15 / `Supermercado`; no extra duplicates. The ARS 5,000 text canary left one active Telegram transaction plus one pending reimbursement request, while `transactions.requires_reimbursement=0`; the request was automatic, without Sí/No. Two voice updates at 18:09 were acknowledged `completed` (attempt_count=1, no error code), but user received transcription failures. A previous beta deployment was recorded with `AI_MODE=stub`; the effective mode after later key/redeploy changes has not been revalidated, so this is a concrete hypothesis, not a confirmed current cause. A local ACT-11/13/14 vertical slice now offers the same explicit choice for text/command and OCR and commits the selected transaction, reimbursement request, and group notification outbox rows atomically. It is not deployed or tested in beta. | Codex — owner of ACT-11/13/14 through technical closure; Esteban — beta canaries/reconciliation after release. | Finish shared modality policy and structured STT/OCR failure/retry behavior; revalidate beta AI mode/key bindings without exposing values; run text, command, voice, and receipt cases with reimbursement yes/no/unknown. The canary requires beta outbox enabled for inline durable delivery; worker stays off. H04d and ACT-11/13/14 remain open. Legacy production untouched. |
+| H04d-BETA-OUTBOX | Not started; `TELEGRAM_OUTBOX_ENABLED=false`. | Codex | Prerequisite for the next reimbursement beta canary: enable outbox only in beta after local gates, verify one immediate reply plus durable group notification, and keep worker off. The webhook delivers due rows inline; this does not require a scheduler decision or cron. This revises the earlier ordering because the consent flow atomically queues group notices. |
 | H04d-BETA-WORKER | Scheduler decision open; `TELEGRAM_OUTBOX_WORKER_ENABLED=false`, and beta deployment has zero cron schedules. | Esteban Indiveri (choose latency/platform); Codex (implement and verify after choice) | The worker drains due durable outbound deliveries and purges up to 100 expired terminal rows; each invocation claims at most 5 deliveries (45-second default budget). Normal response delivery is attempted inline by the webhook when outbox is enabled, so one-minute polling is not required for ordinary replies. Vercel Hobby rejects schedules more frequent than daily. Recommendation: keep disabled during account/link QA; then use an isolated Cloudflare Worker safety poll at `*/5 * * * *` if its Free CPU limit is verified, or Vercel Pro only if sub-5-minute recovery is a product SLA. A daily Hobby sweep is not acceptable for retry liveness. See the [scheduler/FinOps assessment](H04D-WORKER-SCHEDULER-FINOPS.md). |
 | H04d-ISOLATION-CERT | Blocked/deferred; local manifests are consistent, but `isolationVerified=false`. On 26/09/2026 Codex read only the legacy Vercel cron list: three schedules were present and no outbox worker. Legacy DB rows/secrets and Telegram metadata remain intentionally uninspected. | Esteban Indiveri (scope decision); Codex (only the specifically authorized metadata checks) | This cron finding does not certify full isolation. Either explicitly authorize a bounded read-only comparison of remaining legacy project/DB/bot identities (no secret values, rows, writes, webhook, or traffic), or accept the residual and leave the formal certificate open. This does not block the beta inbox-only pilot. |
 
@@ -173,9 +173,9 @@ the legacy Vercel cron list was read only and showed its three existing jobs;
 no production configuration, DB, token, webhook, or traffic was changed, and
 no production rows or secret values were read.
 
-### ACT-11 / ACT-13 / ACT-14 — unified Telegram intake (next functional cut)
+### ACT-11 / ACT-13 / ACT-14 — unified Telegram intake (active functional cut)
 
-State: open, evidence and acceptance criteria recorded in
+State: open under Codex; the first local vertical slice is implemented but not deployed. Evidence and acceptance criteria are recorded in
 [H04d.4q](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#h04d4q-reintegro-inconsistente-y-voz-sin-diagnostico-integracion-act-111314-27092026).
 The user-facing failures are confirmed, but the two failed voice messages do
 not have a provider-level root cause yet. Do not add per-handler patches as
@@ -184,12 +184,21 @@ separate feature cuts.
 | Owner | Deliverable | Re-entry / closure |
 | --- | --- | --- |
 | Codex | Contract and shared `FinancialDraft`/proposal/confirmation path for `/gasto`, natural text, transcript, OCR and callbacks; structured recoverable STT/OCR failures; one durable writer and reimbursement policy. Preserve independent adapters, no monolithic AI prompt. | Tests cover expense/income/query, reimbursement yes/no/unknown, clarification, cancel/edit, duplicate callback and credential/provider failures. Confirmed action writes once; failed extraction writes nothing and remains diagnosable/retryable. |
-| Esteban | Approve the proposed reimbursement buttons/copy and run beta canaries after code and deployment gates pass. | Verify plain expense vs reimbursable expense through text/command/audio/OCR and reconcile one transaction/request per confirmation. |
+| Esteban | Product choice/copy approved in this turn; run beta canaries after code and deployment gates pass. | Verify plain expense vs reimbursable expense through text/command/audio/OCR and reconcile one transaction/request per confirmation. |
 
-Implementation sequence: land regression tests and domain contract first; route
-text plus command through the shared draft; then wire voice transcription; then
-OCR extraction; finish with beta E2E across modalities. H04d-BETA-FINANCIAL-E2E
-stays open until this matrix passes. No rollout to `main`/legacy.
+Local subcut 1 replaces parser-derived reimbursement side effects with explicit
+pre-write choice for text/command and OCR proposals. A selected reimbursement
+stores the transaction flag, request, and recipient Telegram outbox records in
+one durable operation; callbacks without operation identity fail closed. Tests
+cover the choice UI, non-inference, same-operation writes, and durable group
+delivery. The beta outbox flag is a prerequisite for its canary, but worker and
+scheduler remain separate and off.
+
+Remaining closure sequence: implement structured STT/OCR failures and safe
+retry state; converge text, command, transcript, OCR and callback on one
+validated draft/policy; then pass the full beta matrix with reconciliation.
+H04d-BETA-FINANCIAL-E2E and ACT-11/13/14 remain open under Codex until all
+gates pass. No rollout to `main`/legacy.
 
 ### ACT-03 — quality barrier (still open; plan priority 1)
 

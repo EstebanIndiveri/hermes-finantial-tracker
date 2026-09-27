@@ -1,5 +1,6 @@
 import { handleTelegramMessage } from "../handlers";
 import { handlePersonalCallback } from "../personal-callback-handler";
+import { buildReceiptProposalMessage } from "../handlers";
 import { db } from "@/lib/db/client";
 import {
   createReimbursementWithNotifications,
@@ -10,6 +11,7 @@ import {
 import { getMonthSummary } from "@/lib/finance/summaries";
 import { clearConversationState, getConversationState, setConversationState } from "../splits/conversation-state";
 import { createTelegramOperationContext } from "../operation-context";
+import * as telegramFinancialOperation from "../financial-operation";
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -29,6 +31,10 @@ jest.mock("@/lib/db/client", () => ({
 jest.mock("@/lib/finance/summaries", () => ({
   getMonthSummary: jest.fn(),
   getCategoryBreakdown: jest.fn(),
+}));
+
+jest.mock("@/lib/notifications/web-push", () => ({
+  sendPushToUser: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("@/lib/utils/dates", () => ({
@@ -137,7 +143,7 @@ describe("telegram reimbursements", () => {
     });
   });
 
-  it("asks whether reimbursement is needed after confirming an expense", async () => {
+  it("does not infer or request reimbursement after a plain-expense confirmation", async () => {
     mockGetConversationState.mockResolvedValue({
       step: "expense_confirm",
       data: {
@@ -150,6 +156,7 @@ describe("telegram reimbursements", () => {
         group_id: "group-1",
         user_id: "user-1",
         is_exception: false,
+        requires_reimbursement: true,
       },
     });
     (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ exchange_rate: 1000 });
@@ -170,23 +177,177 @@ describe("telegram reimbursements", () => {
       77,
     );
 
-    expect(mockClearConversationState).not.toHaveBeenCalled();
-    expect(mockSetConversationState).toHaveBeenCalledWith("chat-1", "telegram-1", {
-      step: "expense_reimbursement_confirm",
-      data: expect.objectContaining({
-        transaction_id: expect.any(String),
+    expect(mockClearConversationState).toHaveBeenCalledWith("chat-1", "telegram-1");
+    expect(mockSetConversationState).toHaveBeenCalledTimes(1);
+    expect(mockSetConversationState.mock.calls[0]?.[2]).toEqual(expect.objectContaining({ step: "expense_processing" }));
+    expect(mockCreateReimbursement).not.toHaveBeenCalled();
+    expect(response.text).toContain("Registrado:");
+    expect(response.text).not.toContain("automáticamente");
+    expect(response.replyMarkup).toBeUndefined();
+  });
+
+  it("offers the same explicit reimbursement choice in receipt proposals", () => {
+    const proposal = buildReceiptProposalMessage({
+      amount_ars: 5000,
+      categoryName: "Supermercado",
+      categoryEmoji: "🛒",
+      date: "2026-09-27",
+      source: "ocr",
+    });
+
+    expect(proposal.replyMarkup).toEqual({
+      inline_keyboard: [
+        [
+          { text: "💸 Gasto + reintegro", callback_data: "receipt:confirm_reimbursement" },
+          { text: "✅ Solo gasto", callback_data: "receipt:confirm" },
+        ],
+        [
+          { text: "💰 Editar monto", callback_data: "receipt:edit_amount" },
+          { text: "📂 Editar categoría", callback_data: "receipt:edit_category" },
+        ],
+        [
+          { text: "🏪 Editar comercio", callback_data: "receipt:edit_merchant" },
+          { text: "❌ Cancelar", callback_data: "receipt:cancel" },
+        ],
+      ],
+    });
+  });
+
+  it("fails closed instead of partially writing a reimbursement without durable operation context", async () => {
+    const pendingReceipt = {
+      id: "receipt-1",
+      parsed_amount_ars: 5000,
+      parsed_category_slug: "supermercado",
+      parsed_merchant: "Almacén",
+    };
+    (mockDb.select as jest.Mock).mockReturnValue({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({
+          orderBy: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([pendingReceipt]) })),
+        })),
+      })),
+    });
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-1", slug: "supermercado" });
+
+    const response = await handlePersonalCallback(
+      "chat-1",
+      "telegram-1",
+      "user-1",
+      "group-1",
+      "receipt:confirm_reimbursement",
+    );
+
+    expect(response.text).toContain("de forma segura");
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+
+  it("persists a reimbursable expense, request, and group delivery in one durable transaction", async () => {
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: {
+        step: "expense_confirm",
+        category_id: "cat-1",
+        category_name: "Supermercado",
+        category_emoji: "🛒",
         amount_ars: 5000,
-        user_id: "user-1",
+        merchant: "Almacén",
         group_id: "group-1",
-      }),
+        user_id: "user-1",
+        is_exception: false,
+      },
     });
-    expect(response.text).toContain("¿Necesitás reintegro de este gasto?");
-    expect(response.replyMarkup).toEqual({
-      inline_keyboard: [[
-        { text: "💸 Sí", callback_data: expect.stringMatching(/^expense:reimbursement_yes:/) },
-        { text: "❌ No", callback_data: expect.stringMatching(/^expense:reimbursement_no:/) },
-      ]],
+
+    const selectResults: unknown[][] = [
+      [{ userId: "user-1" }],
+      [{ exchange_rate: 1000 }],
+      [{ userId: "user-1" }],
+      [{ partnerId: "user-2" }],
+      [{ slug: "supermercado" }],
+      [{ partnerId: "user-2" }],
+      [{ name: "QA" }],
+      [],
+      [{ name: "Supermercado" }],
+      [{ userId: "user-2", telegramId: "telegram-2" }],
+      [],
+      [{ total: 5000 }],
+      [{ name: "Supermercado", emoji: "🛒", slug: "supermercado" }],
+    ];
+    const insertValues: Array<{ table: unknown; values: unknown }> = [];
+    const transaction = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => {
+          const rows = selectResults.shift() ?? [];
+          const result = Object.assign(Promise.resolve(rows), {
+            limit: jest.fn().mockResolvedValue(rows),
+          });
+          return {
+            where: jest.fn(() => result),
+            innerJoin: jest.fn(() => ({ where: jest.fn().mockResolvedValue(rows) })),
+          };
+        }),
+      })),
+      insert: jest.fn((table: unknown) => ({
+        values: jest.fn((values: unknown) => {
+          insertValues.push({ table, values });
+          return {
+            returning: jest.fn().mockImplementation(async () => [{ id: (values as { id?: string }).id ?? "reimbursement-1" }]),
+            onConflictDoNothing: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([{ operationId: "claimed" }]) })),
+          };
+        }),
+      })),
+    };
+    const operationSpy = jest.spyOn(telegramFinancialOperation, "runTelegramOperation");
+    (operationSpy as unknown as jest.Mock).mockImplementation(async (_runner, input, write) => {
+      const writeResult = await write(transaction);
+      return {
+        kind: "committed",
+        operationId: input.identity.operationId,
+        reused: false,
+        ...writeResult,
+      };
     });
+
+    try {
+      const response = await handlePersonalCallback(
+        "chat-1",
+        "telegram-1",
+        "user-1",
+        "group-1",
+        "expense:confirm_reimbursement",
+        77,
+        createTelegramOperationContext({
+          botId: "bot-1",
+          updateId: "expense-reimbursement-update",
+          chatId: "chat-1",
+          callbackMessageId: 77,
+          action: "personal.callback",
+        }),
+      );
+
+      const transactionRow = insertValues.find(({ values }) =>
+        !!values && typeof values === "object" && "requiresReimbursement" in values,
+      )?.values as Record<string, unknown> | undefined;
+      const reimbursementRow = insertValues.find(({ values }) =>
+        !!values && typeof values === "object" && "transactionId" in values,
+      )?.values as Record<string, unknown> | undefined;
+      const deliveries = insertValues.map(({ values }) => values as Record<string, unknown>);
+
+      expect(transactionRow).toEqual(expect.objectContaining({ requiresReimbursement: true }));
+      expect(reimbursementRow).toEqual(expect.objectContaining({
+        id: expect.any(String),
+        transactionId: transactionRow?.id,
+        requesterId: "user-1",
+        payerId: "user-2",
+        amount: 5000,
+        status: "pending",
+      }));
+      expect(deliveries.some((delivery) => delivery.chat_id === "telegram-2")).toBe(true);
+      expect(response.text).toContain("Reintegro solicitado. Ya avisamos al grupo.");
+      expect(mockCreateReimbursement).not.toHaveBeenCalled();
+    } finally {
+      operationSpy.mockRestore();
+    }
   });
 
   it.each([

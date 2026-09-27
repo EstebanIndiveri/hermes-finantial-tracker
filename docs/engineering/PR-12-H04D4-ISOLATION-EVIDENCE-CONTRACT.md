@@ -895,3 +895,35 @@ central. H04d-BETA-FINANCIAL-E2E no se cierra hasta validar multimodalidad,
 reintegro y errores recuperables en beta. Outbox/scheduler, ACT03 branch gate y
 certificado formal de aislamiento siguen siendo cortes separados con sus
 owners actuales; producción legacy no se toca.
+
+#### Subcorte local 1 — decisión explícita y escritura conjunta (27/09/2026)
+
+Esteban validó el paso y el copy propuesto. En la rama local
+`codex/h04d-natural-language-e2e`, las propuestas de gasto por texto/comando y
+OCR ahora muestran las mismas acciones `Gasto + reintegro`, `Solo gasto` y
+`Cancelar`; parsear `con reintegro` ya no genera el pedido automáticamente.
+La acción elegida controla `transactions.requires_reimbursement`. Para el caso
+con reintegro, transacción, solicitud y entregas Telegram a miembros se crean en
+una misma operación durable; el push al pagador sigue siendo best-effort y solo
+se intenta al primer commit. Las propuestas de ingreso o categoría inválida no
+pueden crear un reintegro, y una confirmación sin identidad durable falla sin
+escribir.
+
+Las pruebas locales cubren la propuesta de texto, la propuesta OCR, ausencia de
+inferencia desde el estado del parser, y la escritura conjunta de transacción,
+solicitud y outbox. No implica que el cambio esté desplegado o probado en beta.
+El smoke de reintegro requiere `TELEGRAM_OUTBOX_ENABLED=true` exclusivamente en
+el proyecto beta para entregar la notificación en línea; no necesita el worker
+ni un cron. Esa bandera sigue apagada y H04d-BETA-OUTBOX pasa a ser prerequisito
+del siguiente beta canary, con owner Codex; Esteban mantiene el owner de la
+validación funcional. El valor efectivo actual de `AI_MODE`/bindings de Groq
+beta debe verificarse de nuevo: el ledger solo prueba que un deployment previo
+estaba en `stub`; eso es candidato a explicar el audio, no causa actual
+confirmada. Sin push, deploy, cambios remotos o acceso a producción en este
+subcorte.
+
+ACT-11/13/14 y H04d-BETA-FINANCIAL-E2E siguen abiertos bajo el mismo owner
+técnico. Faltan diagnóstico STT tipado/reintentable, convergencia del draft
+validado para transcripción y OCR, ejecución del canary con flags beta
+reconciliadas y evidencia de conciliación. No se abre otro corte hasta cerrar
+estos entregables o registrar un bloqueo con owner, impacto y reentrada exacta.

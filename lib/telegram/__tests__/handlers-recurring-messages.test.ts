@@ -167,6 +167,22 @@ describe("telegram recurring messages", () => {
     expect(response.text).toContain("$1.379");
     expect(response.text).toContain("Supermercado");
     expect(response.text).not.toContain("Por ahora usá el formato");
+    expect(response.replyMarkup).toEqual({
+      inline_keyboard: [
+        [
+          { text: "💸 Gasto + reintegro", callback_data: "expense:confirm_reimbursement" },
+          { text: "✅ Solo gasto", callback_data: "expense:confirm" },
+        ],
+        [
+          { text: "💰 Editar monto", callback_data: "expense:edit_amount" },
+          { text: "📂 Editar categoría", callback_data: "expense:edit_category" },
+        ],
+        [
+          { text: "🏪 Editar comercio", callback_data: "expense:edit_merchant" },
+          { text: "❌ Cancelar", callback_data: "expense:cancel" },
+        ],
+      ],
+    });
     expect(mockParseFinancialMessage).not.toHaveBeenCalled();
     expect(setConversationState).toHaveBeenCalledWith(
       "10",

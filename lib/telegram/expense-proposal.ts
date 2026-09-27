@@ -1,0 +1,36 @@
+import { buildPersonalKeyboard, type InlineKeyboardMarkup } from "./send-message";
+
+/**
+ * All personal expense sources must ask for reimbursement consent before a
+ * writer runs. Extraction may suggest intent, but only this explicit choice
+ * controls whether the request is persisted.
+ */
+export function buildExpenseProposalKeyboard(
+  options: { editPrefix: "expense" | "receipt"; cancelCallback: string },
+): InlineKeyboardMarkup {
+  const confirmPrefix = options.editPrefix === "receipt" ? "receipt" : "expense";
+  return buildPersonalKeyboard([
+    [
+      { text: "💸 Gasto + reintegro", callback_data: `${confirmPrefix}:confirm_reimbursement` },
+      { text: "✅ Solo gasto", callback_data: `${confirmPrefix}:confirm` },
+    ],
+    options.editPrefix === "receipt"
+      ? [
+          { text: "💰 Editar monto", callback_data: "receipt:edit_amount" },
+          { text: "📂 Editar categoría", callback_data: "receipt:edit_category" },
+        ]
+      : [
+          { text: "💰 Editar monto", callback_data: "expense:edit_amount" },
+          { text: "📂 Editar categoría", callback_data: "expense:edit_category" },
+        ],
+    options.editPrefix === "receipt"
+      ? [
+          { text: "🏪 Editar comercio", callback_data: "receipt:edit_merchant" },
+          { text: "❌ Cancelar", callback_data: options.cancelCallback },
+        ]
+      : [
+          { text: "🏪 Editar comercio", callback_data: "expense:edit_merchant" },
+          { text: "❌ Cancelar", callback_data: options.cancelCallback },
+        ],
+  ]);
+}

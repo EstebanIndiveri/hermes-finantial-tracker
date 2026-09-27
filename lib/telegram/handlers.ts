@@ -35,6 +35,7 @@ import {
   hasExplicitExpenseIntent,
 } from "./expense-fallback";
 import type { TelegramOperationContext } from "./operation-context";
+import { buildExpenseProposalKeyboard } from "./expense-proposal";
 
 export interface PersonalBotMessage {
   text: string;
@@ -281,17 +282,7 @@ function buildExpenseConfirmationMessage(
 
   return {
     text: lines.join("\n"),
-    replyMarkup: buildPersonalKeyboard([
-      [{ text: "✅ Confirmar", callback_data: "expense:confirm" }],
-      [
-        { text: "💰 Editar monto", callback_data: "expense:edit_amount" },
-        { text: "📂 Editar categoría", callback_data: "expense:edit_category" },
-      ],
-      [
-        { text: "🏪 Editar comercio", callback_data: "expense:edit_merchant" },
-        { text: "❌ Cancelar", callback_data: "expense:cancel" },
-      ],
-    ]),
+    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "expense:cancel" }),
   };
 }
 
@@ -314,17 +305,7 @@ function buildExpenseEditedMessage(data: {
 
   return {
     text: lines.join("\n"),
-    replyMarkup: buildPersonalKeyboard([
-      [{ text: "✅ Confirmar", callback_data: "expense:confirm" }],
-      [
-        { text: "💰 Editar monto", callback_data: "expense:edit_amount" },
-        { text: "📂 Editar categoría", callback_data: "expense:edit_category" },
-      ],
-      [
-        { text: "🏪 Editar comercio", callback_data: "expense:edit_merchant" },
-        { text: "❌ Cancelar", callback_data: "expense:cancel" },
-      ],
-    ]),
+    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "expense:cancel" }),
   };
 }
 
@@ -2419,17 +2400,7 @@ export function buildReceiptProposalMessage({
 
   return {
     text,
-    replyMarkup: buildPersonalKeyboard([
-      [{ text: "✅ Confirmar", callback_data: "receipt:confirm" }],
-      [
-        { text: "💰 Editar monto", callback_data: "receipt:edit_amount" },
-        { text: "📂 Editar categoría", callback_data: "receipt:edit_category" },
-      ],
-      [
-        { text: "🏪 Editar comercio", callback_data: "receipt:edit_merchant" },
-        { text: "❌ Cancelar", callback_data: "receipt:cancel" },
-      ],
-    ]),
+    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "receipt", cancelCallback: "receipt:cancel" }),
   };
 }
 

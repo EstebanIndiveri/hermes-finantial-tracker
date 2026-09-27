@@ -11,6 +11,9 @@ import {
   group_members,
   telegram_delivery_outbox,
   telegram_operations,
+  reimbursementRequests,
+  userPaymentInfo,
+  users,
 } from "@/lib/db/schema";
 import { eq, and, sum, desc, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -43,6 +46,10 @@ import {
 } from "./operation-context";
 import { runTelegramOperation, type TelegramOperationTransaction } from "./financial-operation";
 import { buildTelegramDeliveryRow } from "./outbox";
+import { buildExpenseProposalKeyboard } from "./expense-proposal";
+import { createTelegramDeliveryKey } from "./operation-context";
+import { buildReimbursementRequestNotification } from "@/lib/notifications/telegram";
+import { sendPushToUser } from "@/lib/notifications/web-push";
 
 export interface PersonalCallbackResponse {
   text: string;
@@ -110,17 +117,7 @@ function buildEditedExpenseMessage(state: PendingExpenseState): PersonalCallback
   return {
     text: lines.join("\n"),
     edit: true,
-    replyMarkup: buildPersonalKeyboard([
-      [{ text: "✅ Confirmar", callback_data: "expense:confirm" }],
-      [
-        { text: "💰 Editar monto", callback_data: "expense:edit_amount" },
-        { text: "📂 Editar categoría", callback_data: "expense:edit_category" },
-      ],
-      [
-        { text: "🏪 Editar comercio", callback_data: "expense:edit_merchant" },
-        { text: "❌ Cancelar", callback_data: "expense:cancel" },
-      ],
-    ]),
+    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "expense:cancel" }),
   };
 }
 
@@ -242,6 +239,7 @@ interface PersonalTransactionOperationResult {
   transactionId: string;
   month?: string;
   confirmation?: Omit<TransactionConfirmationInput, "ahorro_proyectado_usd">;
+  pushUserId?: string;
 }
 
 // ── Shared: register a transaction ──
@@ -254,7 +252,14 @@ async function registerPersonalTransaction(
   isException: boolean,
   operationContext?: TelegramOperationContext,
   receiptImportId?: string,
+  requiresReimbursement = false,
 ): Promise<{ text: string; transactionId: string; operationId?: string; deliveryKey?: string }> {
+  if (requiresReimbursement && !operationContext) {
+    return {
+      text: "❌ No se pudo confirmar el reintegro de forma segura. Volvé a intentarlo.",
+      transactionId: "",
+    };
+  }
   if (operationContext) {
     const identity = createTelegramOperationIdentity(operationContext);
     const operation = await runTelegramOperation<PersonalTransactionOperationResult>(
@@ -311,6 +316,35 @@ async function registerPersonalTransaction(
           };
         }
 
+        let reimbursementId: string | undefined;
+        let reimbursementPayerId: string | undefined;
+        if (requiresReimbursement) {
+          const [group] = await transaction
+            .select({ partnerId: groups.partner_id })
+            .from(groups)
+            .where(eq(groups.id, groupId))
+            .limit(1);
+          if (group?.partnerId === userId) {
+            return {
+              resourceType: null,
+              resourceId: null,
+              result: { text: "❌ No podés solicitar un reintegro a vos mismo.", transactionId: "" },
+            };
+          }
+          const [selectedCategory] = await transaction
+            .select({ slug: categories.slug })
+            .from(categories)
+            .where(and(eq(categories.id, categoryId), eq(categories.group_id, groupId)))
+            .limit(1);
+          if (!selectedCategory || isIncomeCategory(selectedCategory.slug)) {
+            return {
+              resourceType: null,
+              resourceId: null,
+              result: { text: "❌ El reintegro solo se puede solicitar para un gasto válido.", transactionId: "" },
+            };
+          }
+        }
+
         if (receiptImportId) {
           const claimedReceipts = await transaction
             .update(receipt_imports)
@@ -344,8 +378,84 @@ async function registerPersonalTransaction(
           month,
           source: "telegram",
           status: "active",
+          requiresReimbursement,
           is_exception: isException ? 1 : 0,
         });
+
+        if (requiresReimbursement) {
+          const [group] = await transaction
+            .select({ partnerId: groups.partner_id })
+            .from(groups)
+            .where(eq(groups.id, groupId))
+            .limit(1);
+          const payerId = group?.partnerId && group.partnerId !== userId ? group.partnerId : null;
+          reimbursementPayerId = payerId ?? undefined;
+          const [request] = await transaction
+            .insert(reimbursementRequests)
+            .values({
+              id: randomUUID(),
+              operationId: identity.operationId,
+              transactionId: txId,
+              requesterId: userId,
+              payerId,
+              amount: amountArs,
+              status: "pending",
+            })
+            .returning({ id: reimbursementRequests.id });
+          reimbursementId = request.id;
+
+          const [requester] = await transaction
+            .select({ name: users.name })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+          const [paymentInfo] = await transaction
+            .select({ paymentMethod: userPaymentInfo.paymentMethod, value: userPaymentInfo.value })
+            .from(userPaymentInfo)
+            .where(and(eq(userPaymentInfo.userId, userId), eq(userPaymentInfo.isDefault, true)))
+            .limit(1);
+          const [category] = await transaction
+            .select({ name: categories.name })
+            .from(categories)
+            .where(eq(categories.id, categoryId))
+            .limit(1);
+          const members = await transaction
+            .select({ userId: group_members.user_id, telegramId: users.telegram_user_id })
+            .from(group_members)
+            .innerJoin(users, eq(group_members.user_id, users.id))
+            .where(eq(group_members.group_id, groupId));
+          const notification = buildReimbursementRequestNotification({
+            requesterName: requester?.name,
+            amount: amountArs,
+            categoryName: category?.name ?? "Sin categoría",
+            description: merchant ?? "",
+            reimbursementId,
+            paymentMethod: paymentInfo?.paymentMethod,
+            paymentValue: paymentInfo?.value,
+          });
+          for (const member of members) {
+            if (member.userId === userId || !member.telegramId) continue;
+            const notificationKey = createTelegramDeliveryKey(
+              { operationId: identity.operationId },
+              "reimbursement.request",
+              member.telegramId,
+            );
+            await transaction
+              .insert(telegram_delivery_outbox)
+              .values(buildTelegramDeliveryRow({
+                botId: operationContext.botId,
+                updateId: operationContext.updateId,
+                operationId: identity.operationId,
+                deliveryKey: notificationKey,
+                action: "send_message",
+                chatId: member.telegramId,
+                text: notification.text,
+                replyMarkup: notification.replyMarkup,
+                parseMode: "HTML",
+              }))
+              .onConflictDoNothing({ target: [telegram_delivery_outbox.bot_id, telegram_delivery_outbox.delivery_key] });
+          }
+        }
 
         const [budget] = await transaction
           .select({ budget_ars: budgets.budget_ars })
@@ -385,10 +495,11 @@ async function registerPersonalTransaction(
             is_income: isIncomeCategory(cat?.slug),
         };
         const result: PersonalTransactionOperationResult = {
-          text: formatTransactionConfirm({ ...confirmation, ahorro_proyectado_usd: 0 }),
+          text: `${isException ? "⚠️ Registrado como excepción.\n\n" : ""}${formatTransactionConfirm({ ...confirmation, ahorro_proyectado_usd: 0 })}${reimbursementId ? "\n\n✅ Reintegro solicitado. Ya avisamos al grupo." : ""}`,
           transactionId: txId,
           month,
           confirmation,
+          ...(reimbursementPayerId ? { pushUserId: reimbursementPayerId } : {}),
         };
         const deliveryAction = operationContext.callbackMessageId == null ? "send_message" : "edit_message";
         const deliveryRow = buildTelegramDeliveryRow({
@@ -418,12 +529,21 @@ async function registerPersonalTransaction(
     if (!operation.result.transactionId || !operation.result.month || !operation.result.confirmation) {
       return operation.result;
     }
+    if (!operation.reused && operation.result.pushUserId) {
+      await sendPushToUser(operation.result.pushUserId, {
+        title: "💸 Solicitud de Reintegro",
+        body: `Te han solicitado $${amountArs.toLocaleString("es-AR")}`,
+        url: "/dashboard/reimbursements",
+      }).catch((error: unknown) => {
+        console.error("Failed to send reimbursement push notification:", error instanceof Error ? error.message : "unknown");
+      });
+    }
     const summary = await getMonthSummary(groupId, operation.result.month);
     return {
-      text: formatTransactionConfirm({
+      text: `${isException ? "⚠️ Registrado como excepción.\n\n" : ""}${formatTransactionConfirm({
         ...operation.result.confirmation,
         ahorro_proyectado_usd: summary?.ahorro_proyectado_usd ?? 0,
-      }),
+      })}${requiresReimbursement ? "\n\n✅ Reintegro solicitado. Ya avisamos al grupo." : ""}`,
       transactionId: operation.result.transactionId,
       operationId: operation.operationId,
       deliveryKey: identity.deliveryKey,
@@ -515,7 +635,8 @@ export async function handlePersonalCallback(
 ): Promise<PersonalCallbackResponse> {
   try {
     // ── receipt:* — OCR ticket callbacks ──────────────────────────────
-    if (data === "receipt:confirm") {
+    if (data === "receipt:confirm" || data === "receipt:confirm_reimbursement") {
+      const requiresReimbursement = data === "receipt:confirm_reimbursement";
       const rows = await db
         .select()
         .from(receipt_imports)
@@ -542,6 +663,7 @@ export async function handlePersonalCallback(
         userId, groupId, cat.id, pending.parsed_amount_ars, pending.parsed_merchant ?? undefined, false,
         operationContext ? createPersonalTransactionContext(operationContext, "receipt") : undefined,
         operationContext ? pending.id : undefined,
+        requiresReimbursement,
       );
 
       if (result.transactionId && !operationContext) {
@@ -626,7 +748,8 @@ export async function handlePersonalCallback(
     }
 
     // ── expense:* — /gasto + NL expense confirmation ──────────────────
-    if (data === "expense:confirm") {
+    if (data === "expense:confirm" || data === "expense:confirm_reimbursement") {
+      const requiresReimbursement = data === "expense:confirm_reimbursement";
       const state = await getConversationState(chatId, telegramUserId);
 
       if (state && !hasCurrentStateContext(state.data, userId, groupId)) {
@@ -669,65 +792,18 @@ export async function handlePersonalCallback(
 
       const result = await registerPersonalTransaction(
         s.user_id, s.group_id, s.category_id, s.amount_ars, s.merchant, s.is_exception,
-        operationContext ? createPersonalTransactionContext(operationContext, "expense") : undefined,
+        operationContext ? createPersonalTransactionContext(operationContext, s.is_exception ? "exception" : "expense") : undefined,
+        undefined,
+        requiresReimbursement,
       );
       if (!result.transactionId) {
         await clearConversationState(chatId, telegramUserId);
         return withDeliveryOperationId({ text: result.text, edit: true }, result.operationId, result.deliveryKey);
       }
 
-      // If requires_reimbursement was detected from NL, create it automatically
-      if (s.requires_reimbursement) {
-        const reimbResult = operationContext
-          ? await createReimbursementWithNotifications(
-              result.transactionId,
-              s.user_id,
-              s.amount_ars,
-              undefined,
-              operationContext,
-              { enqueuePrimaryResponse: false },
-            )
-          : await createReimbursementWithNotifications(
-              result.transactionId,
-              s.user_id,
-              s.amount_ars,
-              undefined,
-            );
-        if ("error" in reimbResult) {
-          return withDeliveryOperationId({
-            text: `${result.text}\n\n⚠️ ${reimbResult.error}`,
-            edit: true,
-          }, result.operationId, result.deliveryKey);
-        }
-        await clearConversationState(chatId, telegramUserId);
-        return withDeliveryOperationId({
-          text: `${result.text}\n\n✅ Reintegro solicitado automáticamente. Ya avisamos al grupo.`,
-          edit: true,
-        }, result.operationId, result.deliveryKey);
-      }
-
-      const confirmationText = `${result.text}\n\n¿Necesitás reintegro de este gasto?`;
-      await setConversationState(chatId, telegramUserId, {
-        step: "expense_reimbursement_confirm",
-        data: {
-          step: "expense_reimbursement_confirm",
-          transaction_id: result.transactionId,
-          amount_ars: s.amount_ars,
-          user_id: s.user_id,
-          group_id: s.group_id,
-          origin_update_id: operationContext?.updateId,
-          confirmation_text: confirmationText,
-          delivery_operation_id: result.operationId,
-          delivery_key: result.deliveryKey,
-        } satisfies PendingExpenseReimbursementState,
-      });
-
+      await clearConversationState(chatId, telegramUserId);
       return withDeliveryOperationId({
-        text: confirmationText,
-        replyMarkup: buildPersonalKeyboard([[
-          { text: "💸 Sí", callback_data: `expense:reimbursement_yes:${result.transactionId}` },
-          { text: "❌ No", callback_data: `expense:reimbursement_no:${result.transactionId}` },
-        ]]),
+        text: result.text,
         edit: true,
       }, result.operationId, result.deliveryKey);
     }
@@ -902,91 +978,14 @@ export async function handlePersonalCallback(
       if (recoveredResponse) return recoveredResponse;
 
       const stateData = state?.data as PendingExpenseState | undefined;
-      if (
-        (state?.step !== "expense_confirm" && state?.step !== "expense_processing") ||
-        !stateData?.is_exception
-      ) {
+      if (state?.step !== "expense_confirm" || !stateData?.is_exception) {
         return { text: "⏱️ Confirmación expirada.", edit: true };
       }
-      const s = stateData;
-      if (
-        state.step === "expense_processing" &&
-        (!operationContext || s.processing_update_id !== operationContext.updateId)
-      ) {
-        return { text: "⏳ Registrando gasto...", edit: true };
-      }
-      if (state.step !== "expense_processing") {
-        await setConversationState(chatId, telegramUserId, {
-          step: "expense_processing",
-          data: {
-            ...s,
-            processing_update_id: operationContext?.updateId,
-          },
-        });
-      }
-
-      const result = await registerPersonalTransaction(
-        s.user_id, s.group_id, s.category_id, s.amount_ars, s.merchant, true,
-        operationContext ? createPersonalTransactionContext(operationContext, "exception") : undefined,
-      );
-      if (!result.transactionId) {
-        return withDeliveryOperationId({ text: result.text, edit: true }, result.operationId, result.deliveryKey);
-      }
-
-      // If requires_reimbursement was detected from NL, create it automatically
-      if (s.requires_reimbursement) {
-        const reimbResult = operationContext
-          ? await createReimbursementWithNotifications(
-              result.transactionId,
-              s.user_id,
-              s.amount_ars,
-              undefined,
-              operationContext,
-              { enqueuePrimaryResponse: false },
-            )
-          : await createReimbursementWithNotifications(
-              result.transactionId,
-              s.user_id,
-              s.amount_ars,
-              undefined,
-            );
-        if ("error" in reimbResult) {
-          return withDeliveryOperationId({
-            text: `⚠️ Registrado como excepción.\n\n${result.text}\n\n⚠️ ${reimbResult.error}`,
-            edit: true,
-          }, result.operationId, result.deliveryKey);
-        }
-        await clearConversationState(chatId, telegramUserId);
-        return withDeliveryOperationId({
-          text: `⚠️ Registrado como excepción.\n\n${result.text}\n\n✅ Reintegro solicitado automáticamente. Ya avisamos al grupo.`,
-          edit: true,
-        }, result.operationId, result.deliveryKey);
-      }
-
-      const confirmationText = `⚠️ Registrado como excepción.\n\n${result.text}\n\n¿Necesitás reintegro de este gasto?`;
-      await setConversationState(chatId, telegramUserId, {
-        step: "expense_reimbursement_confirm",
-        data: {
-          step: "expense_reimbursement_confirm",
-          transaction_id: result.transactionId,
-          amount_ars: s.amount_ars,
-          user_id: s.user_id,
-          group_id: s.group_id,
-          origin_update_id: operationContext?.updateId,
-          confirmation_text: confirmationText,
-          delivery_operation_id: result.operationId,
-          delivery_key: result.deliveryKey,
-        } satisfies PendingExpenseReimbursementState,
-      });
-
-      return withDeliveryOperationId({
-        text: confirmationText,
-        replyMarkup: buildPersonalKeyboard([[
-          { text: "💸 Sí", callback_data: `expense:reimbursement_yes:${result.transactionId}` },
-          { text: "❌ No", callback_data: `expense:reimbursement_no:${result.transactionId}` },
-        ]]),
+      return {
+        text: `⚠️ Se registrará como excepción.\n\n${buildEditedExpenseMessage(stateData).text}\n\nElegí una opción; todavía no se guardó nada.`,
+        replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "exception:cancel" }),
         edit: true,
-      }, result.operationId, result.deliveryKey);
+      };
     }
 
     if (data === "exception:cancel") {
