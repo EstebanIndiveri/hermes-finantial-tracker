@@ -755,3 +755,27 @@ No intentar concluir OCR E2E ni habilitar otra feature mientras esta
 dependencia beta siga sin resolver. El flujo NLP queda funcional y conciliado;
 H04d-BETA-FINANCIAL-E2E continúa parcial. Producción legacy, su configuración,
 webhook, DB y tráfico no fueron consultados ni modificados.
+
+### H04d.4o — redeploy beta tras actualizar credencial OCR (27/09/2026)
+
+Esteban actualizó `OCR_SPACE_API_KEY` para Production y Preview del proyecto
+`hermes-finantial-tracker-z2` (evidencia visual compartida). Codex generó un
+snapshot temporal desde `codex/h04d-natural-language-e2e` y desplegó al target
+Production de ese proyecto como `dpl_Ay2zZnDbMFmFEFicH7fAbZzfqLCy`.
+Quedó `READY` y el alias beta responde `/` → 307 y `/login` → 200. Se excluyó
+`vercel.json` del paquete para que Vercel Hobby no registre el cron por minuto;
+las cuatro definiciones continúan `not deployed`. No se cambiaron flags de
+Telegram, código local, webhook ni base de datos.
+
+Los logs del nuevo deployment consultados inmediatamente después del deploy
+no contienen todavía solicitudes OCR; no se envió tráfico de prueba. El
+resultado del secreto en runtime queda por verificar con una nueva imagen
+sintética desde `Hermes_beta_finantial_bot`.
+
+| Estado | Owner | Cierre/reentrada |
+| --- | --- | --- |
+| Deployment beta actualizado | Codex — completo | `dpl_Ay2zZnDbMFmFEFicH7fAbZzfqLCy`, alias beta Ready. |
+| Canario de imagen OCR | Esteban — reenviar una imagen sintética; Codex — inspeccionar log y conciliar | Debe desaparecer `OCR_SPACE_API_KEY not set`, OCR.Space debe extraer texto y la propuesta debe pedir confirmación. Solo después de confirmación verificar una fila en Turso beta y el dashboard. |
+
+Producción legacy permaneció sin intervención. El corte OCR no se declara
+cerrado hasta pasar el canario con esta nueva versión.
