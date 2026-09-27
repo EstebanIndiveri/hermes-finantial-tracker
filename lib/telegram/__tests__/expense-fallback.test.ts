@@ -6,6 +6,7 @@ import {
   detectSimpleQueryIntent,
   detectRecurringIntent,
   parseExpenseFallback,
+  hasExplicitExpenseIntent,
 } from "../expense-fallback";
 
 describe("parseAmountToken", () => {
@@ -149,6 +150,19 @@ describe("detectSimpleQueryIntent", () => {
 });
 
 describe("parseExpenseFallback (integration of the failing screenshots)", () => {
+  it("parses the beta QA message that failed in Telegram", () => {
+    expect(parseExpenseFallback("Gasto de supermercado 1379")).toEqual({
+      amount: 1379,
+      categorySlug: "supermercado",
+      requiresReimbursement: false,
+    });
+    expect(hasExplicitExpenseIntent("Gasto de supermercado 1379")).toBe(true);
+  });
+
+  it("does not treat a budget question as an explicit expense write", () => {
+    expect(hasExplicitExpenseIntent("¿Cuánto me queda en supermercado? 1379")).toBe(false);
+  });
+
   it("fully parses 'Gaste 13568 supermercado'", () => {
     expect(parseExpenseFallback("Gaste 13568 supermercado")).toEqual({
       amount: 13568,

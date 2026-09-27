@@ -1,5 +1,9 @@
 jest.mock("@/lib/db/client", () => ({
   db: {
+    query: {
+      categories: { findFirst: jest.fn() },
+      budgets: { findFirst: jest.fn() },
+    },
     select: jest.fn(),
     transaction: jest.fn(),
   },
@@ -85,6 +89,7 @@ import {
   getUserRecurringExpenses,
   skipExecution,
 } from "@/lib/db/recurring-queries";
+import { setConversationState } from "../splits/conversation-state";
 
 const mockParseFinancialMessage = parseFinancialMessage as jest.MockedFunction<typeof parseFinancialMessage>;
 const mockConfirmExecution = confirmExecution as jest.MockedFunction<typeof confirmExecution>;
@@ -130,10 +135,75 @@ describe("telegram recurring messages", () => {
       byCategory: [],
     });
     mockCreateMonthlyExecutions.mockResolvedValue([]);
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({
+      id: "category-supermarket",
+      name: "Supermercado",
+      emoji: "🛒",
+      slug: "supermercado",
+    });
+    (mockDb.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
   });
 
   afterAll(() => {
     process.env = originalEnv;
+  });
+
+  it("uses the deterministic expense parser when Groq is unavailable", async () => {
+    delete process.env.GROQ_API_KEY;
+
+    const response = await handleTelegramMessage(
+      {
+        update_id: 987,
+        message: {
+          text: "Gasto de supermercado 1379",
+          chat: { id: 10 },
+          from: { id: 20 },
+        },
+      },
+      "user-1",
+      "group-1",
+    );
+
+    expect(response.text).toContain("$1.379");
+    expect(response.text).toContain("Supermercado");
+    expect(response.text).not.toContain("Por ahora usá el formato");
+    expect(mockParseFinancialMessage).not.toHaveBeenCalled();
+    expect(setConversationState).toHaveBeenCalledWith(
+      "10",
+      "20",
+      expect.objectContaining({
+        step: "expense_confirm",
+        data: expect.objectContaining({
+          category_id: "category-supermarket",
+          amount_ars: 1379,
+          user_id: "user-1",
+          group_id: "group-1",
+        }),
+      }),
+    );
+  });
+
+  it("does not claim a missing group category is available for /gasto", async () => {
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockDb.select as jest.Mock).mockReturnValue({
+      from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([]) })),
+    });
+
+    const response = await handleTelegramMessage(
+      {
+        update_id: 988,
+        message: {
+          text: "/gasto 1379 supermercado",
+          chat: { id: 10 },
+          from: { id: 20 },
+        },
+      },
+      "user-1",
+      "group-1",
+    );
+
+    expect(response.text).toBe("Este grupo todavía no tiene categorías configuradas. Creá una desde la web y volvé a intentar.");
+    expect(response.text).not.toContain("Categorías: supermercado");
   });
 
   it("shows active and paused recurring expenses with status badges and payment day", async () => {

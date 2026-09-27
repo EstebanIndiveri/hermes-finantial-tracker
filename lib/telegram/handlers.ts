@@ -32,6 +32,7 @@ import {
   detectSimpleQueryIntent,
   detectRecurringIntent,
   hasReimbursementIntent,
+  hasExplicitExpenseIntent,
 } from "./expense-fallback";
 import type { TelegramOperationContext } from "./operation-context";
 
@@ -1261,7 +1262,13 @@ export async function handleTelegramMessage(
     }
     
     if (!cat) {
-      return { text: `Categoría "${slugCandidate}" no encontrada.\nCategorías: supermercado, verduleria, salidas_pareja, restaurante, servicios, tarjeta, movilidad, viaje, pareja, compras_personales, imprevistos` };
+      const availableCategories = await db.select().from(categories).where(eq(categories.group_id, groupId));
+      const availableSlugs = availableCategories.map((category) => category.slug).join(", ");
+      return {
+        text: availableSlugs
+          ? `Categoría "${slugCandidate}" no encontrada.\nCategorías configuradas: ${availableSlugs}`
+          : "Este grupo todavía no tiene categorías configuradas. Creá una desde la web y volvé a intentar.",
+      };
     }
 
     const settings = await db.query.monthly_settings.findFirst({
@@ -1601,12 +1608,29 @@ export async function handleTelegramMessage(
   }
 
   const groqKey = process.env.GROQ_API_KEY;
-  if (!groqKey) {
-    return { text: "Por ahora usá el formato: /gasto monto categoria descripción" };
+  let parsed;
+  if (groqKey) {
+    const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
+    parsed = await parseFinancialMessage(text);
+  } else {
+    // Clear expenses should remain usable when the optional AI provider is
+    // unavailable. Keep this path conservative: only an explicit expense verb
+    // plus both a recognizable amount and category can create a write intent.
+    const fallback = parseExpenseFallback(text);
+    if (hasExplicitExpenseIntent(text) && fallback.amount !== null && fallback.categorySlug) {
+      parsed = {
+        intent: "register_expense" as const,
+        amount_ars: fallback.amount,
+        category: fallback.categorySlug,
+        merchant: null,
+        needs_confirmation: true,
+        requires_reimbursement: fallback.requiresReimbursement,
+        confidence: 0.9,
+      };
+    } else {
+      return { text: "La interpretación con IA no está disponible. Para cargar un gasto, usá /gasto monto categoría descripción." };
+    }
   }
-
-  const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
-  const parsed = await parseFinancialMessage(text);
 
   // Guard: never trigger a reimbursement unless the user explicitly asked for it.
   // The AI occasionally hallucinates requires_reimbursement on plain expenses.

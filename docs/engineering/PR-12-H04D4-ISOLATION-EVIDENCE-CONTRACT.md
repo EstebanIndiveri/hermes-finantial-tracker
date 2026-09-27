@@ -609,3 +609,63 @@ No hubo webhook, tráfico Telegram, llamadas a Groq/OCR, cambios en Turso, ni
 acceso/cambio en producción legacy. H04d.4 continúa abierto: esta publicación
 no completa la comparación de identidad productiva ni autoriza habilitar
 flags, configurar webhook o usar datos reales.
+
+### H04d.4k — smoke financiero parcial y proveedores IA/OCR (27/09/2026)
+
+Esteban confirmó que `esteban_beta_qa` quedó vinculado al bot beta. Una
+consulta de solo lectura, acotada a ese usuario en `beta-hermes`, encontró
+exactamente un movimiento activo de Telegram: ARS 1.379 en `supermercado`.
+Coincide con la captura: el mensaje natural `Gasto de supermercado 1379`
+recibió tres veces ayuda para usar `/gasto`; luego `/gasto 1379 supermercado`
+registró el movimiento.
+
+#### Causa y cambio local
+
+En `lib/telegram/handlers.ts`, la falta de `GROQ_API_KEY` provocaba un retorno
+antes de `parseExpenseFallback`. El parser local ya podía extraer monto y
+categoría, pero nunca se invocaba. Se agregó un camino sin Groq conservador:
+requiere verbo explícito de gasto, monto y categoría; deriva al flujo existente
+de confirmación. Además, `/gasto` ahora informa las categorías reales del
+grupo (o que todavía no hay ninguna) y no una lista global hardcoded.
+
+La suite completa pasa en un worktree limpio:
+
+- Harness de aislamiento y reconciliación: aprobado.
+- Jest: 88 suites, 739 pruebas aprobadas.
+- Typecheck: aprobado.
+- Lint: 0 errores; 67 warnings ya existentes.
+- Build Webpack: aprobado.
+
+No se desplegó el cambio. El worktree previo ya tenía eliminaciones sin
+commit que hacían fallar el harness; para validar sin alterar esos archivos,
+se repitieron los gates en `/private/tmp/hermes-h04d-nlp-verification`, un
+worktree limpio basado en el mismo corte.
+
+#### Groq, Whisper y OCR
+
+El código usa `GROQ_API_KEY` para interpretación de texto, Whisper y análisis
+de texto de recibos. El OCR de imágenes usa OCR.Space y necesita la variable
+distinta `OCR_SPACE_API_KEY`. Vercel reporta bindings cifrados de ambos
+proveedores para el proyecto beta. Por solicitud del operador se intentó
+consultar solo los valores legacy correspondientes; al estar marcados como
+Sensitive, la API devolvió `decrypted=false`. No se recuperó/imprimió ninguna
+clave, no se modificó producción y no se copiaron valores.
+
+Para poder probar el comportamiento beta se mantuvieron sus bindings propios
+y se establecieron `AI_MODE=live` y `OCR_MODE=live` solo en el target
+Production del proyecto beta. La versión que está sirviendo beta todavía no
+cambia: esos modos aplican en el próximo deployment. Las tres flags Telegram
+continúan sin modificación y el outbox/worker siguen apagados. Si las keys
+beta existentes no fueran válidas, generar claves dedicadas a beta en las
+consolas Groq/OCR.Space y cargarlas directamente en Vercel beta; no publicarlas
+en el chat.
+
+#### Owner y reentrada
+
+| Gate | Owner | Reentrada / cierre |
+| --- | --- | --- |
+| Financial E2E beta | Codex — deploy/concilia; Esteban — envía y confirma canarios | Deployment listo; enviar un gasto natural sintético y una imagen sintética; conciliar cada resultado y mostrarlo en dashboard. |
+| Proveedor credentials beta | Codex — activar modos/configurar beta; Esteban — resolver keys si fallan | Si Groq/OCR beta rechazan solicitudes, reemplazar las keys beta desde sus consolas y redesplegar solo beta. |
+
+H04d sigue abierto hasta validar el canario natural, el recorrido de OCR, el
+outbox/entrega durable y la decisión pendiente sobre worker/aislamiento formal.

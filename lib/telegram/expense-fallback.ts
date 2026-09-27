@@ -202,6 +202,17 @@ export function hasReimbursementIntent(text: string): boolean {
   return /reintegr|reembols/i.test(text);
 }
 
+/**
+ * Detects an explicit expense action for conservative no-AI registration.
+ * Queries such as "¿cuánto me queda en supermercado?" must not become writes
+ * just because they mention a category, while "Gasto de supermercado 1379"
+ * is sufficiently explicit to use the deterministic parser.
+ */
+export function hasExplicitExpenseIntent(text: string): boolean {
+  const normalized = normalize(text);
+  return /\b(gasto|gaste|gastar|gastamos|compre|compramos|pague|pagamos|registrar|registra|anotar|cargar)\b/.test(normalized);
+}
+
 export type SimpleQueryIntent = "query_available" | "query_summary" | "query_reimbursements";
 
 export type RecurringQueryIntent = "list_recurring" | "pending_recurring";
