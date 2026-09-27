@@ -669,3 +669,36 @@ en el chat.
 
 H04d sigue abierto hasta validar el canario natural, el recorrido de OCR, el
 outbox/entrega durable y la decisión pendiente sobre worker/aislamiento formal.
+
+### H04d.4l — corrección NLP desplegada solo a beta (27/09/2026)
+
+Commit local `78f156e` en `codex/h04d-natural-language-e2e` se desplegó al
+target Production **del proyecto beta**, no a legacy. El deployment
+`dpl_3krXMJ84Z1DsCTMUMhn8xTQRPfAW` quedó `READY`; alias
+`https://hermes-finantial-tracker-z2.vercel.app` devuelve `/` → 307 y `/login`
+→ 200.
+
+La cuenta Vercel Hobby rechazó el paquete que incluía el cron por minuto. Se
+retiraron los dos intentos fallidos de este corte y se repitió la publicación
+omitiendo temporalmente el `vercel.json` del paquete. El archivo canónico fue
+restaurado en el worktree. `vercel cron ls` confirma las cuatro definiciones
+como `not deployed`; en particular, el worker outbox sigue sin scheduler. Las
+flags `TELEGRAM_INBOX_ENABLED`, `TELEGRAM_OUTBOX_ENABLED` y
+`TELEGRAM_OUTBOX_WORKER_ENABLED` no se modificaron.
+
+Antes de este deploy, `AI_MODE=live` y `OCR_MODE=live` se establecieron solo
+en las variables Production beta. Se usaron los bindings beta existentes de
+Groq/OCR.Space; Vercel impide descifrar las variables legacy Sensitive, así
+que no se copiaron claves de producción. El deploy no alteró webhook, Turso,
+datos, variables ni tráfico de producción legacy.
+
+#### Estado pendiente
+
+| Gate | Owner | Criterio de cierre |
+| --- | --- | --- |
+| Confirmación de NLP beta con Groq live | Esteban envía/acepta confirmación; Codex concilia | Un segundo movimiento sintético desde frase natural, fuente/categoría/importe correctos y reflejado una sola vez en dashboard. |
+| OCR beta | Esteban envía recibo sintético; Codex concilia | OCR.Space lee el recibo sintético, propuesta correcta y movimiento solo tras confirmación. Si falla la key beta, reemplazarla directamente en Vercel beta. |
+
+H04d-BETA-FINANCIAL-E2E permanece parcial hasta cerrar ambos canarios. No
+avanzar el cierre outbox/scheduler ni declarar aislamiento formal certificado
+en base a este deployment.
