@@ -618,6 +618,37 @@ describe("Telegram webhook authorized personal context", () => {
       );
     });
 
+    it("does not resend the audio progress message on an Inbox retry", async () => {
+      (resolveAuthorizedTelegramGroup as jest.Mock).mockResolvedValue("group-1");
+      (claimTelegramUpdate as jest.Mock).mockResolvedValue({
+        kind: "acquired",
+        leaseToken: "lease-retry-2",
+        attempt: 2,
+      });
+      (transcribeVoiceMessage as jest.Mock).mockRejectedValue(
+        Object.assign(new Error("provider unavailable"), { code: "GROQ_HTTP_5XX" }),
+      );
+
+      const response = await POST(request({
+        update_id: 48,
+        message: {
+          chat: { id: 10, type: "private" },
+          from: { id: 20 },
+          voice: { file_id: "voice-retry-2" },
+        },
+      }));
+
+      expect(response.status).toBe(503);
+      expect(sendPersonalMessage).not.toHaveBeenCalledWith(
+        "10",
+        "🎤 <i>Procesando audio...</i>",
+      );
+      expect(failTelegramUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        updateId: "48",
+        errorCode: "GROQ_HTTP_5XX",
+      }));
+    });
+
     it.each([
       ["callback", { callback_query: { id: "kind-cb", from: { id: 20 }, data: "expense:cancel", message: { message_id: 4, chat: { id: 10, type: "private" } } } }],
       ["voice", { message: { chat: { id: 10, type: "private" }, from: { id: 20 }, voice: { file_id: "voice-kind" } } }],

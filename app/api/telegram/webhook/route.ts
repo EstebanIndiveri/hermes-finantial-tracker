@@ -182,6 +182,7 @@ async function processTelegramUpdate(
   update: TelegramWebhookUpdate,
   useLegacyBotMessageDedupe = true,
   operationSeed?: TelegramOperationSeed,
+  updateAttempt = 1,
 ): Promise<NextResponse> {
   if (update?.callback_query) {
     const cq = update.callback_query;
@@ -320,7 +321,9 @@ async function processTelegramUpdate(
     }
 
     if (isGroupMessage) {
-      await sendSplitMessage(chatId, "🎤 <i>Procesando audio...</i>").catch(() => {});
+      if (updateAttempt === 1) {
+        await sendSplitMessage(chatId, "🎤 <i>Procesando audio...</i>").catch(() => {});
+      }
 
       try {
         const transcription = await transcribeVoiceMessage(voiceFileId);
@@ -367,8 +370,11 @@ async function processTelegramUpdate(
       return NextResponse.json({ ok: true });
     }
 
-    // Send immediate feedback while processing
-    await sendTelegramMessage(chatId, "🎤 <i>Procesando audio...</i>").catch(() => {});
+    // Telegram retries the same update after a retryable STT failure. Avoid
+    // sending another progress message for each retry attempt.
+    if (updateAttempt === 1) {
+      await sendTelegramMessage(chatId, "🎤 <i>Procesando audio...</i>").catch(() => {});
+    }
 
     try {
       const transcription = await transcribeVoiceMessage(voiceFileId);
@@ -596,6 +602,7 @@ export async function POST(req: NextRequest) {
       update,
       false,
       process.env.TELEGRAM_OUTBOX_ENABLED === "true" ? { botId, updateId } : undefined,
+      claim.attempt,
     );
     await completeTelegramUpdate({ botId, updateId, leaseToken: claim.leaseToken });
     return response;
