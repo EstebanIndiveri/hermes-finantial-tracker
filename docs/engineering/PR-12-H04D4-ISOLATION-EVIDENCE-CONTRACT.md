@@ -1074,3 +1074,44 @@ El corte de audio permanece abierto, bloqueado solo por la configuración beta d
 Groq y la verificación post-redeployment. No se pide otro audio hasta que la
 clave esté disponible en el runtime. Producción legacy y su configuración
 siguen inmutables.
+
+#### Recuperación de Groq beta y cierre del canario STT (28/09/2026)
+
+Esteban confirmó que reingresó `GROQ_API_KEY` en Vercel. El CLI autenticado
+verificó en el proyecto aislado `hermes-finantial-tracker-z2` que los bindings
+`AI_MODE`, `GROQ_API_KEY`, `GROQ_WHISPER_MODEL` y `GROQ_MODEL` existen en el
+target Production (los valores permanecieron encrypted y no se leyeron). El
+modelo Whisper es opcional en código (`whisper-large-v3-turbo` por default), y
+`GROQ_MODEL` también tiene default para NLP. La clave es el único requisito
+secreto indispensable para STT; `AI_MODE` debe resolver a `live`.
+
+Codex lanzó el deployment beta `dpl_5RGco1Z5rybbAQ5L3NpkrNYL5pGC`; el build
+remoto completó y Vercel asignó el dominio
+`hermes-finantial-tracker-z2.vercel.app`. `vercel inspect` confirmó ese ID,
+estado READY y target `production` dentro del proyecto beta. La consulta
+read-only al Inbox beta mostró que el mismo audio inocuo `224783885` pasó de
+retryable/error `groq_api_key_missing` a `completed` en el intento 19 con
+`last_error_code=NULL`, sin que Esteban enviara otro audio. Esto demuestra que
+el runtime recibió la clave y que la ruta de voz terminó sin excepción. La
+frase no contiene monto/intención financiera y el fallo inicial ocurría antes
+del handler de escritura; no se registró una operación financiera por el
+canario.
+
+La notificación duplicada quedó corregida: `390d8d9` solo emite “Procesando
+audio…” en el primer intento de Inbox; retry conserva el procesamiento sin
+repetir el aviso. Test webhook: 44/44; typecheck y build Vercel pasaron. El
+deploy beta excluyó temporalmente `vercel.json` del paquete para que Hobby no
+intentara crear el cron por minuto. Se retiró el `.vercelignore` temporal y
+`vercel.json` permaneció igual a HEAD; outbox, worker y cron siguen apagados.
+
+| Estado | Owner | Acción exacta / cierre |
+| --- | --- | --- |
+| Bindings Groq beta | Codex — comprobados por nombre/target; secretos no leídos | `AI_MODE`, `GROQ_API_KEY`, `GROQ_WHISPER_MODEL`, `GROQ_MODEL` existen en beta Production. El Inbox demuestra que la key ahora llega al runtime. |
+| Canary STT inocuo | Cerrado por Codex/Esteban | El update pendiente 224783885 completó en intento 19 tras el deployment nuevo, sin una nueva prueba de usuario. No requiere repetir audio. |
+| Reintentos de Telegram | Mitigación desplegada, sin deuda pendiente en este subcorte | El indicador de progreso solo se manda en el primer intento. Mantener prueba de regresión en webhook suite. |
+| H04d financial E2E / ACT-11/13/14 | Sigue abierto bajo Codex | Próxima actividad: completar el draft unificado y la matriz multimodal con decisión de reintegro; outbox beta es prerequisito para el canario consentido. Scheduler y worker siguen separados y apagados. |
+
+Aunque Esteban autorizó leer valores de claves en Vercel legacy, no fue necesario
+ni se accedió a ellas: la beta funciona con su propio secreto recién ingresado,
+y evitar el acceso conserva el límite de mínimo privilegio. Producción legacy,
+sus variables, webhook, base y tráfico permanecen sin intervención.
