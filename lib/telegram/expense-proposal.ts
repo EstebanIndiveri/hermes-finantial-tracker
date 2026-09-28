@@ -15,21 +15,21 @@ export function buildExpenseProposalKeyboard(
   },
 ): InlineKeyboardMarkup {
   const confirmPrefix = options.editPrefix === "receipt" ? "receipt" : "expense";
-  const confirmationRow = options.isIncome
-    ? [{ text: "✅ Registrar ingreso", callback_data: `${confirmPrefix}:confirm` }]
+  const confirmationRows = options.isIncome
+    ? [[{ text: "✅ Registrar ingreso", callback_data: `${confirmPrefix}:confirm` }]]
     : options.reimbursementIntent === "no"
-      ? [{ text: "✅ Confirmar sin reintegro", callback_data: `${confirmPrefix}:confirm` }]
+      ? [[{ text: "✅ Confirmar sin reintegro", callback_data: `${confirmPrefix}:confirm` }]]
       : options.reimbursementIntent === "yes"
         ? [
-            { text: "✅ Confirmar + reintegro", callback_data: `${confirmPrefix}:confirm_reimbursement` },
-            { text: "✅ Confirmar solo gasto", callback_data: `${confirmPrefix}:confirm` },
+            [{ text: "✅ Sí, pedir reintegro", callback_data: `${confirmPrefix}:confirm_reimbursement` }],
+            [{ text: "✅ No, solo gasto", callback_data: `${confirmPrefix}:confirm` }],
           ]
-    : [
-        { text: "💸 Gasto + reintegro", callback_data: `${confirmPrefix}:confirm_reimbursement` },
-        { text: "✅ Solo gasto", callback_data: `${confirmPrefix}:confirm` },
-      ];
+        : [
+            [{ text: "💸 Sí, pedir reintegro", callback_data: `${confirmPrefix}:confirm_reimbursement` }],
+            [{ text: "✅ No, solo gasto", callback_data: `${confirmPrefix}:confirm` }],
+          ];
   return buildPersonalKeyboard([
-    confirmationRow,
+    ...confirmationRows,
     options.editPrefix === "receipt"
       ? [
           { text: "💰 Editar monto", callback_data: "receipt:edit_amount" },

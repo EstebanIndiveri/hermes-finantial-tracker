@@ -7,6 +7,7 @@ import {
   detectRecurringIntent,
   parseExpenseFallback,
   hasExplicitFinancialTransactionIntent,
+  hasExplicitIncomeIntent,
 } from "../expense-fallback";
 
 describe("parseAmountToken", () => {
@@ -116,6 +117,11 @@ describe("detectCategorySlug", () => {
     expect(detectCategorySlug("cobre 300000 de sueldo")).toBe("ingresos");
     expect(detectCategorySlug("me depositaron 120000 de honorarios")).toBe("ingresos");
     expect(hasExplicitFinancialTransactionIntent("cobre 300000 de sueldo")).toBe(true);
+    expect(hasExplicitIncomeIntent("Ingreso 2000 sueldo")).toBe(true);
+    expect(hasExplicitIncomeIntent("/ingreso 2000 sueldo")).toBe(true);
+    expect(hasExplicitIncomeIntent("gasté 2000 en supermercado")).toBe(false);
+    expect(hasExplicitIncomeIntent("gasté 2000 de mi sueldo")).toBe(false);
+    expect(hasExplicitIncomeIntent("¿Cuánto cobré este mes?")).toBe(false);
   });
 });
 

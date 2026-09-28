@@ -108,16 +108,16 @@ describe("createFinancialDraft", () => {
         reimbursementIntent,
       }).inline_keyboard;
 
-    expect(keyboard("yes")?.[0]).toEqual([
-      { text: "✅ Confirmar + reintegro", callback_data: "expense:confirm_reimbursement" },
-      { text: "✅ Confirmar solo gasto", callback_data: "expense:confirm" },
+    expect(keyboard("yes")?.slice(0, 2)).toEqual([
+      [{ text: "✅ Sí, pedir reintegro", callback_data: "expense:confirm_reimbursement" }],
+      [{ text: "✅ No, solo gasto", callback_data: "expense:confirm" }],
     ]);
     expect(keyboard("no")?.[0]).toEqual([
       { text: "✅ Confirmar sin reintegro", callback_data: "expense:confirm" },
     ]);
-    expect(keyboard("unknown")?.[0]).toEqual([
-      { text: "💸 Gasto + reintegro", callback_data: "expense:confirm_reimbursement" },
-      { text: "✅ Solo gasto", callback_data: "expense:confirm" },
+    expect(keyboard("unknown")?.slice(0, 2)).toEqual([
+      [{ text: "💸 Sí, pedir reintegro", callback_data: "expense:confirm_reimbursement" }],
+      [{ text: "✅ No, solo gasto", callback_data: "expense:confirm" }],
     ]);
   });
 

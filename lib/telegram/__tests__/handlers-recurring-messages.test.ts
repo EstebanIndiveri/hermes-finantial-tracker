@@ -5,6 +5,9 @@ jest.mock("@/lib/db/client", () => ({
       budgets: { findFirst: jest.fn() },
       monthly_settings: { findFirst: jest.fn() },
     },
+    insert: jest.fn(() => ({
+      values: jest.fn(() => ({ onConflictDoNothing: jest.fn().mockResolvedValue(undefined) })),
+    })),
     select: jest.fn(),
     transaction: jest.fn(),
   },
@@ -172,10 +175,8 @@ describe("telegram recurring messages", () => {
     expect(response.text).not.toContain("Por ahora usá el formato");
     expect(response.replyMarkup).toEqual({
       inline_keyboard: [
-        [
-          { text: "💸 Gasto + reintegro", callback_data: "expense:confirm_reimbursement" },
-          { text: "✅ Solo gasto", callback_data: "expense:confirm" },
-        ],
+        [{ text: "💸 Sí, pedir reintegro", callback_data: "expense:confirm_reimbursement" }],
+        [{ text: "✅ No, solo gasto", callback_data: "expense:confirm" }],
         [
           { text: "💰 Editar monto", callback_data: "expense:edit_amount" },
           { text: "📂 Editar categoría", callback_data: "expense:edit_category" },
@@ -232,9 +233,9 @@ describe("telegram recurring messages", () => {
     }, "user-1", "group-1");
 
     expect(response.text).toContain("¿Registramos este gasto?");
-    expect(response.replyMarkup?.inline_keyboard?.[0]).toEqual([
-      { text: "💸 Gasto + reintegro", callback_data: "expense:confirm_reimbursement" },
-      { text: "✅ Solo gasto", callback_data: "expense:confirm" },
+    expect(response.replyMarkup?.inline_keyboard?.slice(0, 2)).toEqual([
+      [{ text: "💸 Sí, pedir reintegro", callback_data: "expense:confirm_reimbursement" }],
+      [{ text: "✅ No, solo gasto", callback_data: "expense:confirm" }],
     ]);
     expect(setConversationState).toHaveBeenCalledWith("10", "20", expect.objectContaining({
       step: "expense_confirm",
@@ -259,10 +260,60 @@ describe("telegram recurring messages", () => {
     expect(response.replyMarkup?.inline_keyboard?.flat().some((button) => button.callback_data === "expense:confirm_reimbursement")).toBe(false);
   });
 
+  it("creates the built-in income category on demand and asks before recording /ingreso", async () => {
+    const incomeCategory = { id: "category-income", name: "Ingresos", emoji: "💵", slug: "ingresos" };
+    (mockDb.query.categories.findFirst as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(incomeCategory);
+
+    const response = await handleTelegramMessage({
+      update_id: 994,
+      message: { text: "/ingreso 2000 sueldo", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+
+    expect(mockDb.insert).toHaveBeenCalled();
+    const incomeInsert = mockDb.insert.mock.results[0]?.value;
+    expect(incomeInsert.values).toHaveBeenCalledWith(expect.objectContaining({
+      group_id: "group-1",
+      slug: "ingresos",
+      default_hard_limit: 0,
+    }));
+    expect(response.text).toContain("¿Registramos este ingreso?");
+    expect(response.replyMarkup?.inline_keyboard?.[0]).toEqual([
+      { text: "✅ Registrar ingreso", callback_data: "expense:confirm" },
+    ]);
+    expect(response.replyMarkup?.inline_keyboard?.flat().some((button) => button.callback_data.includes("reimbursement"))).toBe(false);
+    expect(mockRunTelegramOperation).not.toHaveBeenCalled();
+  });
+
+  it("routes 'Ingreso 2000 sueldo' through the deterministic income path", async () => {
+    const incomeCategory = { id: "category-income", name: "Ingresos", emoji: "💵", slug: "ingresos" };
+    (mockDb.query.categories.findFirst as jest.Mock)
+      .mockResolvedValue(incomeCategory)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(incomeCategory);
+
+    const response = await handleTelegramMessage({
+      update_id: 995,
+      message: { text: "Ingreso 2000 sueldo", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+
+    expect(mockParseFinancialMessage).not.toHaveBeenCalled();
+    expect(response.text).toContain("¿Registramos este ingreso?");
+    expect(response.replyMarkup?.inline_keyboard?.[0]).toEqual([
+      { text: "✅ Registrar ingreso", callback_data: "expense:confirm" },
+    ]);
+    expect(setConversationState).toHaveBeenCalledWith("10", "20", expect.objectContaining({
+      step: "expense_confirm",
+      data: expect.objectContaining({ amount_ars: 2000, is_income: true }),
+    }));
+    expect(mockRunTelegramOperation).not.toHaveBeenCalled();
+  });
+
   it.each([
-    ["Ticket con reintegro", "Reintegro confirmado", "✅ Confirmar + reintegro"],
-    ["Ticket sin reintegro", "No solicitar reintegro", "✅ Confirmar sin reintegro"],
-  ])("uses the common reimbursement consent contract for receipt captions", (caption, _description, expectedButton) => {
+    ["Ticket con reintegro", "✅ Sí, pedir reintegro"],
+    ["Ticket sin reintegro", "✅ Confirmar sin reintegro"],
+  ])("uses the common reimbursement consent contract for receipt captions", (caption, expectedButton) => {
     const proposal = buildReceiptProposalMessage({
       amount_ars: 5000,
       categorySlug: "supermercado",
@@ -273,8 +324,9 @@ describe("telegram recurring messages", () => {
       caption,
     });
 
-    expect(proposal.replyMarkup?.inline_keyboard?.[0]?.some((button) => button.text === expectedButton)).toBe(true);
-    expect(proposal.replyMarkup?.inline_keyboard?.[0]?.some((button) => button.callback_data === "receipt:confirm")).toBe(true);
+    const buttons = proposal.replyMarkup?.inline_keyboard?.flat() ?? [];
+    expect(buttons.some((button) => button.text === expectedButton)).toBe(true);
+    expect(buttons.some((button) => button.callback_data === "receipt:confirm")).toBe(true);
   });
 
   it("recognizes an unambiguous income in text without requiring Groq", async () => {
@@ -312,7 +364,10 @@ describe("telegram recurring messages", () => {
       message: { text: "Gasté 5000 en supermercado", chat: { id: 10 }, from: { id: 20 } },
     }, "user-1", "group-1");
 
-    expect(response.replyMarkup?.inline_keyboard?.[0]).toHaveLength(2);
+    expect(response.replyMarkup?.inline_keyboard?.slice(0, 2)).toEqual([
+      [{ text: "💸 Sí, pedir reintegro", callback_data: "expense:confirm_reimbursement" }],
+      [{ text: "✅ No, solo gasto", callback_data: "expense:confirm" }],
+    ]);
     expect(setConversationState).toHaveBeenCalledWith("10", "20", expect.objectContaining({
       step: "expense_confirm",
       data: expect.objectContaining({ requires_reimbursement: false, reimbursement_intent: "unknown" }),
@@ -325,8 +380,8 @@ describe("telegram recurring messages", () => {
       intent: "yes",
       requiresReimbursement: true,
       choices: [
-        { text: "✅ Confirmar + reintegro", callback_data: "expense:confirm_reimbursement" },
-        { text: "✅ Confirmar solo gasto", callback_data: "expense:confirm" },
+        [{ text: "✅ Sí, pedir reintegro", callback_data: "expense:confirm_reimbursement" }],
+        [{ text: "✅ No, solo gasto", callback_data: "expense:confirm" }],
       ],
     },
     {
@@ -334,7 +389,7 @@ describe("telegram recurring messages", () => {
       intent: "no",
       requiresReimbursement: false,
       choices: [
-        { text: "✅ Confirmar sin reintegro", callback_data: "expense:confirm" },
+        [{ text: "✅ Confirmar sin reintegro", callback_data: "expense:confirm" }],
       ],
     },
     {
@@ -342,8 +397,8 @@ describe("telegram recurring messages", () => {
       intent: "unknown",
       requiresReimbursement: false,
       choices: [
-        { text: "💸 Gasto + reintegro", callback_data: "expense:confirm_reimbursement" },
-        { text: "✅ Solo gasto", callback_data: "expense:confirm" },
+        [{ text: "💸 Sí, pedir reintegro", callback_data: "expense:confirm_reimbursement" }],
+        [{ text: "✅ No, solo gasto", callback_data: "expense:confirm" }],
       ],
     },
   ])("shows the explicit reimbursement choice for '$text' without writing", async ({ text, intent, requiresReimbursement, choices }) => {
@@ -363,7 +418,7 @@ describe("telegram recurring messages", () => {
       message: { text, chat: { id: 10 }, from: { id: 20 } },
     }, "user-1", "group-1");
 
-    expect(response.replyMarkup?.inline_keyboard?.[0]).toEqual(choices);
+    expect(response.replyMarkup?.inline_keyboard?.slice(0, choices.length)).toEqual(choices);
     expect(setConversationState).toHaveBeenCalledWith("10", "20", expect.objectContaining({
       step: "expense_confirm",
       data: expect.objectContaining({

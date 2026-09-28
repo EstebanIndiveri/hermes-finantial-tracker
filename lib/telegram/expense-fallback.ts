@@ -213,6 +213,14 @@ export function hasExplicitFinancialTransactionIntent(text: string): boolean {
   return /\b(gasto|gaste|gastar|gastamos|compre|compramos|pague|pagamos|registrar|registra|anotar|cargar|ingreso|ingresos|cobre|cobrar|cobro|recibi|recibir|depositaron|pagaron|sueldo|salario|honorarios|aguinaldo)\b/.test(normalized);
 }
 
+/** True only when the message explicitly describes money received by the user. */
+export function hasExplicitIncomeIntent(text: string): boolean {
+  const normalized = normalize(text);
+  if (/^\s*(?:cuanto|que|como|donde|cuando)\b/.test(normalized.replace(/^[\s¡¿?]+/, ""))) return false;
+  if (/\b(gasto|gaste|gastar|compre|comprar|pague|pagar|compramos|pagamos)\b/.test(normalized)) return false;
+  return /\b(ingreso|ingresos|ingresar|ingrese|cobre|cobrar|cobro|cobrado|recibi|recibir|recibido|me\s+pagaron|me\s+depositaron|sueldo|salario|honorarios|aguinaldo)\b/.test(normalized);
+}
+
 export type SimpleQueryIntent = "query_available" | "query_summary" | "query_reimbursements";
 
 export type RecurringQueryIntent = "list_recurring" | "pending_recurring";

@@ -32,6 +32,7 @@ import {
   parseExpenseFallback,
   detectSimpleQueryIntent,
   detectRecurringIntent,
+  hasExplicitIncomeIntent,
   hasExplicitFinancialTransactionIntent,
 } from "./expense-fallback";
 import type { TelegramOperationContext } from "./operation-context";
@@ -489,6 +490,33 @@ async function resolveCategoryBySlug(
     );
   });
   return fuzzy ?? null;
+}
+
+/** Ensures the built-in income bucket exists for older and newly created groups. */
+async function ensureIncomeCategory(
+  groupId: string,
+): Promise<{ id: string; name: string; emoji: string | null; slug: string }> {
+  const existing = await db.query.categories.findFirst({
+    where: and(eq(categories.slug, "ingresos"), eq(categories.group_id, groupId)),
+  });
+  if (existing) return existing;
+
+  await db.insert(categories).values({
+    id: randomUUID(),
+    group_id: groupId,
+    slug: "ingresos",
+    name: "Ingresos",
+    emoji: "💵",
+    is_active: 1,
+    sort_order: 99,
+    default_hard_limit: 0,
+  }).onConflictDoNothing();
+
+  const createdOrConcurrent = await db.query.categories.findFirst({
+    where: and(eq(categories.slug, "ingresos"), eq(categories.group_id, groupId)),
+  });
+  if (!createdOrConcurrent) throw new Error("Could not ensure the group's income category");
+  return createdOrConcurrent;
 }
 
 /**
@@ -1289,9 +1317,11 @@ export async function handleTelegramMessage(
     const merchant = merchantParts.join(" ") || undefined;
 
     // Try exact match first, then fuzzy match
-    let cat = await db.query.categories.findFirst({
-      where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
-    });
+    let cat = isIncomeCommand
+      ? await ensureIncomeCategory(groupId)
+      : await db.query.categories.findFirst({
+          where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
+        });
     
     // Fuzzy match if exact fails
     if (!cat) {
@@ -1659,7 +1689,18 @@ export async function handleTelegramMessage(
   const groqKey = process.env.GROQ_API_KEY;
   let parsed;
   let normalizedReimbursementIntent: ReimbursementIntent = "unknown";
-  if (groqKey) {
+  const incomeFallback = parseExpenseFallback(text);
+  if (hasExplicitIncomeIntent(text)) {
+    parsed = {
+      intent: "register_expense" as const,
+      amount_ars: incomeFallback.amount,
+      category: "ingresos",
+      merchant: null,
+      needs_confirmation: true,
+      requires_reimbursement: false,
+      confidence: 0.98,
+    };
+  } else if (groqKey) {
     const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
     parsed = await parseFinancialMessage(text);
   } else {
@@ -1703,6 +1744,10 @@ export async function handleTelegramMessage(
     normalizedReimbursementIntent = draftResult.draft.reimbursement;
     parsed.requires_reimbursement = draftResult.draft.reimbursement === "yes";
     parsed.merchant = draftResult.draft.description;
+    if (draftResult.draft.kind === "income") {
+      const incomeCategory = await ensureIncomeCategory(groupId);
+      parsed.category = incomeCategory.slug;
+    }
   }
 
   const queryIntentByParsedIntent: Partial<Record<string, FinancialQueryIntent>> = {
@@ -1825,7 +1870,7 @@ export async function handleTelegramMessage(
             text: [
               `${cat.emoji ?? "📦"} <b>${cat.name}</b>`,
               replacedNotice,
-              `¿Cuánto gastaste?`,
+              `¿Cuánto ${isIncomeCategory(cat.slug) ? "cobraste" : "gastaste"}?`,
               ``,
               `Escribí el monto (ej: <code>15000</code>):`,
             ].filter(Boolean).join("\n"),
@@ -1866,6 +1911,7 @@ export async function handleTelegramMessage(
       "• <code>Gasté 15000 en super</code>",
       "• <code>Gasto de verdulería 5000</code>",
       "• <code>47000 restaurante</code>",
+      "• <code>Ingreso 2000 sueldo</code>",
       "• O enviá una foto del ticket 📷",
       "",
       "<b>Otros comandos:</b>",

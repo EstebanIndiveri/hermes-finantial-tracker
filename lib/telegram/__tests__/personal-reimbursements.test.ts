@@ -197,10 +197,8 @@ describe("telegram reimbursements", () => {
 
     expect(proposal.replyMarkup).toEqual({
       inline_keyboard: [
-        [
-          { text: "💸 Gasto + reintegro", callback_data: "receipt:confirm_reimbursement" },
-          { text: "✅ Solo gasto", callback_data: "receipt:confirm" },
-        ],
+        [{ text: "💸 Sí, pedir reintegro", callback_data: "receipt:confirm_reimbursement" }],
+        [{ text: "✅ No, solo gasto", callback_data: "receipt:confirm" }],
         [
           { text: "💰 Editar monto", callback_data: "receipt:edit_amount" },
           { text: "📂 Editar categoría", callback_data: "receipt:edit_category" },
