@@ -1147,7 +1147,7 @@ modificaron beta.
 | Notificación a otro miembro | Esteban — scope/configuración; Codex — canario/conciliación | Diferible/no probado. Si se incluye en certificación, vincular segundo miembro y comprobar exactamente un `send_message` por miembro elegible no solicitante. |
 | Worker/scheduler | Esteban — decisión de latencia/SLO; Codex — implementación posterior | Mantener worker/cron apagados hasta elegir si la entrega inline basta o se necesita scheduler aislado. |
 | Aislamiento formal | Esteban — aceptar residual o autorizar comparación limitada; Codex — solo lectura autorizada | Identidades de proveedor comparadas sin secretos, filas, escrituras, webhook ni tráfico legacy. |
-| Regla de `main` (ACT-03) | Esteban — repo admin; Codex — configuración tras permiso explícito | Requerir PR + CI verde y dejar promoción sujeta a autorización de release. |
+| Regla de `main` (ACT-03) | Codex — completado 28/09/2026 | Ruleset `24135528` activo solo en `refs/heads/main`: PR obligatorio, check `quality` estricto, bloqueo de borrado/force-push, sin bypass, sin aprobaciones obligatorias y con aprobación extra para PR Copilot no atribuidos deshabilitada. Promoción de beta a legacy sigue requiriendo autorización de release por separado. |
 
 No hay tareas abiertas sin owner en el registro operativo. ACT-11/13/14 y
 H04d-BETA-FINANCIAL-E2E siguen abiertos por la matriz restante; voz financiera
