@@ -1039,3 +1039,38 @@ H04d-BETA-FINANCIAL-E2E y ACT-11/13/14 siguen abiertos bajo sus owners
 técnicos hasta que el canario post-alias dé evidencia. Las dos pruebas
 anteriores quedan documentadas como pre-corrección y no cuentan como validación
 del deployment STT nuevo. Producción legacy sigue inmutable.
+
+#### Reintentos STT beta: credencial ausente y notificación duplicada (27/09/2026)
+
+Después de corregir el alias, el canario inocuo `update_id=224783885` quedó en
+`retryable`, `attempt_count=7`, `last_error_code=groq_api_key_missing`; una
+lectura posterior mostró intento 13. El Inbox confirma que Telegram reentregó
+el mismo update y que el handler contestó 503 mientras Whisper no pudo iniciar.
+No hay escrituras financieras: el control falla en `transcribeAudio` antes del
+handler financiero. `GROQ_API_KEY` figura como binding en beta Production, pero
+el runtime recibe un valor ausente/vacío. No se intentó leer el secreto
+productivo ni el beta desde el proveedor.
+
+El síntoma de siete mensajes “Procesando audio…” era el efecto adicional de
+emitir el indicador antes del STT en cada reintento. Codex ajustó el webhook para
+enviarlo solo en el primer intento del Inbox; los reintentos conservan el estado
+retryable sin repetir esa notificación. El regression test cubre intento 2.
+La prueba enfocada pasó 44/44 y `tsc --noEmit` pasó. El cambio local `390d8d9`
+se desplegó al proyecto beta como `dpl_GQw1vasLW6Pz3DoVZ3g9qsWVPc6U` (READY),
+y `vercel inspect` confirmó que el dominio beta apunta a ese deployment. El
+paquete de despliegue excluyó temporalmente el `vercel.json` canónico para
+evitar crear el cron por minuto no soportado en Hobby; el archivo local no se
+alteró, el worker y outbox continúan apagados y no hay crons configurados en
+beta.
+
+| Estado | Owner | Acción exacta / cierre |
+| --- | --- | --- |
+| Diagnóstico de retry loop | Codex — resuelto | Código beta `groq_api_key_missing`, mismo update con reintentos; no era audio inválido ni producción. |
+| Notificación repetida | Codex — corregida, verificada localmente y desplegada en beta | El indicador se emite solo en attempt 1. Confirmación remota pendiente del siguiente reintento/canario. |
+| Credencial Groq beta | Esteban — bloqueo activo | Reingresar un `GROQ_API_KEY` válido en Vercel → proyecto `hermes-finantial-tracker-z2` → Environment Variables → Production. Usar la consola/fuente segura de Groq; no compartir la clave en chat. Cuando confirme, Codex crea un deployment beta nuevo porque las variables quedan fijadas por deployment. |
+| Reintento pendiente 224783885 | Codex y Esteban | Después de redeployar con la clave, revisar si Telegram reintenta y completa ese update sin nuevas notificaciones; si no, enviar una sola frase inocua. Confirmar Inbox completado o código nuevo y cero transacciones. |
+
+El corte de audio permanece abierto, bloqueado solo por la configuración beta de
+Groq y la verificación post-redeployment. No se pide otro audio hasta que la
+clave esté disponible en el runtime. Producción legacy y su configuración
+siguen inmutables.
