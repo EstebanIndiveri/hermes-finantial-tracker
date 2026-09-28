@@ -1877,6 +1877,24 @@ export async function handleTelegramMessage(
           };
         }
       }
+
+      if (
+        fallbackDraft.status === "clarification"
+        && fallbackDraft.reason === "intent"
+        && fallbackDraft.draft.categorySlug
+      ) {
+        const cat = await resolveCategoryBySlug(groupId, fallbackDraft.draft.categorySlug);
+        if (cat) {
+          return {
+            text: [
+              `🤔 ¿Querés registrar un gasto en ${cat.name} o consultar su presupuesto?`,
+              `Para registrar: <code>/gasto monto ${cat.slug}</code>`,
+              `Para consultar: <code>/disponible ${cat.slug}</code>`,
+              `No registré ningún movimiento.`,
+            ].join("\n"),
+          };
+        }
+      }
     }
   }
 

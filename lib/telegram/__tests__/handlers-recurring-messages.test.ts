@@ -83,6 +83,7 @@ import { handleTelegramMessage } from "../handlers";
 import { buildReceiptProposalMessage } from "../handlers";
 import { handlePersonalCallback } from "../personal-callback-handler";
 import { db } from "@/lib/db/client";
+import { getMonthSummary } from "@/lib/finance/summaries";
 import { parseFinancialMessage } from "@/lib/ai/parse-message";
 import { runTelegramOperation } from "@/lib/telegram/financial-operation";
 import { createTelegramOperationContext } from "@/lib/telegram/operation-context";
@@ -308,6 +309,45 @@ describe("telegram recurring messages", () => {
       data: expect.objectContaining({ amount_ars: 2000, is_income: true }),
     }));
     expect(mockRunTelegramOperation).not.toHaveBeenCalled();
+  });
+
+  it("routes an uncertain resumen query read-only when the model misses the intent", async () => {
+    mockParseFinancialMessage.mockResolvedValue({
+      intent: "unknown",
+      confidence: 0.2,
+      needs_confirmation: false,
+      requires_reimbursement: false,
+    });
+
+    await handleTelegramMessage({
+      update_id: 996,
+      message: { text: "resumen", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+
+    expect(getMonthSummary).toHaveBeenCalledWith("group-1", "2026-08");
+    expect(mockRunTelegramOperation).not.toHaveBeenCalled();
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(setConversationState).not.toHaveBeenCalled();
+  });
+
+  it("asks a category-specific clarification for ambiguous input without writing", async () => {
+    mockParseFinancialMessage.mockResolvedValue({
+      intent: "unknown",
+      confidence: 0.2,
+      needs_confirmation: false,
+      requires_reimbursement: false,
+    });
+
+    const response = await handleTelegramMessage({
+      update_id: 997,
+      message: { text: "supermercado", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+
+    expect(response.text).toContain("¿Querés registrar un gasto en Supermercado o consultar su presupuesto?");
+    expect(response.text).toContain("No registré ningún movimiento");
+    expect(mockRunTelegramOperation).not.toHaveBeenCalled();
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(setConversationState).not.toHaveBeenCalled();
   });
 
   it.each([

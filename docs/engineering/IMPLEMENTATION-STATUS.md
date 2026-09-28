@@ -251,7 +251,7 @@ webhook, flags, legacy resources, or deploy were changed by the local cut.
 
 | Owner | State | Remaining work / re-entry |
 | --- | --- | --- |
-| Codex | Follow-up fix on `codex/h04d-natural-language-e2e`, commit `b84862a`: long reimbursement consent actions use separate rows; income phrases route through the shared draft and group-scoped `ingresos` category. Harness 53/53, Jest 89 suites / 767 tests, typecheck and Webpack build pass; lint 0 errors / 67 existing warnings. Deployed only to beta as `dpl_BemZAe4afAHepUfdREzoiYffb9pP` (READY, SHA `b84862a`), `/login` HTTP 200. Temporary Hobby cron omission config was removed; canonical `vercel.json` is unchanged. No push, migration, webhook change, or legacy resource change. Current beta canaries have been reconciled read-only. | Voice ARS 104 and OCR “Solo gasto” canaries are closed; continue with query/ambiguity/callback replay/provider-error acceptance matrix. Keep worker/cron off. |
+| Codex | Follow-up fix on `codex/h04d-natural-language-e2e`, commit `b84862a`: long reimbursement consent actions use separate rows; income phrases route through the shared draft and group-scoped `ingresos` category. This cut adds a category-specific no-write clarification for ambiguous category-only messages and an integration regression for that path. Harness 53/53, Jest 89 suites / 769 tests, typecheck and Webpack build pass; lint 0 errors / 67 existing warnings. Beta deployment `dpl_BemZAe4afAHepUfdREzoiYffb9pP` is the prior code baseline; this latest clarification still requires beta deployment and one manual canary. No push, migration, webhook change, or legacy resource change in this cut. | Voice ARS 104 and OCR “Solo gasto” canaries are closed. Local query fallback, ambiguity no-write, inbox duplicate suppression, and provider retry/error behavior have automated coverage. Deploy this cut only to the linked beta project; then verify one read-only query and one category-only ambiguous phrase in beta. Keep worker/cron off. |
 | Esteban Indiveri | Beta test operator; income formats, button layout, cancellation, voice ARS 104, and OCR “Solo gasto” verified. | No immediate manual action for those two canaries. Add/link a second beta Telegram member only if group delivery is to be certified; otherwise explicitly defer that optional test. |
 
 **Closure gate:** beta matrix passes across command/text/voice/receipt and
@@ -259,8 +259,9 @@ expense/income/query; ambiguity writes nothing; explicit income never offers
 or persists a reimbursement; callback replay creates at most one transaction
 and request; provider errors are recoverable; outbox is reconciled; and the
 beta DB/webhook identities still match the isolated manifest. Voice ARS 104
-and OCR “Solo gasto” are now evidenced and closed; the remaining matrix and
-optional group-recipient evidence still prevent full closure. Until then,
+and OCR “Solo gasto” are now evidenced and closed; a beta query/ambiguity canary,
+the optional group-recipient decision, and H04d's separate isolation/scheduler
+decisions still prevent full closure. Until then,
 ACT-11/13/14 and H04d-BETA-FINANCIAL-E2E stay open. Keep the beta worker and
 cron disabled. This is not authorization to promote to `main` or production.
 
