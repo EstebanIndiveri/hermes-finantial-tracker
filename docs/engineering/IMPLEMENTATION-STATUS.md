@@ -19,7 +19,7 @@ production readiness. Source of scope: [stabilization plan](../audit/PLAN-DE-ACC
 | H04d.4e — fresh beta backup/restore and read-only preflight | Local-only preflight complete, 25/09/2026: a fresh export was copied/restored outside the repository, verified with SQLite, and reconciled read-only. The beta DB is empty; the adoption plan correctly remains `blocked` and `applyAuthorized: false`. No remote migration or deployment. See the [H04d.4e addendum](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#addendum-h04d4e-backup-restauracion-y-preflight-local-25092026). |
 | H04d.4f — repetir bootstrap canónico en copias locales | Complete, 25/09/2026: independent A/B copies from the fresh beta export reached the canonical schema fingerprint; A's before/after reconciliation returned `ok: true`, B's second migration applied zero migrations, and both inspections had no pending migrations, drift, conflicts, or FK violations. Evidence remains in a permission-restricted temporary directory outside the repository. This validates only the empty-DB bootstrap mechanism; it does not authorize a remote schema write. |
 | H04d.4g — bootstrap canónico en Turso beta | Complete, 26/09/2026, with specific operator authorization: the nine migrations selected by the verified Hermes manifest were applied to the exact beta DB ID in individual transactions. A fresh post-migration export/restore passed integrity; the local inspector reports `canonical`, zero pending/drift/conflicts/FK violations, and an idempotent rerun applied zero migrations. Same-target before/after reconciliation returned `ok: true`, `differences: []`. No production, webhook, traffic, or deployment action. |
-| H04d.4h–4i — beta deployment | Complete, 26/09/2026: deployment `dpl_EtQ1id5dBHk5U8HGvbtohzTBZbJq` was READY in the isolated beta project; Hobby rejected the minute cron, so that deployment had no schedules. A later activation deployment is recorded below. |
+| H04d.4h–4i — beta deployment | Beta-only deployment `dpl_78vn7T9LN4xPwngX7HKi91Z43Uro` is READY with code cut `6acaead` (28/09/2026), target `production` only inside the separate beta project; public beta alias `/login` returns 200. Vercel Hobby rejects the per-minute outbox cron, so this deployment preserves the three permitted daily/monthly crons and omits only `/api/cron/telegram-outbox`. `vercel crons list` confirms the 3 active schedules; the canonical `vercel.json` is restored locally and shows the minute worker as a pending local change only. The worker remains disabled; legacy project is untouched. |
 | H04d.4j — beta webhook + inbox-only rehearsal | Complete for the inbox-only gate, 26/09/2026; details and the remaining outbox/worker gates are in the live closure register below. This is not full Telegram certification. |
 
 ## Open parent gate and next cuts
@@ -222,9 +222,10 @@ all follow-up changes behind the same shared draft/confirmation boundary.
    Esteban owns that scope/setup decision and Codex the subsequent reconciliation.
    Keep worker/cron off and do not promote to `main` or legacy production.
 
-H04d-BETA-FINANCIAL-E2E and ACT-11/13/14 remain open under Codex until these
-gates pass. H04d worker/scheduler and formal isolation certification are
-separate owned items; neither blocks the next local implementation cut.
+H04d-BETA-FINANCIAL-E2E and ACT-11/13/14 remain open under Codex until the
+remaining beta query/ambiguity canaries pass. H04d worker/scheduler and formal
+isolation certification are separate owned items; neither blocks the next
+local implementation cut.
 
 ### ACT-11 / ACT-13 / ACT-14 — corte local de contrato compartido (28/09/2026)
 
@@ -251,8 +252,8 @@ webhook, flags, legacy resources, or deploy were changed by the local cut.
 
 | Owner | State | Remaining work / re-entry |
 | --- | --- | --- |
-| Codex | Follow-up fix on `codex/h04d-natural-language-e2e`, commit `b84862a`: long reimbursement consent actions use separate rows; income phrases route through the shared draft and group-scoped `ingresos` category. This cut adds a category-specific no-write clarification for ambiguous category-only messages and an integration regression for that path. Harness 53/53, Jest 89 suites / 769 tests, typecheck and Webpack build pass; lint 0 errors / 67 existing warnings. Beta deployment `dpl_BemZAe4afAHepUfdREzoiYffb9pP` is the prior code baseline; this latest clarification still requires beta deployment and one manual canary. No push, migration, webhook change, or legacy resource change in this cut. | Voice ARS 104 and OCR “Solo gasto” canaries are closed. Local query fallback, ambiguity no-write, inbox duplicate suppression, and provider retry/error behavior have automated coverage. Deploy this cut only to the linked beta project; then verify one read-only query and one category-only ambiguous phrase in beta. Keep worker/cron off. |
-| Esteban Indiveri | Beta test operator; income formats, button layout, cancellation, voice ARS 104, and OCR “Solo gasto” verified. | No immediate manual action for those two canaries. Add/link a second beta Telegram member only if group delivery is to be certified; otherwise explicitly defer that optional test. |
+| Codex | Follow-up fix on `codex/h04d-natural-language-e2e`, commit `6acaead`: long reimbursement consent actions use separate rows; income phrases route through the shared draft and group-scoped `ingresos` category; category-only ambiguity gets a category-specific no-write clarification. Harness 53/53, Jest 89 suites / 769 tests, typecheck, Webpack build pass; lint 0 errors / 67 existing warnings. Latest code is deployed only to the linked beta project as `dpl_78vn7T9LN4xPwngX7HKi91Z43Uro`; `/login` returns 200. `vercel crons list` confirms beta retains `/api/cron/daily-alerts`, `/api/cron/recurring-reminders`, and `/api/cron/update-exchange-rate`; only the Hobby-incompatible `/api/cron/telegram-outbox` is not deployed. The tracked canonical config is restored locally. No push, migration, webhook change, or legacy resource change. | Local acceptance covers query fallback, category ambiguity no-write, inbox duplicate suppression, callback replay and provider retry/error behavior. Still need a beta canary for a read-only query and a bare category `supermercado`, checking the latter asks a choice and creates no transaction. Esteban sends the two messages; Codex reconciles beta. Keep worker disabled and retain the three daily/monthly schedules. |
+| Esteban Indiveri | Beta test operator; income formats, button layout, cancellation, voice ARS 104, and OCR “Solo gasto” verified. | Next manual gate: send `resumen` (read-only query) and `supermercado` (ambiguous category-only input). For the latter, check the bot asks a choice and creates no financial movement. Group-recipient canary is optional; add/link a second beta member only if group delivery is included in pilot certification. |
 
 **Closure gate:** beta matrix passes across command/text/voice/receipt and
 expense/income/query; ambiguity writes nothing; explicit income never offers
@@ -267,18 +268,25 @@ cron disabled. This is not authorization to promote to `main` or production.
 
 **Beta test handoff (28/09/2026, updated):** the isolated beta alias is
 [`hermes-finantial-tracker-z2.vercel.app`](https://hermes-finantial-tracker-z2.vercel.app).
-Deployment `dpl_BemZAe4afAHepUfdREzoiYffb9pP` (SHA `b84862a`) is Ready and its
-`/login` route responds 200. It is a Production-target deployment inside the
-separate beta Vercel project, not the legacy production project. The beta
+Latest deployment `dpl_78vn7T9LN4xPwngX7HKi91Z43Uro` (SHA `6acaead`) is Ready and
+its `/login` route responds 200. It is a Production-target deployment inside
+the separate beta Vercel project, not the legacy production project. The beta
+project has its three daily/monthly schedules registered; only the per-minute
+outbox worker cron is omitted because Vercel Hobby rejects it. `vercel crons
+list` confirms the active jobs; the tracked canonical file was restored locally
+after upload and displays the worker as a pending local change.
+The beta
 bot's existing webhook was not changed and no test Telegram update was sent by
 Codex. No migration, legacy DB, bot, webhook, secret value, environment
 configuration or production deployment was changed. Voice-financial and
-OCR-no canaries have since passed and were reconciled; remaining work is the
-query/ambiguity/replay/provider-error acceptance matrix and a second linked
-beta member only if group-recipient delivery is in scope. Codex owns technical
-verification; Esteban owns the scope decision for the optional group test.
+OCR-no canaries have since passed and were reconciled. Callback replay,
+duplicate inbox delivery, and retryable provider failures are covered locally;
+the remaining external acceptance is one read-only query and one ambiguous
+category-only canary. A second linked beta member is needed only if
+group-recipient delivery is in scope. Codex owns technical verification;
+Esteban owns the scope decision for that optional group test.
 
-### ACT-03 — quality barrier (still open; plan priority 1)
+### ACT-03 — quality barrier (engineering gates complete; bounded Drizzle chore accepted)
 
 | Gate | State / evidence | Owner | Remaining work and exact re-entry condition |
 | --- | --- | --- | --- |
@@ -287,10 +295,11 @@ verification; Esteban owns the scope decision for the optional group test.
 | ACT03-BRANCH-GATE | Complete, 28/09/2026. Ruleset `24135528` “Protect main — legacy production line” is active and scoped only to `refs/heads/main`; read-back verified `current_user_can_bypass=never` and no bypass actors. | Codex | Enforces PR, strict successful `quality` GitHub Actions check, blocks deletion and non-fast-forward (force-push); zero mandatory approvals and GitHub's extra unattributed-Copilot approval are both disabled to avoid locking the sole maintainer. No change to workflow, branches, code, deploy or legacy production. Reopen only if the ruleset/check needs maintenance or policy changes. |
 | ACT03-DRIZZLE | Compatibility investigation complete; four moderate findings remain in the dev-only `drizzle-kit`/esbuild chain. Upstream `drizzle-kit@0.31.11` still includes the deprecated loader; two scoped overrides were rejected as ineffective/invalid. Esteban explicitly accepted the bounded residual temporarily on 28/09/2026; this does not mean advisories are fixed. See the [experiment and accepted-risk record](DRIZZLE-TOOLCHAIN-SECURITY-CONTRACT.md#temporary-owner-acceptance). | Esteban — risk owner; Codex — track/retest upstream and reopen remediation. | Review as a maintenance chore before the next schema-generation/toolchain change, and sooner if Drizzle Kit releases a supported loader replacement or the advisory/exposure materially changes. Keep controls in the contract; no forced downgrade/global override. |
 
-No new feature cut should start until the owner actions above are either closed
-or explicitly recorded as deferred with a chosen risk, owner, and re-entry
-condition. Production legacy remains outside the deployment, data, and webhook
-scope.
+ACT-03's runtime/CI/branch-protection barrier is complete. The only remaining
+ACT-03 item is the explicitly accepted Drizzle tooling risk, retained as an
+owned maintenance chore with a re-entry condition; it does not block this beta
+functional cut. Production legacy remains outside deployment, data, and
+webhook scope.
 
 ### Latest beta canary reconciliation — 28/09/2026
 
@@ -312,13 +321,15 @@ response. The test group has one member with Telegram linked, so no secondary
 recipient delivery can be proven yet. These checks were read-only; no beta data
 was changed.
 
-No open item in the authoritative register is unowned. The remaining owners
-and re-entry conditions are: Codex + Esteban for voice-financial and OCR-no
-canaries; Esteban to add/link a second beta member and Codex to verify group
-delivery; Esteban to decide worker/scheduler SLO and Codex to implement only
-after that choice; Esteban to choose whether to defer or authorize the bounded
-metadata-only isolation comparison, with Codex performing only authorized
-read-only checks; and Esteban (repo admin) to authorize the `main` branch rules,
-with Codex configuring them only after explicit settings authorization. The
-Drizzle tooling findings remain owned by Esteban for risk/upstream choice and
-Codex for re-test if a compatible upstream/toolchain becomes available.
+No open item in the authoritative register is unowned. Next: Esteban sends the
+beta query and ambiguous-category canaries; Codex reconciles them. Esteban owns
+the choice to defer group-recipient testing (or add/link a second beta member),
+the worker recovery SLO/scheduler choice, and whether to defer or authorize a
+bounded metadata-only isolation comparison; Codex performs only the agreed
+beta or read-only checks. The ruleset for `main` is already configured and
+verified. Esteban owns the accepted Drizzle risk; Codex re-tests if supported
+upstream remediation or material advisory/exposure changes appear. The latest
+beta deployment retains three daily/monthly schedules; the outbox worker cron
+remains local-only due Hobby's per-minute limit. Codex owns proposing a
+lower-cost retry scheduler or event-triggered retry design; Esteban owns the
+recovery SLO decision. No item is unowned.
