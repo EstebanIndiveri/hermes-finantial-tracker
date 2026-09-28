@@ -13,6 +13,7 @@ import { sendTelegramMessage, buildPersonalKeyboard } from "./send-message";
 import { setConversationState, clearConversationState } from "./splits/conversation-state";
 import { getReimbursementsByUser, getOpenGroupReimbursements, type ReimbursementRequest } from "@/lib/reimbursements/requests";
 import { getGroupMembership, isAdminOrAbove } from "@/lib/groups/permissions";
+import { isIncomeCategory } from "@/lib/finance/income";
 import {
   getUserRecurringExpenses,
   createRecurringExpense,
@@ -31,11 +32,11 @@ import {
   parseExpenseFallback,
   detectSimpleQueryIntent,
   detectRecurringIntent,
-  hasReimbursementIntent,
-  hasExplicitExpenseIntent,
+  hasExplicitFinancialTransactionIntent,
 } from "./expense-fallback";
 import type { TelegramOperationContext } from "./operation-context";
 import { buildExpenseProposalKeyboard } from "./expense-proposal";
+import { createFinancialDraft, type FinancialDraftSource, type FinancialQueryIntent } from "./financial-draft";
 
 export interface PersonalBotMessage {
   text: string;
@@ -267,11 +268,12 @@ function buildExpenseConfirmationMessage(
   amount_ars: number,
   categoryName: string,
   categoryEmoji: string,
-  merchant?: string
+  merchant?: string,
+  isIncome = false,
 ): PersonalBotMessage {
   const formatted = amount_ars.toLocaleString("es-AR", { minimumFractionDigits: 0 });
   const lines = [
-    `💳 <b>¿Registramos este gasto?</b>`,
+    `💳 <b>¿Registramos este ${isIncome ? "ingreso" : "gasto"}?</b>`,
     ``,
     `💰 <b>Monto:</b> $${formatted} ARS`,
     `📂 <b>Categoría:</b> ${categoryEmoji} ${categoryName}`,
@@ -282,7 +284,7 @@ function buildExpenseConfirmationMessage(
 
   return {
     text: lines.join("\n"),
-    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "expense:cancel" }),
+    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "expense:cancel", isIncome }),
   };
 }
 
@@ -290,11 +292,12 @@ function buildExpenseEditedMessage(data: {
   amount_ars: number;
   category_name: string;
   category_emoji: string;
+  is_income?: boolean;
   merchant?: string;
 }): PersonalBotMessage {
   const formatted = data.amount_ars.toLocaleString("es-AR", { minimumFractionDigits: 0 });
   const lines = [
-    `💳 <b>¿Registramos este gasto?</b> (✏️ editado)`,
+    `💳 <b>¿Registramos este ${data.is_income ? "ingreso" : "gasto"}?</b> (✏️ editado)`,
     ``,
     `💰 <b>Monto:</b> $${formatted} ARS`,
     `📂 <b>Categoría:</b> ${data.category_emoji} ${data.category_name}`,
@@ -305,7 +308,7 @@ function buildExpenseEditedMessage(data: {
 
   return {
     text: lines.join("\n"),
-    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "expense:cancel" }),
+    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "expense:cancel", isIncome: data.is_income }),
   };
 }
 
@@ -485,7 +488,7 @@ async function buildExpenseOrExceptionMessage(
   userId: string,
   groupId: string,
   month: string,
-  cat: { id: string; name: string; emoji: string | null },
+  cat: { id: string; name: string; emoji: string | null; slug?: string },
   amount_ars: number,
   merchant: string | undefined,
   requires_reimbursement?: boolean
@@ -584,7 +587,7 @@ async function buildExpenseOrExceptionMessage(
     return { text: "❌ Error al guardar. Intentá nuevamente." };
   }
 
-  return buildExpenseConfirmationMessage(amount_ars, cat.name, cat.emoji ?? "📦", merchant);
+  return buildExpenseConfirmationMessage(amount_ars, cat.name, cat.emoji ?? "📦", merchant, isIncomeCategory(cat.slug));
 }
 
 interface TelegramUpdate {
@@ -606,6 +609,7 @@ export async function handleTelegramMessage(
   userId: string,
   groupId: string,
   operationContext?: TelegramOperationContext,
+  source: FinancialDraftSource = "text",
 ): Promise<PersonalBotMessage> {
   const msg = update.message;
   if (!msg) return { text: "Mensaje no reconocido." };
@@ -615,7 +619,7 @@ export async function handleTelegramMessage(
   const month = getActiveMonthArgentina();
 
   if (text === "/start") {
-    return { text: "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/puedo monto [categoria]\n/resumen\n/disponible [categoria]\n/ultimo\n/borrar_ultimo\n/grupos — ver todos tus grupos\n/grupo [nombre] — ver o cambiar tu grupo activo\n\nTambién podés escribirme en lenguaje natural: \"¿Cuánto me queda en salidas pareja?\"" };
+    return { text: "👋 Hola! Soy Hermes Finance.\n\nComandos:\n/gasto monto categoria descripcion\n/ingreso monto descripcion\n/puedo monto [categoria]\n/resumen\n/disponible [categoria]\n/ultimo\n/borrar_ultimo\n/grupos — ver todos tus grupos\n/grupo [nombre] — ver o cambiar tu grupo activo\n\nTambién podés escribirme en lenguaje natural: \"¿Cuánto me queda en salidas pareja?\"" };
   }
 
   if (text === "/resumen") {
@@ -808,6 +812,7 @@ export async function handleTelegramMessage(
         : [];
       return buildReceiptProposalMessage({
         amount_ars: newAmount,
+        categorySlug: catRows[0]?.slug ?? r.parsed_category_slug ?? undefined,
         categoryName: catRows[0]?.name ?? r.parsed_category_slug ?? "sin categoría",
         categoryEmoji: catRows[0]?.emoji ?? "📦",
         merchant: r.parsed_merchant ?? undefined,
@@ -840,6 +845,7 @@ export async function handleTelegramMessage(
       if (!r?.parsed_amount_ars) return { text: "❌ Ticket no encontrado." };
       return buildReceiptProposalMessage({
         amount_ars: r.parsed_amount_ars,
+        categorySlug: cat.slug,
         categoryName: cat.name,
         categoryEmoji: cat.emoji ?? "📦",
         merchant: r.parsed_merchant ?? undefined,
@@ -871,6 +877,7 @@ export async function handleTelegramMessage(
         : [];
       return buildReceiptProposalMessage({
         amount_ars: r.parsed_amount_ars,
+        categorySlug: catDispRows[0]?.slug ?? r.parsed_category_slug ?? undefined,
         categoryName: catDispRows[0]?.name ?? r.parsed_category_slug ?? "sin categoría",
         categoryEmoji: catDispRows[0]?.emoji ?? "📦",
         merchant: newMerchant,
@@ -899,7 +906,8 @@ export async function handleTelegramMessage(
       }
 
       const { setConversationState } = await import("./splits/conversation-state");
-      const updatedData = { ...ed, amount_ars: newAmount };
+      const category = await db.query.categories.findFirst({ where: eq(categories.id, ed.category_id) });
+      const updatedData = { ...ed, amount_ars: newAmount, is_income: isIncomeCategory(category?.slug) };
       await setConversationState(chatId, String(msg.from.id), {
         step: "expense_confirm",
         data: { ...updatedData, step: "expense_confirm" },
@@ -923,7 +931,8 @@ export async function handleTelegramMessage(
       
       const newMerchant = text.trim().slice(0, 100);
       const { setConversationState } = await import("./splits/conversation-state");
-      const updatedData = { ...ed, merchant: newMerchant };
+      const category = await db.query.categories.findFirst({ where: eq(categories.id, ed.category_id) });
+      const updatedData = { ...ed, merchant: newMerchant, is_income: isIncomeCategory(category?.slug) };
       await setConversationState(chatId, String(msg.from.id), {
         step: "expense_confirm",
         data: { ...updatedData, step: "expense_confirm" },
@@ -1074,6 +1083,7 @@ export async function handleTelegramMessage(
         if (cat) {
           return buildReceiptProposalMessage({
             amount_ars: amount,
+            categorySlug: cat.slug,
             categoryName: cat.name,
             categoryEmoji: cat.emoji,
             merchant: rd.merchant ?? undefined,
@@ -1186,15 +1196,18 @@ export async function handleTelegramMessage(
     }
   }
 
-  if (text.startsWith("/gasto")) {
+  if (text.startsWith("/gasto") || text.startsWith("/ingreso")) {
+    const isIncomeCommand = text.startsWith("/ingreso");
     const parts = text.split(" ").filter(p => p.length > 0);
-    if (parts.length < 3) {
-      return { text: "Uso: /gasto monto categoria descripcion\nEjemplo: /gasto 47000 supermercado Cordiez" };
+    if (parts.length < (isIncomeCommand ? 2 : 3)) {
+      return { text: isIncomeCommand
+        ? "Uso: /ingreso monto descripcion\nEjemplo: /ingreso 300000 sueldo"
+        : "Uso: /gasto monto categoria descripcion\nEjemplo: /gasto 47000 supermercado Cordiez" };
     }
 
     // Flexible parsing: detect amount and category regardless of order
     let amount_ars: number | null = null;
-    let slugCandidate: string | null = null;
+    let slugCandidate: string | null = isIncomeCommand ? "ingresos" : null;
     const merchantParts: string[] = [];
     
     for (let i = 1; i < parts.length; i++) {
@@ -1205,6 +1218,8 @@ export async function handleTelegramMessage(
       
       if (!isNaN(num) && num > 0 && amount_ars === null) {
         amount_ars = num;
+      } else if (isIncomeCommand) {
+        merchantParts.push(part);
       } else if (slugCandidate === null) {
         // Normalize: remove accents and convert to lowercase
         slugCandidate = part.toLowerCase()
@@ -1216,14 +1231,27 @@ export async function handleTelegramMessage(
     }
 
     if (amount_ars === null || amount_ars <= 0) {
-      return { text: "Monto inválido. Usá un número positivo, ej: /gasto 47000 supermercado" };
+      return { text: isIncomeCommand
+        ? "Monto inválido. Usá un número positivo, ej: /ingreso 300000 sueldo"
+        : "Monto inválido. Usá un número positivo, ej: /gasto 47000 supermercado" };
     }
     
     if (!slugCandidate) {
       return { text: "Falta la categoría. Ej: /gasto 47000 supermercado" };
     }
 
-    const slug = slugCandidate;
+    const draftResult = createFinancialDraft({
+      source,
+      intent: "transaction",
+      amountArs: amount_ars,
+      categorySlug: slugCandidate,
+      text,
+    });
+    if (draftResult.status !== "ready" || draftResult.draft.kind === "query") {
+      return { text: "No pude validar el gasto. Revisá el monto y la categoría e intentá de nuevo." };
+    }
+    amount_ars = draftResult.draft.amountArs ?? amount_ars;
+    const slug = draftResult.draft.categorySlug ?? slugCandidate;
     const merchant = merchantParts.join(" ") || undefined;
 
     // Try exact match first, then fuzzy match
@@ -1380,7 +1408,7 @@ export async function handleTelegramMessage(
       const parsed = await parseFinancialMessage(caption);
 
       if (
-        (parsed.intent === "register_expense" || parsed.intent === "simulate_expense") &&
+        parsed.intent === "register_expense" &&
         parsed.amount_ars && parsed.amount_ars > 0 &&
         parsed.confidence >= 0.4
       ) {
@@ -1411,6 +1439,7 @@ export async function handleTelegramMessage(
         // State already persisted in receipt_imports (status=pending) — no in-memory set needed
         return buildReceiptProposalMessage({
           amount_ars: parsed.amount_ars,
+          categorySlug: cat.slug,
           categoryName: cat.name, categoryEmoji: cat.emoji,
           merchant: parsed.merchant ?? undefined,
           date: getArgentinaDate().toISOString().slice(0, 10),
@@ -1510,6 +1539,7 @@ export async function handleTelegramMessage(
     // State already persisted in receipt_imports (status=pending)
     return buildReceiptProposalMessage({
       amount_ars,
+      categorySlug: cat.slug,
       categoryName: cat.name, categoryEmoji: cat.emoji,
       merchant: merchant ?? undefined,
       date: parsedDate,
@@ -1598,7 +1628,7 @@ export async function handleTelegramMessage(
     // unavailable. Keep this path conservative: only an explicit expense verb
     // plus both a recognizable amount and category can create a write intent.
     const fallback = parseExpenseFallback(text);
-    if (hasExplicitExpenseIntent(text) && fallback.amount !== null && fallback.categorySlug) {
+    if (hasExplicitFinancialTransactionIntent(text) && fallback.amount !== null && fallback.categorySlug) {
       parsed = {
         intent: "register_expense" as const,
         amount_ars: fallback.amount,
@@ -1613,10 +1643,50 @@ export async function handleTelegramMessage(
     }
   }
 
-  // Guard: never trigger a reimbursement unless the user explicitly asked for it.
-  // The AI occasionally hallucinates requires_reimbursement on plain expenses.
-  if (parsed.requires_reimbursement && !hasReimbursementIntent(text)) {
-    parsed.requires_reimbursement = false;
+  // Convert provider output into the shared domain contract. Model-produced
+  // reimbursement booleans are deliberately ignored; only user language can
+  // express intent, and the callback still requires an explicit choice.
+  if (parsed.intent === "register_expense") {
+    const draftResult = createFinancialDraft({
+      source,
+      intent: "transaction",
+      amountArs: parsed.amount_ars,
+      categorySlug: parsed.category,
+      description: parsed.merchant ?? parsed.description,
+      text,
+      modelRequiresReimbursement: parsed.requires_reimbursement,
+    });
+    if (draftResult.status === "clarification" && draftResult.reason === "amount") {
+      return { text: "No pude validar el monto. Escribilo nuevamente antes de registrar el movimiento." };
+    }
+    parsed.amount_ars = draftResult.draft.amountArs ?? null;
+    parsed.category = draftResult.draft.categorySlug;
+    parsed.requires_reimbursement = draftResult.draft.reimbursement === "yes";
+    parsed.merchant = draftResult.draft.description;
+  }
+
+  const queryIntentByParsedIntent: Partial<Record<string, FinancialQueryIntent>> = {
+    query_summary: "query_summary",
+    query_available: "query_available",
+    query_reimbursements: "query_reimbursements",
+    simulate_expense: "simulate_expense",
+  };
+  const normalizedQueryIntent = queryIntentByParsedIntent[parsed.intent];
+  if (normalizedQueryIntent) {
+    const queryDraftResult = createFinancialDraft({
+      source,
+      intent: "query",
+      amountArs: parsed.amount_ars,
+      categorySlug: parsed.category,
+      description: parsed.merchant ?? parsed.description,
+      queryIntent: normalizedQueryIntent,
+      text,
+    });
+    if (queryDraftResult.status === "ready") {
+      parsed.amount_ars = queryDraftResult.draft.amountArs ?? undefined;
+      parsed.category = queryDraftResult.draft.categorySlug;
+      parsed.merchant = queryDraftResult.draft.description;
+    }
   }
 
   // ── Deterministic fallback when the AI parser fails or is unsure ──
@@ -1639,10 +1709,17 @@ export async function handleTelegramMessage(
     } else {
       // 2) Deterministic expense parse (amount + category from the whole message)
       const fb = parseExpenseFallback(text);
+      const fallbackDraft = createFinancialDraft({
+        source,
+        intent: hasExplicitFinancialTransactionIntent(text) ? "transaction" : "unknown",
+        amountArs: fb.amount,
+        categorySlug: fb.categorySlug,
+        text,
+      });
 
-      if (fb.amount !== null && fb.categorySlug) {
+      if (fallbackDraft.status === "ready" && fallbackDraft.draft.kind !== "query") {
         // Both present → register directly (mirrors the AI register_expense path)
-        const cat = await resolveCategoryBySlug(groupId, fb.categorySlug);
+        const cat = await resolveCategoryBySlug(groupId, fallbackDraft.draft.categorySlug!);
         if (cat) {
           return buildExpenseOrExceptionMessage(
             chatId,
@@ -1651,29 +1728,29 @@ export async function handleTelegramMessage(
             groupId,
             month,
             cat,
-            fb.amount,
+            fallbackDraft.draft.amountArs!,
             undefined,
-            fb.requiresReimbursement,
+            fallbackDraft.draft.reimbursement === "yes",
           );
         }
       }
 
-      if (fb.amount !== null && !fb.categorySlug) {
+      if (fallbackDraft.status === "incomplete" && fallbackDraft.draft.amountArs !== null && !fallbackDraft.draft.categorySlug) {
         // Amount only → ask for category with buttons
         return await buildExpenseCategoryKeyboard(
           groupId,
-          fb.amount,
+          fallbackDraft.draft.amountArs,
           null,
           chatId,
           String(msg.from.id),
           userId,
-          fb.requiresReimbursement,
+          fallbackDraft.draft.reimbursement === "yes",
         );
       }
 
-      if (fb.amount === null && fb.categorySlug) {
+      if (fallbackDraft.status === "incomplete" && fallbackDraft.draft.amountArs === null && fallbackDraft.draft.categorySlug) {
         // Category only → conversational flow (ask amount)
-        const cat = await resolveCategoryBySlug(groupId, fb.categorySlug);
+        const cat = await resolveCategoryBySlug(groupId, fallbackDraft.draft.categorySlug);
         if (cat) {
           const { setConversationState, getConversationState, clearConversationState } = await import("./splits/conversation-state");
 
@@ -1697,7 +1774,7 @@ export async function handleTelegramMessage(
               merchant: undefined,
               group_id: groupId,
               user_id: userId,
-              requires_reimbursement: fb.requiresReimbursement,
+              requires_reimbursement: fallbackDraft.draft.reimbursement === "yes",
             },
           });
 
@@ -2373,6 +2450,7 @@ async function registerTransaction(
 /** Formats the receipt proposal message shown to the user */
 export function buildReceiptProposalMessage({
   amount_ars,
+  categorySlug,
   categoryName,
   categoryEmoji,
   merchant,
@@ -2380,12 +2458,25 @@ export function buildReceiptProposalMessage({
   source,
 }: {
   amount_ars: number;
+  categorySlug?: string;
   categoryName: string;
   categoryEmoji: string;
   merchant?: string;
   date: string;
   source: "ocr" | "caption" | "edit";
 }): PersonalBotMessage {
+  const draftResult = createFinancialDraft({
+    source: "receipt",
+    intent: "transaction",
+    amountArs: amount_ars,
+    categorySlug: categorySlug ?? categoryName,
+    description: merchant,
+  });
+  if (draftResult.status !== "ready" || draftResult.draft.kind === "query") {
+    return { text: "❌ No pude validar los datos del ticket. Revisá el monto y la categoría antes de volver a intentarlo." };
+  }
+  amount_ars = draftResult.draft.amountArs!;
+
   const sourceLabel = source === "caption" ? "📝 caption" : source === "edit" ? "✏️ editado" : "🔍 OCR";
   const text = [
     `🧾 <b>Ticket detectado</b> (${sourceLabel})`,

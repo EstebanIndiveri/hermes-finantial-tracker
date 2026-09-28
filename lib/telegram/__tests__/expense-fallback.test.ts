@@ -6,7 +6,7 @@ import {
   detectSimpleQueryIntent,
   detectRecurringIntent,
   parseExpenseFallback,
-  hasExplicitExpenseIntent,
+  hasExplicitFinancialTransactionIntent,
 } from "../expense-fallback";
 
 describe("parseAmountToken", () => {
@@ -114,6 +114,8 @@ describe("detectCategorySlug", () => {
   it("detects the income category", () => {
     expect(detectCategorySlug("ingreso 492900 alquiler caseros")).toBe("ingresos");
     expect(detectCategorySlug("cobre 300000 de sueldo")).toBe("ingresos");
+    expect(detectCategorySlug("me depositaron 120000 de honorarios")).toBe("ingresos");
+    expect(hasExplicitFinancialTransactionIntent("cobre 300000 de sueldo")).toBe(true);
   });
 });
 
@@ -156,11 +158,11 @@ describe("parseExpenseFallback (integration of the failing screenshots)", () => 
       categorySlug: "supermercado",
       requiresReimbursement: false,
     });
-    expect(hasExplicitExpenseIntent("Gasto de supermercado 1379")).toBe(true);
+    expect(hasExplicitFinancialTransactionIntent("Gasto de supermercado 1379")).toBe(true);
   });
 
   it("does not treat a budget question as an explicit expense write", () => {
-    expect(hasExplicitExpenseIntent("¿Cuánto me queda en supermercado? 1379")).toBe(false);
+    expect(hasExplicitFinancialTransactionIntent("¿Cuánto me queda en supermercado? 1379")).toBe(false);
   });
 
   it("fully parses 'Gaste 13568 supermercado'", () => {

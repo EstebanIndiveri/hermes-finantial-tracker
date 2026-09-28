@@ -147,7 +147,7 @@ describe("Telegram webhook authorized personal context", () => {
 
     expect(resolveAuthorizedTelegramGroup).toHaveBeenCalledWith("user-1", "group-removed");
     expect(transcribeVoiceMessage).toHaveBeenCalledWith("voice-1");
-    expect(handleTelegramMessage).toHaveBeenCalledWith(expect.objectContaining({ message: expect.objectContaining({ text: "/resumen" }) }), "user-1", "group-1");
+    expect(handleTelegramMessage).toHaveBeenCalledWith(expect.objectContaining({ message: expect.objectContaining({ text: "/resumen" }) }), "user-1", "group-1", undefined, "voice");
   });
 
   it.each(["group", "supergroup"])("routes %s voice through Split without personal context", async (chatType) => {

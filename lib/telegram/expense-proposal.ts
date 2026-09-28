@@ -6,14 +6,17 @@ import { buildPersonalKeyboard, type InlineKeyboardMarkup } from "./send-message
  * controls whether the request is persisted.
  */
 export function buildExpenseProposalKeyboard(
-  options: { editPrefix: "expense" | "receipt"; cancelCallback: string },
+  options: { editPrefix: "expense" | "receipt"; cancelCallback: string; isIncome?: boolean },
 ): InlineKeyboardMarkup {
   const confirmPrefix = options.editPrefix === "receipt" ? "receipt" : "expense";
+  const confirmationRow = options.isIncome
+    ? [{ text: "✅ Registrar ingreso", callback_data: `${confirmPrefix}:confirm` }]
+    : [
+        { text: "💸 Gasto + reintegro", callback_data: `${confirmPrefix}:confirm_reimbursement` },
+        { text: "✅ Solo gasto", callback_data: `${confirmPrefix}:confirm` },
+      ];
   return buildPersonalKeyboard([
-    [
-      { text: "💸 Gasto + reintegro", callback_data: `${confirmPrefix}:confirm_reimbursement` },
-      { text: "✅ Solo gasto", callback_data: `${confirmPrefix}:confirm` },
-    ],
+    confirmationRow,
     options.editPrefix === "receipt"
       ? [
           { text: "💰 Editar monto", callback_data: "receipt:edit_amount" },

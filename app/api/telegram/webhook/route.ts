@@ -392,8 +392,8 @@ async function processTelegramUpdate(
         "personal.voice",
       );
       const botResponse = voiceOperationContext
-        ? await handleTelegramMessage(fakeUpdate, user.id, groupId, voiceOperationContext)
-        : await handleTelegramMessage(fakeUpdate, user.id, groupId);
+        ? await handleTelegramMessage(fakeUpdate, user.id, groupId, voiceOperationContext, "voice")
+        : await handleTelegramMessage(fakeUpdate, user.id, groupId, undefined, "voice");
       const voiceResponse = {
         ...botResponse,
         text: `🎤 "${transcription}"\n\n${botResponse.text}`,

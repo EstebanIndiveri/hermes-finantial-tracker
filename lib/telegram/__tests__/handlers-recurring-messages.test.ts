@@ -3,6 +3,7 @@ jest.mock("@/lib/db/client", () => ({
     query: {
       categories: { findFirst: jest.fn() },
       budgets: { findFirst: jest.fn() },
+      monthly_settings: { findFirst: jest.fn() },
     },
     select: jest.fn(),
     transaction: jest.fn(),
@@ -142,6 +143,7 @@ describe("telegram recurring messages", () => {
       slug: "supermercado",
     });
     (mockDb.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ exchange_rate: 1000 });
   });
 
   afterAll(() => {
@@ -220,6 +222,82 @@ describe("telegram recurring messages", () => {
 
     expect(response.text).toBe("Este grupo todavía no tiene categorías configuradas. Creá una desde la web y volvé a intentar.");
     expect(response.text).not.toContain("Categorías: supermercado");
+  });
+
+  it("routes /gasto through the shared draft and still waits for the user's choice", async () => {
+    const response = await handleTelegramMessage({
+      update_id: 989,
+      message: { text: "/gasto 23971 supermercado Carrefour", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+
+    expect(response.text).toContain("¿Registramos este gasto?");
+    expect(response.replyMarkup?.inline_keyboard?.[0]).toEqual([
+      { text: "💸 Gasto + reintegro", callback_data: "expense:confirm_reimbursement" },
+      { text: "✅ Solo gasto", callback_data: "expense:confirm" },
+    ]);
+    expect(setConversationState).toHaveBeenCalledWith("10", "20", expect.objectContaining({
+      step: "expense_confirm",
+      data: expect.objectContaining({ amount_ars: 23971, merchant: "Carrefour", requires_reimbursement: false }),
+    }));
+  });
+
+  it("uses an income-specific confirmation without offering reimbursement", async () => {
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({
+      id: "category-income", name: "Ingresos", emoji: "💰", slug: "ingresos",
+    });
+
+    const response = await handleTelegramMessage({
+      update_id: 991,
+      message: { text: "/ingreso 300000 sueldo", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+
+    expect(response.text).toContain("¿Registramos este ingreso?");
+    expect(response.replyMarkup?.inline_keyboard?.[0]).toEqual([
+      { text: "✅ Registrar ingreso", callback_data: "expense:confirm" },
+    ]);
+    expect(response.replyMarkup?.inline_keyboard?.flat().some((button) => button.callback_data === "expense:confirm_reimbursement")).toBe(false);
+  });
+
+  it("recognizes an unambiguous income in text without requiring Groq", async () => {
+    delete process.env.GROQ_API_KEY;
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({
+      id: "category-income", name: "Ingresos", emoji: "💰", slug: "ingresos",
+    });
+
+    const response = await handleTelegramMessage({
+      update_id: 992,
+      message: { text: "Cobré 300000 de sueldo", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+
+    expect(response.text).toContain("¿Registramos este ingreso?");
+    expect(response.replyMarkup?.inline_keyboard?.[0]).toEqual([
+      { text: "✅ Registrar ingreso", callback_data: "expense:confirm" },
+    ]);
+    expect(mockParseFinancialMessage).not.toHaveBeenCalled();
+  });
+
+  it("normalizes model intent but never persists an inferred reimbursement choice", async () => {
+    mockParseFinancialMessage.mockResolvedValue({
+      intent: "register_expense",
+      amount_ars: 5000,
+      category: "supermercado",
+      merchant: null,
+      description: null,
+      needs_confirmation: true,
+      requires_reimbursement: true,
+      confidence: 0.95,
+    });
+
+    const response = await handleTelegramMessage({
+      update_id: 990,
+      message: { text: "Gasté 5000 en supermercado", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+
+    expect(response.replyMarkup?.inline_keyboard?.[0]).toHaveLength(2);
+    expect(setConversationState).toHaveBeenCalledWith("10", "20", expect.objectContaining({
+      step: "expense_confirm",
+      data: expect.objectContaining({ requires_reimbursement: false }),
+    }));
   });
 
   it("shows active and paused recurring expenses with status badges and payment day", async () => {

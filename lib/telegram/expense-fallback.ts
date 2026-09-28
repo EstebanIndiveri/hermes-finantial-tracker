@@ -29,7 +29,7 @@ export const CATEGORY_KEYWORDS: Record<string, string[]> = {
   viaje: ["viaje", "viajes", "vacaciones", "pasaje", "pasajes"],
   compras_personales: ["compras", "personal", "personales", "ropa", "farmacia", "remedios", "medicamentos", "perfumería", "perfumeria"],
   imprevistos: ["imprevisto", "imprevistos", "emergencia", "urgencia"],
-  ingresos: ["ingreso", "ingresos", "cobre", "cobro", "sueldo", "salario", "honorarios", "aguinaldo"],
+  ingresos: ["ingreso", "ingresos", "cobre", "cobro", "recibi", "recibir", "depositaron", "pagaron", "sueldo", "salario", "honorarios", "aguinaldo"],
 };
 
 /** Spanish number words 0-29 and tens, used for "quince mil" style amounts. */
@@ -208,9 +208,9 @@ export function hasReimbursementIntent(text: string): boolean {
  * just because they mention a category, while "Gasto de supermercado 1379"
  * is sufficiently explicit to use the deterministic parser.
  */
-export function hasExplicitExpenseIntent(text: string): boolean {
+export function hasExplicitFinancialTransactionIntent(text: string): boolean {
   const normalized = normalize(text);
-  return /\b(gasto|gaste|gastar|gastamos|compre|compramos|pague|pagamos|registrar|registra|anotar|cargar)\b/.test(normalized);
+  return /\b(gasto|gaste|gastar|gastamos|compre|compramos|pague|pagamos|registrar|registra|anotar|cargar|ingreso|ingresos|cobre|cobrar|cobro|recibi|recibir|depositaron|pagaron|sueldo|salario|honorarios|aguinaldo)\b/.test(normalized);
 }
 
 export type SimpleQueryIntent = "query_available" | "query_summary" | "query_reimbursements";

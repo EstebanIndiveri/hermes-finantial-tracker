@@ -213,6 +213,42 @@ H04d-BETA-FINANCIAL-E2E and ACT-11/13/14 remain open under Codex until these
 gates pass. H04d worker/scheduler and formal isolation certification are
 separate owned items; neither blocks the next local implementation cut.
 
+### ACT-11 / ACT-13 / ACT-14 — corte local de contrato compartido (28/09/2026)
+
+**Foundation implemented locally; beta acceptance remains open.** Added the
+provider-independent `FinancialDraft` boundary in
+[`lib/telegram/financial-draft.ts`](../../lib/telegram/financial-draft.ts).
+The `/gasto` and new `/ingreso` commands, Groq/deterministic text path (also
+used after voice transcription), and personal receipt proposal now normalize
+through the shared draft contract. It preserves source (`command`, `text`,
+`voice`, `receipt`), explicit transaction kind (`expense`/`income`), validated
+positive amount, normalized category, and reimbursement language as
+`yes`/`no`/`unknown`. Groq's reimbursement boolean is not authoritative;
+financial writes still wait for a separate Telegram callback. Income proposals
+show a single “Registrar ingreso” action and never offer reimbursement. Clear
+income phrases also work through deterministic parsing when Groq is
+unavailable. Photo captions classified as `simulate_expense` no longer become
+receipt writes.
+
+Local evidence on the work branch: targeted Telegram/webhook tests passed;
+full harness 53/53, Jest 89 suites / 759 tests, typecheck, lint (0 errors,
+67 existing warnings), and Webpack build passed. This proves local behavior,
+not provider delivery or beta financial reconciliation. No secrets, database,
+webhook, flags, legacy resources, or deploy were changed by the local cut.
+
+| Owner | State | Remaining work / re-entry |
+| --- | --- | --- |
+| Codex | Shared draft foundation implemented; local gates green. | Deploy only to the linked isolated beta project after revalidating project identity and beta environment names. Then keep/enable outbox only in beta (worker stays off) for a consent canary. Reconcile one transaction, optional reimbursement request, and durable group delivery per callback. If CLI cannot prove exact beta project or build isolation, stop without touching provider state. |
+| Esteban Indiveri | Beta test operator. | After Codex reports the beta deployment URL/SHA and test protocol, test `/gasto`, `/ingreso`, natural text, voice, and one ticket; for expense, try reintegro yes, no, and no-mentioned/unknown. Confirm/cancel and report the Telegram replies. |
+
+**Closure gate:** beta matrix passes across command/text/voice/receipt and
+expense/income/query; ambiguity writes nothing; explicit income never offers
+or persists a reimbursement; callback replay creates at most one transaction
+and request; provider errors are recoverable; outbox is reconciled; and the
+beta DB/webhook identities still match the isolated manifest. Until then,
+ACT-11/13/14 and H04d-BETA-FINANCIAL-E2E stay open. Keep the beta worker and
+cron disabled. This is not authorization to promote to `main` or production.
+
 ### ACT-03 — quality barrier (still open; plan priority 1)
 
 | Gate | State / evidence | Owner | Remaining work and exact re-entry condition |
