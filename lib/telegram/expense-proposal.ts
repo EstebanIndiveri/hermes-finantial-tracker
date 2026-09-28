@@ -1,4 +1,5 @@
 import { buildPersonalKeyboard, type InlineKeyboardMarkup } from "./send-message";
+import type { ReimbursementIntent } from "./financial-draft";
 
 /**
  * All personal expense sources must ask for reimbursement consent before a
@@ -6,11 +7,23 @@ import { buildPersonalKeyboard, type InlineKeyboardMarkup } from "./send-message
  * controls whether the request is persisted.
  */
 export function buildExpenseProposalKeyboard(
-  options: { editPrefix: "expense" | "receipt"; cancelCallback: string; isIncome?: boolean },
+  options: {
+    editPrefix: "expense" | "receipt";
+    cancelCallback: string;
+    isIncome?: boolean;
+    reimbursementIntent?: ReimbursementIntent;
+  },
 ): InlineKeyboardMarkup {
   const confirmPrefix = options.editPrefix === "receipt" ? "receipt" : "expense";
   const confirmationRow = options.isIncome
     ? [{ text: "✅ Registrar ingreso", callback_data: `${confirmPrefix}:confirm` }]
+    : options.reimbursementIntent === "no"
+      ? [{ text: "✅ Confirmar sin reintegro", callback_data: `${confirmPrefix}:confirm` }]
+      : options.reimbursementIntent === "yes"
+        ? [
+            { text: "✅ Confirmar + reintegro", callback_data: `${confirmPrefix}:confirm_reimbursement` },
+            { text: "✅ Confirmar solo gasto", callback_data: `${confirmPrefix}:confirm` },
+          ]
     : [
         { text: "💸 Gasto + reintegro", callback_data: `${confirmPrefix}:confirm_reimbursement` },
         { text: "✅ Solo gasto", callback_data: `${confirmPrefix}:confirm` },

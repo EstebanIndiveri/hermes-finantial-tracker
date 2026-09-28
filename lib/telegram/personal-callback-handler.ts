@@ -47,6 +47,7 @@ import {
 import { runTelegramOperation, type TelegramOperationTransaction } from "./financial-operation";
 import { buildTelegramDeliveryRow } from "./outbox";
 import { buildExpenseProposalKeyboard } from "./expense-proposal";
+import type { ReimbursementIntent } from "./financial-draft";
 import { createTelegramDeliveryKey } from "./operation-context";
 import { buildReimbursementRequestNotification } from "@/lib/notifications/telegram";
 import { sendPushToUser } from "@/lib/notifications/web-push";
@@ -72,6 +73,8 @@ interface PendingExpenseState {
   user_id: string;
   is_exception: boolean;
   requires_reimbursement?: boolean;
+  reimbursement_intent?: ReimbursementIntent;
+  is_income?: boolean;
   /** Inbox update that owns an in-flight durable write. */
   processing_update_id?: string;
 }
@@ -105,7 +108,7 @@ function escapeHtml(text: string): string {
 function buildEditedExpenseMessage(state: PendingExpenseState): PersonalCallbackResponse {
   const formatted = state.amount_ars.toLocaleString("es-AR", { minimumFractionDigits: 0 });
   const lines = [
-    `💳 <b>¿Registramos este gasto?</b> (✏️ editado)`,
+    `💳 <b>¿Registramos este ${state.is_income ? "ingreso" : "gasto"}?</b> (✏️ editado)`,
     ``,
     `💰 <b>Monto:</b> $${formatted} ARS`,
     `📂 <b>Categoría:</b> ${state.category_emoji} ${state.category_name}`,
@@ -117,7 +120,12 @@ function buildEditedExpenseMessage(state: PendingExpenseState): PersonalCallback
   return {
     text: lines.join("\n"),
     edit: true,
-    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "expense:cancel" }),
+    replyMarkup: buildExpenseProposalKeyboard({
+      editPrefix: "expense",
+      cancelCallback: "expense:cancel",
+      isIncome: state.is_income,
+      reimbursementIntent: state.reimbursement_intent,
+    }),
   };
 }
 
@@ -929,6 +937,7 @@ export async function handlePersonalCallback(
         user_id: string;
         group_id: string;
         requires_reimbursement: boolean;
+        reimbursement_intent?: ReimbursementIntent;
       }
       const stateData = state?.data as ExpenseSelectCategoryState | undefined;
       if (state && !hasCurrentStateContext(stateData, userId, groupId)) {
@@ -958,6 +967,8 @@ export async function handlePersonalCallback(
         user_id: stateData.user_id,
         is_exception: false,
         requires_reimbursement: stateData.requires_reimbursement,
+        reimbursement_intent: stateData.reimbursement_intent ?? (stateData.requires_reimbursement ? "yes" : "unknown"),
+        is_income: isIncomeCategory(cat.slug),
       };
       await setConversationState(chatId, telegramUserId, {
         step: "expense_confirm",
@@ -983,7 +994,12 @@ export async function handlePersonalCallback(
       }
       return {
         text: `⚠️ Se registrará como excepción.\n\n${buildEditedExpenseMessage(stateData).text}\n\nElegí una opción; todavía no se guardó nada.`,
-        replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "exception:cancel" }),
+        replyMarkup: buildExpenseProposalKeyboard({
+          editPrefix: "expense",
+          cancelCallback: "exception:cancel",
+          isIncome: stateData.is_income,
+          reimbursementIntent: stateData.reimbursement_intent,
+        }),
         edit: true,
       };
     }
@@ -1043,6 +1059,7 @@ export async function handlePersonalCallback(
         merchant,
         date,
         source: "edit",
+        caption: pending.caption ?? undefined,
       });
 
       return { ...proposal, edit: true };

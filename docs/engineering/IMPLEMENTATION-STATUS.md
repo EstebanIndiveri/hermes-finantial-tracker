@@ -157,8 +157,8 @@ provider, and release decision owner.
 | H04d-BETA-QA-ACCOUNT | Complete for account bootstrap, 26/09/2026. The beta DB had zero users/groups/members and public registration requires an invitation; one `esteban_beta_qa` owner/personal group was initialized in beta only. Beta login and `/api/auth/me` returned 200. | Codex | Product follow-up: assign invitation/first-user bootstrap UX before onboarding additional beta users. |
 | H04d-BETA-TELEGRAM-LINK | Complete. Esteban confirmed `esteban_beta_qa` is linked to `Hermes_beta_finantial_bot`; the deployed UI has the beta username in onboarding/account surfaces and not the legacy bot. | Codex | None. Production resources unchanged. |
 | H04d-BETA-INBOX | Complete. The beta webhook points only to the beta URL; replay of the synthetic update created one completed claim (`attempt_count=1`). The user-authored expense also reached the beta financial handler and yielded the reconciled transaction below. | Codex | None for inbox/deduplication. |
-| H04d-BETA-FINANCIAL-E2E | Partial, 27/09/2026. NLP and ordinary OCR canaries passed. Same receipt was uploaded twice intentionally: exactly two confirmed imports and two active transactions, ARS 23,971.15 / `Supermercado`; no extra duplicates. The ARS 5,000 text canary left one active Telegram transaction plus one pending reimbursement request, while `transactions.requires_reimbursement=0`; the request was automatic, without Sí/No. Voice updates 224783883/884 at 21:16 (ART) were old-deployment tests because the beta alias still resolved to `dpl_Ay2zZnDbMFmFEFicH7fAbZzfqLCy`. After alias correction, canary 224783885 exposed `groq_api_key_missing` and retried 13 times. Esteban re-saved `GROQ_API_KEY` in beta; Codex verified required Groq/AI binding names and Production targets via CLI, deployed `dpl_5RGco1Z5rybbAQ5L3NpkrNYL5pGC` (READY, beta public alias), and the existing harmless update completed at attempt 19 with no error. This verifies that the key is available at runtime and the voice request completed; secret values were not read. Duplicate “Procesando audio” notices were fixed in `390d8d9` (44 webhook tests + typecheck) and are included in the active deployment. No legacy project/domain/DB/webhook/secret was accessed or changed. | Codex — owner of ACT-11/13/14 through technical closure; Esteban — beta financial canaries/reconciliation. | Voice infrastructure canary closed by successful retry of the harmless update. Remaining: converge shared draft policy and text/command/voice/receipt matrix with reimbursement yes/no/unknown; activate outbox only in beta when ready for the consent canary, keep worker off. H04d and ACT-11/13/14 remain open until those gates pass. Legacy production untouched. |
-| H04d-BETA-OUTBOX | Not started; `TELEGRAM_OUTBOX_ENABLED=false`. | Codex | Prerequisite for the next reimbursement beta canary: enable outbox only in beta after local gates, verify one immediate reply plus durable group notification, and keep worker off. The webhook delivers due rows inline; this does not require a scheduler decision or cron. This revises the earlier ordering because the consent flow atomically queues group notices. |
+| H04d-BETA-FINANCIAL-E2E | Partial, 28/09/2026. Earlier NLP/OCR canaries passed, but the ARS 5,000 text canary revealed an automatic reimbursement with no Sí/No. Voice infrastructure is separately verified and duplicate progress notices were fixed in `390d8d9`. The shared-draft cut is now deployed as `dpl_4vuddP1pahGHJoc7LnLBgHyiKxym` (READY, beta alias); local gates green, beta outbox on / worker off, `/login` HTTP 200. No Telegram financial canary has yet run against this deployment. | Codex — ACT-11/13/14 engineering and reconciliation; Esteban — beta financial canaries. | Esteban: test `/gasto`, `/ingreso`, natural text, voice and receipt with reimbursement yes/no/unknown, including confirm/cancel and ambiguity. Codex: reconcile transaction/request/outbox after results. Keep worker/cron off; legacy untouched. |
+| H04d-BETA-OUTBOX | Enabled in beta Production on 28/09/2026 (`TELEGRAM_OUTBOX_ENABLED=true`); worker remains `false`. | Codex (configuration); Esteban (canary operator). | After a confirmed expense, verify one inline reply and one durable group delivery, and reconcile transaction/request/delivery. No worker or scheduler is needed for inline dispatch. If it fails, pause further canaries; do not enable worker without a separate scheduler decision. |
 | H04d-BETA-WORKER | Scheduler decision open; `TELEGRAM_OUTBOX_WORKER_ENABLED=false`, and beta deployment has zero cron schedules. | Esteban Indiveri (choose latency/platform); Codex (implement and verify after choice) | The worker drains due durable outbound deliveries and purges up to 100 expired terminal rows; each invocation claims at most 5 deliveries (45-second default budget). Normal response delivery is attempted inline by the webhook when outbox is enabled, so one-minute polling is not required for ordinary replies. Vercel Hobby rejects schedules more frequent than daily. Recommendation: keep disabled during account/link QA; then use an isolated Cloudflare Worker safety poll at `*/5 * * * *` if its Free CPU limit is verified, or Vercel Pro only if sub-5-minute recovery is a product SLA. A daily Hobby sweep is not acceptable for retry liveness. See the [scheduler/FinOps assessment](H04D-WORKER-SCHEDULER-FINOPS.md). |
 | H04d-ISOLATION-CERT | Blocked/deferred; local manifests are consistent, but `isolationVerified=false`. On 26/09/2026 Codex read only the legacy Vercel cron list: three schedules were present and no outbox worker. Legacy DB rows/secrets and Telegram metadata remain intentionally uninspected. | Esteban Indiveri (scope decision); Codex (only the specifically authorized metadata checks) | This cron finding does not certify full isolation. Either explicitly authorize a bounded read-only comparison of remaining legacy project/DB/bot identities (no secret values, rows, writes, webhook, or traffic), or accept the residual and leave the formal certificate open. This does not block the beta inbox-only pilot. |
 
@@ -195,19 +195,22 @@ pass.
 | Codex | Next cut: define and implement the shared `FinancialDraft` application boundary. Keep channel adapters (command, NLP, transcript, OCR) small; centralize normalization, category/type validation, reimbursement state (`yes/no/unknown`), proposal and confirmation, then call one idempotent writer. First migrate one existing path at a time and preserve current behavior behind beta-only deployment. | Contract tests cover gasto/ingreso/query, ambiguous amount/category, reimbursement yes/no/unknown, no-write-before-confirm, cancel/edit, callback replay and provider failure. The same candidate must produce the same validated draft independent of source; failed/ambiguous extraction writes nothing. Then full unit/integration gates. |
 | Esteban | Product decisions and beta QA after local gates | Approve clarifying copy/actions, then verify command/text/voice/receipt paths and reconcile exactly one transaction/request per confirmation. No financial canary until the shared flow and beta outbox prerequisite are ready. |
 
-### Ordered closure after the next local cut
+### Ordered closure sequence (reconciled 28/09/2026)
 
-1. Complete the shared-draft contract and tests locally; do not change flags or
-   route a second bot/webhook.
-2. Integrate adapters one at a time and pass local unit, webhook, database,
-   idempotency and quality gates.
-3. Enable `TELEGRAM_OUTBOX_ENABLED` only in beta (worker remains off), then run
-   the consent canary and reconcile transaction, reimbursement request and
-   durable recipient delivery.
-4. Run the remaining beta matrix: plain expense, income, query, amount/category
-   ambiguity, reimbursement yes/no/unknown, command/text/voice/OCR, duplicate
-   update/callback, and provider errors. Keep the web dashboard and beta DB
-   intact; no promotion to `main` or legacy production.
+1. **Complete locally:** shared draft contract, adapters, targeted tests, full
+   harness/Jest, typecheck, lint and build passed.
+2. **Complete in beta:** deployed only to `hermes-finantial-tracker-z2`; alias
+   and `/login` checked. Outbox is enabled in beta Production; worker remains
+   off. No second bot/webhook and no Git push were used.
+3. **Next, owned by Esteban:** run the remaining beta matrix: `/gasto`,
+   `/ingreso`, plain natural text, query, voice, receipt, amount/category
+   ambiguity, reimbursement yes/no/unknown, confirm/cancel, and duplicate
+   update/callback. Send synthetic messages only; do not test legacy.
+4. **Then, owned by Codex:** reconcile each test against beta inbox,
+   transaction, reimbursement request and outbox; fix any regression locally,
+   rerun gates and redeploy beta only. Close ACT-11/13/14 and
+   H04d-BETA-FINANCIAL-E2E only after that evidence is reconciled. Keep the
+   worker/cron off and do not promote to `main` or legacy production.
 
 H04d-BETA-FINANCIAL-E2E and ACT-11/13/14 remain open under Codex until these
 gates pass. H04d worker/scheduler and formal isolation certification are
@@ -238,8 +241,8 @@ webhook, flags, legacy resources, or deploy were changed by the local cut.
 
 | Owner | State | Remaining work / re-entry |
 | --- | --- | --- |
-| Codex | Shared draft foundation implemented; local gates green. | Deploy only to the linked isolated beta project after revalidating project identity and beta environment names. Then keep/enable outbox only in beta (worker stays off) for a consent canary. Reconcile one transaction, optional reimbursement request, and durable group delivery per callback. If CLI cannot prove exact beta project or build isolation, stop without touching provider state. |
-| Esteban Indiveri | Beta test operator. | After Codex reports the beta deployment URL/SHA and test protocol, test `/gasto`, `/ingreso`, natural text, voice, and one ticket; for expense, try reintegro yes, no, and no-mentioned/unknown. Confirm/cancel and report the Telegram replies. |
+| Codex | Shared draft foundation implemented; local gates green. Beta project identity and required binding names verified. Deployment `dpl_4vuddP1pahGHJoc7LnLBgHyiKxym` is READY on the beta alias at SHA `a2c060d`; `/login` returned HTTP 200. `TELEGRAM_OUTBOX_ENABLED=true` and `TELEGRAM_OUTBOX_WORKER_ENABLED=false` were set only in beta Production. The Hobby-incompatible cron manifest was omitted from this deployment using a temporary local Vercel config; canonical `vercel.json` was not edited, temporary files were removed, and no Git push occurred. | Wait for Esteban's canary results. Reconcile one transaction, optional reimbursement request, and durable group delivery per callback; inspect beta inbox/outbox evidence after user tests. No cron/worker activation is needed for inline delivery. |
+| Esteban Indiveri | Beta test operator; deployment URL/SHA are available below. | Test `/gasto`, `/ingreso`, natural text, voice, and one ticket; for expense, try reintegro yes, no, and not-mentioned/unknown. Include one ambiguity, confirm/cancel and report Telegram replies. |
 
 **Closure gate:** beta matrix passes across command/text/voice/receipt and
 expense/income/query; ambiguity writes nothing; explicit income never offers
@@ -248,6 +251,15 @@ and request; provider errors are recoverable; outbox is reconciled; and the
 beta DB/webhook identities still match the isolated manifest. Until then,
 ACT-11/13/14 and H04d-BETA-FINANCIAL-E2E stay open. Keep the beta worker and
 cron disabled. This is not authorization to promote to `main` or production.
+
+**Beta test handoff (28/09/2026):** the isolated beta alias is
+[`hermes-finantial-tracker-z2.vercel.app`](https://hermes-finantial-tracker-z2.vercel.app).
+Deployment `dpl_4vuddP1pahGHJoc7LnLBgHyiKxym` is Ready and its `/login` route
+responds 200. The beta bot's existing webhook was not changed and no test
+Telegram update was sent by Codex. No legacy DB, bot, webhook, secret value,
+environment configuration, or deployment was changed. The next owner action
+is the canary matrix above, then Codex reconciles the resulting beta records;
+do not mark this cut complete from the web smoke alone.
 
 ### ACT-03 — quality barrier (still open; plan priority 1)
 

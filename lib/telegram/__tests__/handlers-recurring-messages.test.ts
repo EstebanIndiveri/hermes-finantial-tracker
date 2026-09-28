@@ -77,6 +77,7 @@ jest.mock("@/lib/utils/dates", () => ({
 }));
 
 import { handleTelegramMessage } from "../handlers";
+import { buildReceiptProposalMessage } from "../handlers";
 import { handlePersonalCallback } from "../personal-callback-handler";
 import { db } from "@/lib/db/client";
 import { parseFinancialMessage } from "@/lib/ai/parse-message";
@@ -258,6 +259,24 @@ describe("telegram recurring messages", () => {
     expect(response.replyMarkup?.inline_keyboard?.flat().some((button) => button.callback_data === "expense:confirm_reimbursement")).toBe(false);
   });
 
+  it.each([
+    ["Ticket con reintegro", "Reintegro confirmado", "✅ Confirmar + reintegro"],
+    ["Ticket sin reintegro", "No solicitar reintegro", "✅ Confirmar sin reintegro"],
+  ])("uses the common reimbursement consent contract for receipt captions", (caption, _description, expectedButton) => {
+    const proposal = buildReceiptProposalMessage({
+      amount_ars: 5000,
+      categorySlug: "supermercado",
+      categoryName: "Supermercado",
+      categoryEmoji: "🛒",
+      date: "2026-09-28",
+      source: "ocr",
+      caption,
+    });
+
+    expect(proposal.replyMarkup?.inline_keyboard?.[0]?.some((button) => button.text === expectedButton)).toBe(true);
+    expect(proposal.replyMarkup?.inline_keyboard?.[0]?.some((button) => button.callback_data === "receipt:confirm")).toBe(true);
+  });
+
   it("recognizes an unambiguous income in text without requiring Groq", async () => {
     delete process.env.GROQ_API_KEY;
     (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({
@@ -296,8 +315,63 @@ describe("telegram recurring messages", () => {
     expect(response.replyMarkup?.inline_keyboard?.[0]).toHaveLength(2);
     expect(setConversationState).toHaveBeenCalledWith("10", "20", expect.objectContaining({
       step: "expense_confirm",
-      data: expect.objectContaining({ requires_reimbursement: false }),
+      data: expect.objectContaining({ requires_reimbursement: false, reimbursement_intent: "unknown" }),
     }));
+  });
+
+  it.each([
+    {
+      text: "Gasté 5000 en supermercado con reintegro",
+      intent: "yes",
+      requiresReimbursement: true,
+      choices: [
+        { text: "✅ Confirmar + reintegro", callback_data: "expense:confirm_reimbursement" },
+        { text: "✅ Confirmar solo gasto", callback_data: "expense:confirm" },
+      ],
+    },
+    {
+      text: "Gasté 5000 en supermercado sin reintegro",
+      intent: "no",
+      requiresReimbursement: false,
+      choices: [
+        { text: "✅ Confirmar sin reintegro", callback_data: "expense:confirm" },
+      ],
+    },
+    {
+      text: "Gasté 5000 en supermercado",
+      intent: "unknown",
+      requiresReimbursement: false,
+      choices: [
+        { text: "💸 Gasto + reintegro", callback_data: "expense:confirm_reimbursement" },
+        { text: "✅ Solo gasto", callback_data: "expense:confirm" },
+      ],
+    },
+  ])("shows the explicit reimbursement choice for '$text' without writing", async ({ text, intent, requiresReimbursement, choices }) => {
+    mockParseFinancialMessage.mockResolvedValue({
+      intent: "register_expense",
+      amount_ars: 5000,
+      category: "supermercado",
+      merchant: null,
+      description: null,
+      needs_confirmation: true,
+      requires_reimbursement: true,
+      confidence: 0.95,
+    });
+
+    const response = await handleTelegramMessage({
+      update_id: 993,
+      message: { text, chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+
+    expect(response.replyMarkup?.inline_keyboard?.[0]).toEqual(choices);
+    expect(setConversationState).toHaveBeenCalledWith("10", "20", expect.objectContaining({
+      step: "expense_confirm",
+      data: expect.objectContaining({
+        reimbursement_intent: intent,
+        requires_reimbursement: requiresReimbursement,
+      }),
+    }));
+    expect(mockRunTelegramOperation).not.toHaveBeenCalled();
   });
 
   it("shows active and paused recurring expenses with status badges and payment day", async () => {

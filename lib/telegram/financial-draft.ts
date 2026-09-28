@@ -50,13 +50,12 @@ function normalizeCategory(value?: string | null): string | null {
 
 function reimbursementIntent(text: string): ReimbursementIntent {
   const normalized = normalizeText(text);
-  const mentionsReimbursement = /\b(reintegros?|reembolsos?)\b/.test(normalized);
-  if (!mentionsReimbursement) return "unknown";
-
-  if (/\b(?:sin|no\s+(?:quiero|necesito|solicito|pidas?|pedir|hace\s+falta))\s+(?:el\s+)?(?:reintegros?|reembolsos?)\b/.test(normalized)) {
+  const denial = /\b(?:sin(?:\s+(?:pedir|solicitar|gestionar|tramitar))?|no\s+(?:quiero|necesito|solicito|solicites?|pidas?|pedir|solicitar|hace\s+falta|es\s+necesario)(?:\s+que)?)\b.{0,30}\b(?:reintegros?|reembolsos?)\b/;
+  if (denial.test(normalized)) {
     return "no";
   }
-  if (/\b(?:no\s*,?\s*)?(?:quiero|necesito|solicito|pedir|con)\s+(?:el\s+)?(?:reintegros?|reembolsos?)\b/.test(normalized) || mentionsReimbursement) {
+  const affirmative = /\b(?:con|quiero|necesito|solicito|solicitar|pedir|gestionar|tramitar)\b.{0,20}\b(?:reintegros?|reembolsos?)\b/;
+  if (affirmative.test(normalized)) {
     return "yes";
   }
   return "unknown";

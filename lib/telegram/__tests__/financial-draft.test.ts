@@ -94,7 +94,31 @@ describe("createFinancialDraft", () => {
 
     expect(draft("gasté 5000 con reintegro")).toMatchObject({ status: "ready", draft: { reimbursement: "yes" } });
     expect(draft("gasté 5000 sin reintegro", true)).toMatchObject({ status: "ready", draft: { reimbursement: "no" } });
+    expect(draft("gasté 5000, no quiero que solicites reintegro", true)).toMatchObject({ status: "ready", draft: { reimbursement: "no" } });
+    expect(draft("gasté 5000, necesito solicitar reintegro")).toMatchObject({ status: "ready", draft: { reimbursement: "yes" } });
+    expect(draft("gasté 5000, ¿cómo funciona el reintegro?", true)).toMatchObject({ status: "ready", draft: { reimbursement: "unknown" } });
     expect(draft("gasté 5000 en supermercado", true)).toMatchObject({ status: "ready", draft: { reimbursement: "unknown" } });
+  });
+
+  it("uses the tri-state reimbursement decision in the confirmation proposal", () => {
+    const keyboard = (reimbursementIntent: "yes" | "no" | "unknown") =>
+      buildExpenseProposalKeyboard({
+        editPrefix: "expense",
+        cancelCallback: "expense:cancel",
+        reimbursementIntent,
+      }).inline_keyboard;
+
+    expect(keyboard("yes")?.[0]).toEqual([
+      { text: "✅ Confirmar + reintegro", callback_data: "expense:confirm_reimbursement" },
+      { text: "✅ Confirmar solo gasto", callback_data: "expense:confirm" },
+    ]);
+    expect(keyboard("no")?.[0]).toEqual([
+      { text: "✅ Confirmar sin reintegro", callback_data: "expense:confirm" },
+    ]);
+    expect(keyboard("unknown")?.[0]).toEqual([
+      { text: "💸 Gasto + reintegro", callback_data: "expense:confirm_reimbursement" },
+      { text: "✅ Solo gasto", callback_data: "expense:confirm" },
+    ]);
   });
 
   it("keeps queries read-only and ambiguous candidates out of the write path", () => {

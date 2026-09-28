@@ -36,7 +36,7 @@ import {
 } from "./expense-fallback";
 import type { TelegramOperationContext } from "./operation-context";
 import { buildExpenseProposalKeyboard } from "./expense-proposal";
-import { createFinancialDraft, type FinancialDraftSource, type FinancialQueryIntent } from "./financial-draft";
+import { createFinancialDraft, type FinancialDraftSource, type FinancialQueryIntent, type ReimbursementIntent } from "./financial-draft";
 
 export interface PersonalBotMessage {
   text: string;
@@ -270,6 +270,7 @@ function buildExpenseConfirmationMessage(
   categoryEmoji: string,
   merchant?: string,
   isIncome = false,
+  reimbursementIntent: ReimbursementIntent = "unknown",
 ): PersonalBotMessage {
   const formatted = amount_ars.toLocaleString("es-AR", { minimumFractionDigits: 0 });
   const lines = [
@@ -284,7 +285,12 @@ function buildExpenseConfirmationMessage(
 
   return {
     text: lines.join("\n"),
-    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "expense:cancel", isIncome }),
+    replyMarkup: buildExpenseProposalKeyboard({
+      editPrefix: "expense",
+      cancelCallback: "expense:cancel",
+      isIncome,
+      reimbursementIntent,
+    }),
   };
 }
 
@@ -293,6 +299,7 @@ function buildExpenseEditedMessage(data: {
   category_name: string;
   category_emoji: string;
   is_income?: boolean;
+  reimbursement_intent?: ReimbursementIntent;
   merchant?: string;
 }): PersonalBotMessage {
   const formatted = data.amount_ars.toLocaleString("es-AR", { minimumFractionDigits: 0 });
@@ -308,7 +315,12 @@ function buildExpenseEditedMessage(data: {
 
   return {
     text: lines.join("\n"),
-    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "expense", cancelCallback: "expense:cancel", isIncome: data.is_income }),
+    replyMarkup: buildExpenseProposalKeyboard({
+      editPrefix: "expense",
+      cancelCallback: "expense:cancel",
+      isIncome: data.is_income,
+      reimbursementIntent: data.reimbursement_intent,
+    }),
   };
 }
 
@@ -321,6 +333,7 @@ async function buildExpenseCategoryKeyboard(
   telegramUserId: string,
   userId: string,
   requiresReimbursement: boolean,
+  reimbursementIntent: ReimbursementIntent = requiresReimbursement ? "yes" : "unknown",
 ): Promise<PersonalBotMessage> {
   await setConversationState(chatId, telegramUserId, {
     step: "expense_select_category",
@@ -330,6 +343,7 @@ async function buildExpenseCategoryKeyboard(
       user_id: userId,
       group_id: groupId,
       requires_reimbursement: requiresReimbursement,
+      reimbursement_intent: reimbursementIntent,
     },
   });
 
@@ -491,8 +505,11 @@ async function buildExpenseOrExceptionMessage(
   cat: { id: string; name: string; emoji: string | null; slug?: string },
   amount_ars: number,
   merchant: string | undefined,
-  requires_reimbursement?: boolean
+  requires_reimbursement?: boolean,
+  reimbursementIntent?: ReimbursementIntent,
 ): Promise<PersonalBotMessage> {
+  const normalizedReimbursementIntent = reimbursementIntent ?? (requires_reimbursement ? "yes" : "unknown");
+  const shouldRequestReimbursement = normalizedReimbursementIntent === "yes";
   const budget = await db.query.budgets.findFirst({
     where: and(
       eq(budgets.group_id, groupId),
@@ -545,7 +562,9 @@ async function buildExpenseOrExceptionMessage(
             group_id: groupId,
             user_id: userId,
             is_exception: true,
-            requires_reimbursement: requires_reimbursement ?? false,
+            requires_reimbursement: shouldRequestReimbursement,
+            reimbursement_intent: normalizedReimbursementIntent,
+            is_income: isIncomeCategory(cat.slug),
           },
         });
       } catch (err) {
@@ -579,7 +598,9 @@ async function buildExpenseOrExceptionMessage(
         group_id: groupId,
         user_id: userId,
         is_exception: false,
-        requires_reimbursement: requires_reimbursement ?? false,
+        requires_reimbursement: shouldRequestReimbursement,
+        reimbursement_intent: normalizedReimbursementIntent,
+        is_income: isIncomeCategory(cat.slug),
       },
     });
   } catch (err) {
@@ -587,7 +608,14 @@ async function buildExpenseOrExceptionMessage(
     return { text: "❌ Error al guardar. Intentá nuevamente." };
   }
 
-  return buildExpenseConfirmationMessage(amount_ars, cat.name, cat.emoji ?? "📦", merchant, isIncomeCategory(cat.slug));
+  return buildExpenseConfirmationMessage(
+    amount_ars,
+    cat.name,
+    cat.emoji ?? "📦",
+    merchant,
+    isIncomeCategory(cat.slug),
+    normalizedReimbursementIntent,
+  );
 }
 
 interface TelegramUpdate {
@@ -818,6 +846,7 @@ export async function handleTelegramMessage(
         merchant: r.parsed_merchant ?? undefined,
         date: r.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
         source: "edit",
+        caption: r.caption ?? undefined,
       });
     }
 
@@ -883,6 +912,7 @@ export async function handleTelegramMessage(
         merchant: newMerchant,
         date: r.parsed_date ?? getArgentinaDate().toISOString().slice(0, 10),
         source: "edit",
+        caption: r.caption ?? undefined,
       });
     }
 
@@ -898,6 +928,7 @@ export async function handleTelegramMessage(
         user_id: string;
         is_exception: boolean;
         requires_reimbursement?: boolean;
+        reimbursement_intent?: ReimbursementIntent;
       };
       
       const newAmount = parseFloat(text.replace(/[$\s.]/g, "").replace(",", ".").trim());
@@ -927,6 +958,7 @@ export async function handleTelegramMessage(
         user_id: string;
         is_exception: boolean;
         requires_reimbursement?: boolean;
+        reimbursement_intent?: ReimbursementIntent;
       };
       
       const newMerchant = text.trim().slice(0, 100);
@@ -951,6 +983,7 @@ export async function handleTelegramMessage(
         group_id: string;
         user_id: string;
         requires_reimbursement?: boolean;
+        reimbursement_intent?: ReimbursementIntent;
       };
       
       // If user sent a photo/document, clear state and let OCR handler process it
@@ -1018,7 +1051,8 @@ export async function handleTelegramMessage(
             cat,
             amount,
             ed.merchant,
-            ed.requires_reimbursement ?? false
+            ed.requires_reimbursement ?? false,
+            ed.reimbursement_intent ?? (ed.requires_reimbursement ? "yes" : "unknown"),
           );
         }
       }
@@ -1293,7 +1327,9 @@ export async function handleTelegramMessage(
       month,
       cat,
       amount_ars,
-      merchant
+      merchant,
+      draftResult.draft.reimbursement === "yes",
+      draftResult.draft.reimbursement,
     );
   }
 
@@ -1444,6 +1480,7 @@ export async function handleTelegramMessage(
           merchant: parsed.merchant ?? undefined,
           date: getArgentinaDate().toISOString().slice(0, 10),
           source: "caption",
+          caption,
         });
       }
     }
@@ -1544,6 +1581,7 @@ export async function handleTelegramMessage(
       merchant: merchant ?? undefined,
       date: parsedDate,
       source: "ocr",
+      caption,
     });
   }
 
@@ -1620,6 +1658,7 @@ export async function handleTelegramMessage(
 
   const groqKey = process.env.GROQ_API_KEY;
   let parsed;
+  let normalizedReimbursementIntent: ReimbursementIntent = "unknown";
   if (groqKey) {
     const { parseFinancialMessage } = await import("@/lib/ai/parse-message");
     parsed = await parseFinancialMessage(text);
@@ -1661,6 +1700,7 @@ export async function handleTelegramMessage(
     }
     parsed.amount_ars = draftResult.draft.amountArs ?? null;
     parsed.category = draftResult.draft.categorySlug;
+    normalizedReimbursementIntent = draftResult.draft.reimbursement;
     parsed.requires_reimbursement = draftResult.draft.reimbursement === "yes";
     parsed.merchant = draftResult.draft.description;
   }
@@ -1731,6 +1771,7 @@ export async function handleTelegramMessage(
             fallbackDraft.draft.amountArs!,
             undefined,
             fallbackDraft.draft.reimbursement === "yes",
+            fallbackDraft.draft.reimbursement,
           );
         }
       }
@@ -1745,6 +1786,7 @@ export async function handleTelegramMessage(
           String(msg.from.id),
           userId,
           fallbackDraft.draft.reimbursement === "yes",
+          fallbackDraft.draft.reimbursement,
         );
       }
 
@@ -1775,6 +1817,7 @@ export async function handleTelegramMessage(
               group_id: groupId,
               user_id: userId,
               requires_reimbursement: fallbackDraft.draft.reimbursement === "yes",
+              reimbursement_intent: fallbackDraft.draft.reimbursement,
             },
           });
 
@@ -2010,6 +2053,7 @@ export async function handleTelegramMessage(
               group_id: groupId,
               user_id: userId,
               requires_reimbursement: parsed.requires_reimbursement ?? false,
+              reimbursement_intent: normalizedReimbursementIntent,
             },
           });
           
@@ -2047,6 +2091,7 @@ export async function handleTelegramMessage(
         String(msg.from.id),
         userId,
         parsed.requires_reimbursement ?? false,
+        normalizedReimbursementIntent,
       );
     }
 
@@ -2079,6 +2124,7 @@ export async function handleTelegramMessage(
         String(msg.from.id),
         userId,
         parsed.requires_reimbursement ?? false,
+        normalizedReimbursementIntent,
       );
     }
 
@@ -2093,7 +2139,8 @@ export async function handleTelegramMessage(
       cat,
       amount_ars,
       merchant,
-      parsed.requires_reimbursement ?? false
+      parsed.requires_reimbursement ?? false,
+      normalizedReimbursementIntent,
     );
   }
 
@@ -2456,6 +2503,7 @@ export function buildReceiptProposalMessage({
   merchant,
   date,
   source,
+  caption,
 }: {
   amount_ars: number;
   categorySlug?: string;
@@ -2464,6 +2512,7 @@ export function buildReceiptProposalMessage({
   merchant?: string;
   date: string;
   source: "ocr" | "caption" | "edit";
+  caption?: string;
 }): PersonalBotMessage {
   const draftResult = createFinancialDraft({
     source: "receipt",
@@ -2471,6 +2520,7 @@ export function buildReceiptProposalMessage({
     amountArs: amount_ars,
     categorySlug: categorySlug ?? categoryName,
     description: merchant,
+    text: caption,
   });
   if (draftResult.status !== "ready" || draftResult.draft.kind === "query") {
     return { text: "❌ No pude validar los datos del ticket. Revisá el monto y la categoría antes de volver a intentarlo." };
@@ -2491,7 +2541,11 @@ export function buildReceiptProposalMessage({
 
   return {
     text,
-    replyMarkup: buildExpenseProposalKeyboard({ editPrefix: "receipt", cancelCallback: "receipt:cancel" }),
+    replyMarkup: buildExpenseProposalKeyboard({
+      editPrefix: "receipt",
+      cancelCallback: "receipt:cancel",
+      reimbursementIntent: draftResult.draft.reimbursement,
+    }),
   };
 }
 
