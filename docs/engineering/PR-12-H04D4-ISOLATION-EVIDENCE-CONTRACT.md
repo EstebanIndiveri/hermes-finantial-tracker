@@ -1140,16 +1140,45 @@ Telegram beta enlazado; por eso no hay evidencia de entrega durable a un
 destinatario secundario. Todas las consultas fueron de solo lectura y no
 modificaron beta.
 
-| Gate abierto | Owner | Reentrada / criterio de cierre |
+| Gate | Owner | Estado / reentrada |
 | --- | --- | --- |
-| Voz financiera | Esteban — un canario; Codex — conciliación | El audio converge a la misma propuesta, no repite el indicador, y solo una confirmación válida escribe una transacción. |
-| OCR sin reintegro | Esteban — recibo sintético; Codex — conciliación | “Solo gasto” conserva flag 0 y no crea solicitud; la transacción aparece una vez. |
-| Notificación a otro miembro | Esteban — vincular un segundo miembro beta; Codex — canario/conciliación | Una solicitud confirmada encola y entrega exactamente un `send_message` por miembro elegible no solicitante. |
+| Voz financiera | Codex — regresiones; Esteban — canario ya realizado | Cerrado por la reconciliación inmediatamente posterior: ARS 104 confirmado, flag 0, sin solicitud, respuesta única. |
+| OCR sin reintegro | Codex — regresiones; Esteban — canario ya realizado | Cerrado por la reconciliación inmediatamente posterior: “Solo gasto” confirmado una vez, flag 0, sin solicitud, respuesta única. |
+| Notificación a otro miembro | Esteban — scope/configuración; Codex — canario/conciliación | Diferible/no probado. Si se incluye en certificación, vincular segundo miembro y comprobar exactamente un `send_message` por miembro elegible no solicitante. |
 | Worker/scheduler | Esteban — decisión de latencia/SLO; Codex — implementación posterior | Mantener worker/cron apagados hasta elegir si la entrega inline basta o se necesita scheduler aislado. |
 | Aislamiento formal | Esteban — aceptar residual o autorizar comparación limitada; Codex — solo lectura autorizada | Identidades de proveedor comparadas sin secretos, filas, escrituras, webhook ni tráfico legacy. |
 | Regla de `main` (ACT-03) | Esteban — repo admin; Codex — configuración tras permiso explícito | Requerir PR + CI verde y dejar promoción sujeta a autorización de release. |
 
 No hay tareas abiertas sin owner en el registro operativo. ACT-11/13/14 y
-H04d-BETA-FINANCIAL-E2E siguen abiertos hasta voz financiera, OCR no
-reembolsable y la matriz restante; la notificación grupal requiere el segundo
-miembro. Producción legacy permanece intacta.
+H04d-BETA-FINANCIAL-E2E siguen abiertos por la matriz restante; voz financiera
+y OCR “Solo gasto” ya están cerrados. La notificación grupal es opcional y
+requiere un segundo miembro si se incorpora al alcance. Producción legacy
+permanece intacta.
+
+### Reconciliación de canarios voz y OCR sin reintegro (28/09/2026)
+
+Esteban ejecutó los dos canarios solicitados en el bot beta. La captura de voz
+muestra la transcripción “Gasté 104 en supermercado sin reintegro”, una sola
+propuesta de ARS 104 en `supermercado` y el botón “Confirmar sin reintegro”. La
+captura del ticket muestra el total ARS 23.971,15, la propuesta OCR y las
+acciones “Sí, pedir reintegro” / “No, solo gasto”; Esteban informa haber
+seleccionado “Solo gasto”.
+
+La conciliación read-only de `beta-hermes` verificó para la operación de voz
+una transacción activa con `requires_reimbursement=0`, ninguna solicitud de
+reintegro y una única respuesta outbox `edit_message` enviada en intento 1.
+Para el recibo OCR verificó una importación `confirmed`, una sola transacción
+con identidad de operación durable y monto 23.971,15, `requires_reimbursement=0`,
+ninguna solicitud y una única respuesta outbox `edit_message` enviada en
+intento 1. No se hicieron escrituras durante la conciliación.
+
+| Gate | Estado | Owner / trabajo restante |
+| --- | --- | --- |
+| Voz financiera sin reintegro | Cerrado para este canario | Codex: mantener regresiones locales; no se requiere repetir prueba manual. |
+| OCR “Solo gasto” | Cerrado para este canario | Codex: mantener regresiones locales; no se requiere repetir prueba manual. |
+| ACT-11/13/14 + H04d financial E2E | Parcial, todavía abierto | Codex: cerrar la matriz restante de consultas, ambigüedad sin escrituras, replay de callbacks y errores de proveedor; Esteban: responder únicamente si se requiere un canario beta externo concreto. |
+| Entrega a miembro secundario | Diferible, no probada | Esteban: agregar y vincular segundo usuario beta solo si la entrega grupal está dentro del alcance de certificación; Codex: después ejecutar y conciliar un solo canario. |
+
+El corte no se declara completo solo por el happy path de voz/OCR: quedan los
+gates de la matriz que figuran arriba. No hubo deploy, cambio de webhook, flags,
+worker/scheduler, tráfico en producción ni acceso a recursos legacy.
