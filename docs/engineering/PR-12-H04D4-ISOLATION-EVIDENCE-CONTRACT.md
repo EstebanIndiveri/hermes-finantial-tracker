@@ -1002,3 +1002,40 @@ existentes hasta pasar voz real, convergencia multimodal y la matriz de
 reintegros. No se inicia otro corte funcional antes de cerrar o replanificar
 este canario. El worker, scheduler, aislamiento formal y `main` permanecen sin
 cambios.
+
+#### Corrección de alias beta para canario STT (27/09/2026)
+
+Esteban consultó de forma read-only `getMe` y `getWebhookInfo` con el helper
+local. Confirmó el bot beta `8739389202` / `Hermes_beta_finantial_bot` y el
+webhook `https://hermes-finantial-tracker-z2.vercel.app/api/telegram/webhook`;
+no se imprimió ni compartió el token.
+
+La conciliación de `telegram_update_inbox` en `beta-hermes` mostró que los dos
+audios de 21:16 ART (`update_id` 224783883 y 224783884) se marcaron
+`completed`, `attempt_count=1`, `last_error_code=NULL`. Los logs runtime de
+Vercel no devolvieron eventos disponibles. Al inspeccionar el dominio público
+se encontró el desfase: `hermes-finantial-tracker-z2.vercel.app` resolvía al
+deployment beta anterior `dpl_Ay2zZnDbMFmFEFicH7fAbZzfqLCy` (READY,
+2026-09-27 20:40Z), mientras que el deployment con manejo STT tipado
+`dpl_BFhewP7Fhgy6DFR33Cq28q8kUvgq` estaba READY desde 23:49Z pero sin el alias
+público. Esto explica por qué esos dos canarios no ejercitaron el código nuevo;
+no permite atribuir una causa al proveedor Groq.
+
+Codex reasignó exclusivamente el alias beta
+`hermes-finantial-tracker-z2.vercel.app` al deployment beta
+`hermes-finantial-tracker-z2-gglkd768d-eindi-acme.vercel.app` mediante el CLI
+de Vercel. `vercel inspect https://hermes-finantial-tracker-z2.vercel.app`
+confirmó que ahora resuelve a `dpl_BFhewP7Fhgy6DFR33Cq28q8kUvgq` (READY,
+target `production` dentro del proyecto beta). No se cambió ningún recurso del
+proyecto legacy, su dominio, DB, webhook ni tráfico.
+
+| Estado | Owner | Acción exacta / cierre |
+| --- | --- | --- |
+| URL webhook beta | Codex — verificación completa | Bot beta y endpoint canónico confirmados por `getMe`/`getWebhookInfo`; consulta read-only. |
+| Alias beta → build STT | Codex — corrección aplicada y verificada | Alias público beta reasignado y `vercel inspect` resuelve al deployment `dpl_BF...`; legacy no tocado. Reabrir si el alias se mueve. |
+| Canario de voz post-alias | Esteban — enviar una sola frase inocua; Codex — conciliar Inbox y ausencia de escrituras | Reentrada: confirmar transcripción procesada o un código de error retryable en el update nuevo y cero transacciones. No repetir antes de esta reconciliación ni enviar instrucciones financieras. |
+
+H04d-BETA-FINANCIAL-E2E y ACT-11/13/14 siguen abiertos bajo sus owners
+técnicos hasta que el canario post-alias dé evidencia. Las dos pruebas
+anteriores quedan documentadas como pre-corrección y no cuentan como validación
+del deployment STT nuevo. Producción legacy sigue inmutable.
