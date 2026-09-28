@@ -175,31 +175,43 @@ no production rows or secret values were read.
 
 ### ACT-11 / ACT-13 / ACT-14 — unified Telegram intake (active functional cut)
 
-State: open under Codex; local vertical slices 1–2 are implemented but not deployed. Evidence and acceptance criteria are recorded in
-[H04d.4q](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#h04d4q-reintegro-inconsistente-y-voz-sin-diagnostico-integracion-act-111314-27092026).
-The user-facing failures are confirmed, but the two failed voice messages do
-not have a provider-level root cause yet. Do not add per-handler patches as
-separate feature cuts.
+State: open under Codex. The reimbursement-consent proposal slice (`e8e849e`),
+typed/retryable STT errors (`9b4dcdd`), and suppression of duplicate retry
+notices (`390d8d9`) are implemented and deployed to the beta public alias
+(`dpl_5RGco1Z5rybbAQ5L3NpkrNYL5pGC`). The Groq voice blocker is closed: after
+Esteban re-saved the beta key, the same harmless Inbox update completed at
+attempt 19 with no error. The earlier retry/alias evidence and owners are in
+[H04d.4q](PR-12-H04D4-ISOLATION-EVIDENCE-CONTRACT.md#h04d4q-reintegro-inconsistente-y-voz-sin-diagnostico-integracion-act-111314-27092026)
+and the subsequent addenda. No legacy resource changed.
 
-| Owner | Deliverable | Re-entry / closure |
+The beta canary exposed that feature correctness is still fragmented: command,
+natural text, transcript and OCR must converge on a shared validated financial
+draft and the same consent/confirmation policy. Do not add isolated
+per-handler patches or switch on beta outbox before local contract and tests
+pass.
+
+| Owner | Next deliverable | Closure / re-entry |
 | --- | --- | --- |
-| Codex | Contract and shared `FinancialDraft`/proposal/confirmation path for `/gasto`, natural text, transcript, OCR and callbacks; structured recoverable STT/OCR failures; one durable writer and reimbursement policy. Preserve independent adapters, no monolithic AI prompt. | Tests cover expense/income/query, reimbursement yes/no/unknown, clarification, cancel/edit, duplicate callback and credential/provider failures. Confirmed action writes once; failed extraction writes nothing and remains diagnosable/retryable. |
-| Esteban | Product choice/copy approved in this turn; run beta canaries after code and deployment gates pass. | Verify plain expense vs reimbursable expense through text/command/audio/OCR and reconcile one transaction/request per confirmation. |
+| Codex | Next cut: define and implement the shared `FinancialDraft` application boundary. Keep channel adapters (command, NLP, transcript, OCR) small; centralize normalization, category/type validation, reimbursement state (`yes/no/unknown`), proposal and confirmation, then call one idempotent writer. First migrate one existing path at a time and preserve current behavior behind beta-only deployment. | Contract tests cover gasto/ingreso/query, ambiguous amount/category, reimbursement yes/no/unknown, no-write-before-confirm, cancel/edit, callback replay and provider failure. The same candidate must produce the same validated draft independent of source; failed/ambiguous extraction writes nothing. Then full unit/integration gates. |
+| Esteban | Product decisions and beta QA after local gates | Approve clarifying copy/actions, then verify command/text/voice/receipt paths and reconcile exactly one transaction/request per confirmation. No financial canary until the shared flow and beta outbox prerequisite are ready. |
 
-Local subcut 1 replaces parser-derived reimbursement side effects with explicit
-pre-write choice for text/command and OCR proposals. A selected reimbursement
-stores the transaction flag, request, and recipient Telegram outbox records in
-one durable operation; callbacks without operation identity fail closed. Tests
-cover the choice UI, non-inference, same-operation writes, and durable group
-delivery. The beta outbox flag is a prerequisite for its canary, but worker and
-scheduler remain separate and off.
+### Ordered closure after the next local cut
 
-Remaining closure sequence: verify beta AI provider bindings and the retryable
-voice diagnostic with a non-financial canary; converge text, command,
-transcript, OCR and callback on one
-validated draft/policy; then pass the full beta matrix with reconciliation.
-H04d-BETA-FINANCIAL-E2E and ACT-11/13/14 remain open under Codex until all
-gates pass. No rollout to `main`/legacy.
+1. Complete the shared-draft contract and tests locally; do not change flags or
+   route a second bot/webhook.
+2. Integrate adapters one at a time and pass local unit, webhook, database,
+   idempotency and quality gates.
+3. Enable `TELEGRAM_OUTBOX_ENABLED` only in beta (worker remains off), then run
+   the consent canary and reconcile transaction, reimbursement request and
+   durable recipient delivery.
+4. Run the remaining beta matrix: plain expense, income, query, amount/category
+   ambiguity, reimbursement yes/no/unknown, command/text/voice/OCR, duplicate
+   update/callback, and provider errors. Keep the web dashboard and beta DB
+   intact; no promotion to `main` or legacy production.
+
+H04d-BETA-FINANCIAL-E2E and ACT-11/13/14 remain open under Codex until these
+gates pass. H04d worker/scheduler and formal isolation certification are
+separate owned items; neither blocks the next local implementation cut.
 
 ### ACT-03 — quality barrier (still open; plan priority 1)
 
