@@ -157,8 +157,8 @@ provider, and release decision owner.
 | H04d-BETA-QA-ACCOUNT | Complete for account bootstrap, 26/09/2026. The beta DB had zero users/groups/members and public registration requires an invitation; one `esteban_beta_qa` owner/personal group was initialized in beta only. Beta login and `/api/auth/me` returned 200. | Codex | Product follow-up: assign invitation/first-user bootstrap UX before onboarding additional beta users. |
 | H04d-BETA-TELEGRAM-LINK | Complete. Esteban confirmed `esteban_beta_qa` is linked to `Hermes_beta_finantial_bot`; the deployed UI has the beta username in onboarding/account surfaces and not the legacy bot. | Codex | None. Production resources unchanged. |
 | H04d-BETA-INBOX | Complete. The beta webhook points only to the beta URL; replay of the synthetic update created one completed claim (`attempt_count=1`). The user-authored expense also reached the beta financial handler and yielded the reconciled transaction below. | Codex | None for inbox/deduplication. |
-| H04d-BETA-FINANCIAL-E2E | Partial, 28/09/2026. Esteban's screenshots confirm beta expense consent, reintegro, OCR proposal/registration, and reveal clipped long consent labels plus failed natural and slash income when the group had no income category. Follow-up fix is deployed as `dpl_BemZAe4afAHepUfdREzoiYffb9pP` (READY, beta alias; SHA `b84862a`); `/login` HTTP 200. The screenshots are user-observed behavioral evidence, not yet DB/outbox reconciliation. | Codex — ACT-11/13/14 engineering and reconciliation; Esteban — beta re-test. | Esteban: verify full-width consent labels, `Ingreso 2000 sueldo` and `/ingreso 2000 sueldo`, then report outcomes. Codex: reconcile resulting transaction/request/outbox. Keep worker/cron off; legacy untouched. |
-| H04d-BETA-OUTBOX | Enabled in beta Production on 28/09/2026 (`TELEGRAM_OUTBOX_ENABLED=true`); worker remains `false`. | Codex (configuration); Esteban (canary operator). | After a confirmed expense, verify one inline reply and one durable group delivery, and reconcile transaction/request/delivery. No worker or scheduler is needed for inline dispatch. If it fails, pause further canaries; do not enable worker without a separate scheduler decision. |
+| H04d-BETA-FINANCIAL-E2E | Partial, updated 28/09/2026. Esteban verified full-width consent buttons, natural and slash income, and cancellation. Read-only reconciliation found one active Telegram income each for ARS 2,000/2,001 (`ingresos`), each with one sent outbox edit; no reimbursement requests. ARS 100 cancellation created no transaction. Expense canaries ARS 5,011 (one reimbursement request), 5,012 (no request), and 5,013 (no request) reconcile to reimbursement flags 1/0/0 and one sent outbox item each. OCR ARS 23,971.15 has two earlier intentional duplicate imports (27/09, no operation identity) and one later durable confirmation with one pending reimbursement request and one sent response. | Codex — reconcile/close matrix; Esteban — remaining modality and group-recipient canaries. | Still need a financial voice canary and OCR “Solo gasto” canary. For group notification, beta QA group currently has only one Telegram-linked member, so invite/link a second beta tester first. Keep worker/cron off; legacy untouched. |
+| H04d-BETA-OUTBOX | Enabled in beta Production on 28/09/2026 (`TELEGRAM_OUTBOX_ENABLED=true`); worker remains `false`. User-facing edit deliveries are each `sent` once, including reimbursement cases. | Codex (configuration/reconciliation); Esteban (beta group setup). | Group-recipient notification is not yet proven: the tested group has one linked member (the requester), so there is no other recipient. Add/link a second beta member, run one reimbursement canary, then verify one durable `send_message` per eligible member and reconcile transaction/request/delivery. No worker or scheduler is needed for inline dispatch. |
 | H04d-BETA-WORKER | Scheduler decision open; `TELEGRAM_OUTBOX_WORKER_ENABLED=false`, and beta deployment has zero cron schedules. | Esteban Indiveri (choose latency/platform); Codex (implement and verify after choice) | The worker drains due durable outbound deliveries and purges up to 100 expired terminal rows; each invocation claims at most 5 deliveries (45-second default budget). Normal response delivery is attempted inline by the webhook when outbox is enabled, so one-minute polling is not required for ordinary replies. Vercel Hobby rejects schedules more frequent than daily. Recommendation: keep disabled during account/link QA; then use an isolated Cloudflare Worker safety poll at `*/5 * * * *` if its Free CPU limit is verified, or Vercel Pro only if sub-5-minute recovery is a product SLA. A daily Hobby sweep is not acceptable for retry liveness. See the [scheduler/FinOps assessment](H04D-WORKER-SCHEDULER-FINOPS.md). |
 | H04d-ISOLATION-CERT | Blocked/deferred; local manifests are consistent, but `isolationVerified=false`. On 26/09/2026 Codex read only the legacy Vercel cron list: three schedules were present and no outbox worker. Legacy DB rows/secrets and Telegram metadata remain intentionally uninspected. | Esteban Indiveri (scope decision); Codex (only the specifically authorized metadata checks) | This cron finding does not certify full isolation. Either explicitly authorize a bounded read-only comparison of remaining legacy project/DB/bot identities (no secret values, rows, writes, webhook, or traffic), or accept the residual and leave the formal certificate open. This does not block the beta inbox-only pilot. |
 
@@ -196,8 +196,8 @@ all follow-up changes behind the same shared draft/confirmation boundary.
 
 | Owner | Next deliverable | Closure / re-entry |
 | --- | --- | --- |
-| Codex | Shared `FinancialDraft` boundary is implemented. Next: inspect beta canary records after Esteban re-tests the deployed correction, reconcile transaction/reimbursement/outbox idempotency, then close any remaining matrix gaps without splitting the flow. | Close after confirmed/no-reimbursement income and expense callbacks, cancel/no-write, callback replay, and provider failure evidence are reconciled. |
-| Esteban | Beta re-test operator for deployment `dpl_BemZAe4afAHepUfdREzoiYffb9pP` | Verify the consent labels render fully; send natural and slash income examples; only confirm correct proposals; report results. Codex owns DB/outbox reconciliation after those messages. |
+| Codex | Shared `FinancialDraft` boundary and current fixes are implemented. Read-only reconciliation complete for incomes ARS 2,000/2,001, expenses ARS 5,011/5,012/5,013, cancellation ARS 100, and OCR ARS 23,971.15. | Close remaining matrix after a voice financial canary, OCR no-reimbursement canary, and (after a second member is linked) group-recipient delivery evidence. Reconcile each without accessing legacy resources. |
+| Esteban | Beta re-test operator; income formats and consent-button readability verified; canceled ARS 100. | Next: send voice “Gasté 104 en supermercado sin reintegro”; inspect proposal and confirm only if correct, otherwise cancel. Send a synthetic receipt and choose “Solo gasto”. To exercise group notifications, link a second beta test member before one reimbursement canary. Codex owns reconciliation. |
 
 ### Ordered closure sequence (reconciled 28/09/2026)
 
@@ -209,16 +209,18 @@ all follow-up changes behind the same shared draft/confirmation boundary.
    `dpl_BemZAe4afAHepUfdREzoiYffb9pP`; alias and `/login` checked. Outbox is
    enabled in beta Production; worker remains off. No Telegram test update or
    Git push was sent by Codex.
-3. **Next, owned by Esteban:** verify compact full-width consent buttons and
-   test `Ingreso 2000 sueldo` plus `/ingreso 2000 sueldo`; confirm only valid
-   proposals. Don't repeat the already successful OCR path unless a new issue
-   appears; do not test legacy.
-4. **Then, owned by Codex:** reconcile those callbacks and resulting records
-   against beta inbox, transaction, reimbursement request and outbox; close
-   remaining matrix items, rerun gates and deploy beta only if a fix is needed.
-   Close ACT-11/13/14 and H04d-BETA-FINANCIAL-E2E only after evidence is
-   reconciled. Keep worker/cron off and do not promote to `main` or legacy
-   production.
+3. **Complete:** Esteban verified compact full-width consent buttons, natural and
+   slash income, and cancellation. Codex's read-only reconciliation confirms
+   two separate income writes after callbacks, no ARS 100 write, and one sent
+   response per observed callback. Text expense reimbursement yes/no/unknown
+   and OCR yes are reconciled; the 27/09 repeated receipt submissions were
+   intentional.
+4. **Next, jointly owned:** Esteban runs one voice-financial and one OCR-no
+   canary. A second beta Telegram-linked member is required only to exercise
+   group-recipient delivery. Codex reconciles Inbox, transaction, request and
+   outbox after each. Close ACT-11/13/14 and H04d-BETA-FINANCIAL-E2E only after
+   those records and the remaining acceptance matrix agree. Keep worker/cron
+   off and do not promote to `main` or legacy production.
 
 H04d-BETA-FINANCIAL-E2E and ACT-11/13/14 remain open under Codex until these
 gates pass. H04d worker/scheduler and formal isolation certification are
@@ -249,8 +251,8 @@ webhook, flags, legacy resources, or deploy were changed by the local cut.
 
 | Owner | State | Remaining work / re-entry |
 | --- | --- | --- |
-| Codex | Follow-up fix on `codex/h04d-natural-language-e2e`, commit `b84862a`: long reimbursement consent actions now occupy separate rows with compact labels; explicit income phrases route deterministically to the shared draft; `/ingreso` and natural income idempotently ensure the group-scoped built-in `ingresos` category. Harness 53/53, Jest 89 suites / 767 tests, typecheck and Webpack build pass; lint 0 errors / 67 existing warnings. Deployed only to beta as `dpl_BemZAe4afAHepUfdREzoiYffb9pP` (READY, SHA `b84862a`), `/login` HTTP 200. Temporary Hobby cron omission config was removed; canonical `vercel.json` is unchanged. No push, Telegram message, migration, webhook change, or legacy resource change. | Reconcile the user's next canary against beta inbox, transaction, reimbursement request and outbox. Keep worker/cron off; no cron is needed for inline delivery. |
-| Esteban Indiveri | Beta test operator; latest deployment is live at the isolated beta URL below. | Test `Ingreso 2000 sueldo` and `/ingreso 2000 sueldo`; confirm only if the proposed income is correct. Test an expense proposal and verify consent labels are fully readable; report whether selecting yes/no produces the expected result. |
+| Codex | Follow-up fix on `codex/h04d-natural-language-e2e`, commit `b84862a`: long reimbursement consent actions use separate rows; income phrases route through the shared draft and group-scoped `ingresos` category. Harness 53/53, Jest 89 suites / 767 tests, typecheck and Webpack build pass; lint 0 errors / 67 existing warnings. Deployed only to beta as `dpl_BemZAe4afAHepUfdREzoiYffb9pP` (READY, SHA `b84862a`), `/login` HTTP 200. Temporary Hobby cron omission config was removed; canonical `vercel.json` is unchanged. No push, migration, webhook change, or legacy resource change. Current beta canaries have been reconciled read-only. | Complete voice/OCR-no and group-recipient gates; keep worker/cron off. |
+| Esteban Indiveri | Beta test operator; income formats, button layout, and cancellation verified. | Send one voice financial canary and one synthetic OCR receipt choosing “Solo gasto”; add/link a second beta Telegram member only if testing group delivery. |
 
 **Closure gate:** beta matrix passes across command/text/voice/receipt and
 expense/income/query; ambiguity writes nothing; explicit income never offers
@@ -267,9 +269,10 @@ Deployment `dpl_BemZAe4afAHepUfdREzoiYffb9pP` (SHA `b84862a`) is Ready and its
 separate beta Vercel project, not the legacy production project. The beta
 bot's existing webhook was not changed and no test Telegram update was sent by
 Codex. No migration, legacy DB, bot, webhook, secret value, environment
-configuration or production deployment was changed. The next owner action is the focused
-beta re-test above, then Codex reconciles resulting beta records; do not mark
-ACT-11/13/14 or H04d financial E2E complete from the deployment smoke alone.
+configuration or production deployment was changed. The next owner action is
+the voice-financial and OCR-no canaries above; a second linked beta member is
+needed only for group-recipient delivery. Codex reconciles their records; do
+not mark ACT-11/13/14 or H04d financial E2E complete before those gates pass.
 
 ### ACT-03 — quality barrier (still open; plan priority 1)
 
@@ -284,3 +287,34 @@ No new feature cut should start until the owner actions above are either closed
 or explicitly recorded as deferred with a chosen risk, owner, and re-entry
 condition. Production legacy remains outside the deployment, data, and webhook
 scope.
+
+### Latest beta canary reconciliation — 28/09/2026
+
+Esteban reported `Ingreso 2000 sueldo`, `/ingreso 2001 sueldo`, and a canceled
+ARS 100 expense to verify the deployed fix and keyboard. Screenshots show the
+consent actions fully readable. Read-only queries against `beta-hermes` found
+one active Telegram transaction for each income amount in `ingresos`, no
+reimbursement requests, and one outbox `edit_message` sent at attempt 1 per
+confirmed callback. ARS 100 has zero Telegram transactions, consistent with
+cancellation.
+
+The read-only expense reconciliation found ARS 5,011 with
+`requires_reimbursement=1`, one pending request and one sent response; ARS
+5,012 and 5,013 each have flag 0, no request and one sent response. Receipt
+total ARS 23,971.15 has two 27/09 rows with no durable operation ID, matching
+the intentional repeated submissions reported by Esteban, plus one distinct
+28/09 durable OCR confirmation with flag 1, one pending request and one sent
+response. The test group has one member with Telegram linked, so no secondary
+recipient delivery can be proven yet. These checks were read-only; no beta data
+was changed.
+
+No open item in the authoritative register is unowned. The remaining owners
+and re-entry conditions are: Codex + Esteban for voice-financial and OCR-no
+canaries; Esteban to add/link a second beta member and Codex to verify group
+delivery; Esteban to decide worker/scheduler SLO and Codex to implement only
+after that choice; Esteban to choose whether to defer or authorize the bounded
+metadata-only isolation comparison, with Codex performing only authorized
+read-only checks; and Esteban (repo admin) to authorize the `main` branch rules,
+with Codex configuring them only after explicit settings authorization. The
+Drizzle tooling findings remain owned by Esteban for risk/upstream choice and
+Codex for re-test if a compatible upstream/toolchain becomes available.

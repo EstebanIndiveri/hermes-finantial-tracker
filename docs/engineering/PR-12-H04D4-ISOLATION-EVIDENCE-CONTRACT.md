@@ -1115,3 +1115,41 @@ Aunque Esteban autorizó leer valores de claves en Vercel legacy, no fue necesar
 ni se accedió a ellas: la beta funciona con su propio secreto recién ingresado,
 y evitar el acceso conserva el límite de mínimo privilegio. Producción legacy,
 sus variables, webhook, base y tráfico permanecen sin intervención.
+
+#### Reconciliación de canarios beta de ingreso, consentimiento y outbox (28/09/2026)
+
+Tras desplegar `b84862a` como `dpl_BemZAe4afAHepUfdREzoiYffb9pP` en el
+proyecto beta, Esteban confirmó visualmente que las acciones largas de
+consentimiento ahora se ven completas y probó `Ingreso 2000 sueldo`,
+`/ingreso 2001 sueldo` y una propuesta de gasto de ARS 100 que canceló.
+
+La inspección read-only de `beta-hermes` encontró un solo movimiento activo
+Telegram para cada ingreso, ambos en `ingresos`, sin solicitud de reintegro;
+cada operación tiene una entrega `edit_message` en estado `sent`, intento 1.
+No existe transacción Telegram de ARS 100, consistente con la cancelación.
+Los canarios de gasto ARS 5.011, 5.012 y 5.013 muestran respectivamente
+`requires_reimbursement=1/0/0`; solo ARS 5.011 tiene una solicitud `pending`, y
+cada operación observada tiene una respuesta outbox enviada una vez.
+
+Para el ticket de ARS 23.971,15 hay dos filas del 27/09 sin `operation_id`, que
+coinciden con las cargas repetidas intencionales reportadas por Esteban. Una
+tercera fila del 28/09 corresponde a un canario OCR posterior con identidad
+durable, `requires_reimbursement=1`, una solicitud `pending` y una respuesta
+outbox `sent` una vez. La tabla de miembros confirma un solo miembro con
+Telegram beta enlazado; por eso no hay evidencia de entrega durable a un
+destinatario secundario. Todas las consultas fueron de solo lectura y no
+modificaron beta.
+
+| Gate abierto | Owner | Reentrada / criterio de cierre |
+| --- | --- | --- |
+| Voz financiera | Esteban — un canario; Codex — conciliación | El audio converge a la misma propuesta, no repite el indicador, y solo una confirmación válida escribe una transacción. |
+| OCR sin reintegro | Esteban — recibo sintético; Codex — conciliación | “Solo gasto” conserva flag 0 y no crea solicitud; la transacción aparece una vez. |
+| Notificación a otro miembro | Esteban — vincular un segundo miembro beta; Codex — canario/conciliación | Una solicitud confirmada encola y entrega exactamente un `send_message` por miembro elegible no solicitante. |
+| Worker/scheduler | Esteban — decisión de latencia/SLO; Codex — implementación posterior | Mantener worker/cron apagados hasta elegir si la entrega inline basta o se necesita scheduler aislado. |
+| Aislamiento formal | Esteban — aceptar residual o autorizar comparación limitada; Codex — solo lectura autorizada | Identidades de proveedor comparadas sin secretos, filas, escrituras, webhook ni tráfico legacy. |
+| Regla de `main` (ACT-03) | Esteban — repo admin; Codex — configuración tras permiso explícito | Requerir PR + CI verde y dejar promoción sujeta a autorización de release. |
+
+No hay tareas abiertas sin owner en el registro operativo. ACT-11/13/14 y
+H04d-BETA-FINANCIAL-E2E siguen abiertos hasta voz financiera, OCR no
+reembolsable y la matriz restante; la notificación grupal requiere el segundo
+miembro. Producción legacy permanece intacta.
