@@ -67,26 +67,25 @@ reopen only when a supported `drizzle-kit` release removes the loader or npm
 can resolve the scoped replacement without invalid packages, then prove clean
 install, audit, disposable migration generation, and SQL equivalence.
 
-## Recommended disposition (owner decision pending)
+## Temporary owner acceptance
 
-Recommendation: temporarily accept and document the bounded residual for this
-beta development phase; do not downgrade `drizzle-kit`, force an invalid
-`esbuild` override, or apply a global override. This is a recommendation, not
-an assertion that the advisories are fixed or an owner risk-acceptance record.
-The finding is in the development-only schema-generation chain, not a declared
-runtime dependency; Hermes' production migration command uses the repository's
-manifest runner. The upstream advisory concerns the esbuild development server's
-cross-origin response exposure when that server is running, so practical
-exposure depends on a vulnerable local tool/server being started and reachable
-from an untrusted browser origin.
+Esteban Indiveri explicitly accepted the bounded residual temporarily on
+28/09/2026 for beta development. This is not a claim that the advisories are
+fixed. Do not downgrade `drizzle-kit`, force an invalid `esbuild` override, or
+apply a global override. The finding is in the development-only schema-
+generation chain, not a declared runtime dependency; Hermes' production
+migration command uses the repository's manifest runner. The upstream advisory
+concerns the esbuild development server's cross-origin response exposure when
+that server is running, so practical exposure depends on a vulnerable local
+tool/server being started and reachable from an untrusted browser origin.
 
 While this residual is accepted: do not expose the esbuild development server;
 do not run `drizzle-kit` in deployed runtime/build paths; retain the production
-dependency audit gate; and re-evaluate on a maintained Drizzle Kit release, a
-material change in exposure, or before adopting a new schema-generation
-workflow. Owner: Esteban Indiveri to accept or reject the temporary residual.
-Codex owns a bounded upstream recheck and compatibility experiment when a
-supported candidate exists. If policy requires zero advisories, treat
+dependency audit gate. Re-open this as a maintenance chore before the next
+schema-generation/toolchain change, or earlier if a supported Drizzle Kit
+replacement is released or advisory/exposure changes materially. Owner: Esteban
+Indiveri. Codex owns a bounded upstream recheck and compatibility experiment
+when a supported candidate exists. If policy changes to require zero advisories, treat
 schema-generation changes as blocked until a supported replacement passes
 clean install, audit, disposable generation, SQL-equivalence comparison, and
 migration harness; do not weaken or bypass the quality gate.
