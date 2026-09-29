@@ -54,6 +54,27 @@ it("rejects an unauthenticated cron request before checking worker state", async
   expect(botIdMock).not.toHaveBeenCalled();
 });
 
+it("accepts a dedicated outbox scheduler secret without granting the shared cron secret to Cloudflare", async () => {
+  process.env = {
+    ...readyEnv(),
+    TELEGRAM_OUTBOX_SCHEDULER_SECRET: "outbox-only-secret",
+  };
+
+  const response = await GET(request("Bearer outbox-only-secret"));
+
+  expect(response.status).toBe(200);
+  expect(workerMock).toHaveBeenCalledTimes(1);
+});
+
+it("rejects the dedicated secret when it is absent or mismatched", async () => {
+  process.env = { ...readyEnv(), TELEGRAM_OUTBOX_SCHEDULER_SECRET: "outbox-only-secret" };
+
+  const response = await GET(request("Bearer another-secret"));
+
+  expect(response.status).toBe(401);
+  expect(workerMock).not.toHaveBeenCalled();
+});
+
 it.each([
   ["inbox flag", "TELEGRAM_INBOX_ENABLED"],
   ["outbox flag", "TELEGRAM_OUTBOX_ENABLED"],
@@ -83,40 +104,36 @@ it("skips a disabled worker without resolving a bot or touching worker code", as
 
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toEqual({ ok: true, skipped: true });
+  expect(response.headers.get("X-Hermes-Outbox-Execution")).toBe("skipped_worker_disabled");
   expect(workerMock).not.toHaveBeenCalled();
   expect(botIdMock).not.toHaveBeenCalled();
 });
 
-it("lets the notifications kill switch override an enabled worker", async () => {
+it("recovers user-initiated replies while proactive notifications are disabled", async () => {
   process.env = { ...readyEnv(), NOTIFICATIONS_ENABLED: "false" };
 
   const response = await GET(request());
 
   expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toEqual({
-    ok: true,
-    skipped: true,
-    reason: "notifications_disabled",
-  });
-  expect(workerMock).not.toHaveBeenCalled();
-  expect(botIdMock).not.toHaveBeenCalled();
+  expect(response.headers.get("X-Hermes-Outbox-Execution")).toBe("processed");
+  expect(workerMock).toHaveBeenCalledTimes(1);
 });
 
-it("fails closed on an invalid notifications setting before worker prerequisites", async () => {
+it("does not let an unrelated proactive-notification setting disable outbox recovery", async () => {
   process.env = { ...readyEnv(), NOTIFICATIONS_ENABLED: "off" };
 
   const response = await GET(request());
 
-  expect(response.status).toBe(503);
-  await expect(response.json()).resolves.toEqual({ error: "Notifications unavailable" });
-  expect(workerMock).not.toHaveBeenCalled();
-  expect(botIdMock).not.toHaveBeenCalled();
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Hermes-Outbox-Execution")).toBe("processed");
+  expect(workerMock).toHaveBeenCalledTimes(1);
 });
 
 it("runs the worker with the resolved bot and returns counters only", async () => {
   const response = await GET(request());
 
   expect(response.status).toBe(200);
+  expect(response.headers.get("X-Hermes-Outbox-Execution")).toBe("processed");
   await expect(response.json()).resolves.toEqual({
     ok: true,
     claimed: 2,

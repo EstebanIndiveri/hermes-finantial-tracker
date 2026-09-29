@@ -126,25 +126,33 @@ The isolated scheduler source and focused tests are in
 `workers/beta-outbox-scheduler/`. It pins the only permitted target in code to
 `https://hermes-finantial-tracker-z2.vercel.app/api/cron/telegram-outbox` and
 also requires the configured URL to match exactly. Its checked-in Wrangler
-config schedules every five minutes but sets `SCHEDULER_ENABLED=false`; it has
-no secret value. The handler makes one GET with the Bearer secret, aborts after
-15 seconds, and logs only a fixed event name, HTTP status, and elapsed time.
-It never reads response bodies or logs URLs, headers, exception text, or secret
-values.
+config schedules every five minutes and has no secret value. The handler
+makes no public HTTP handler available (`workers_dev=false`); it runs only on
+the Cron Trigger. It
+makes one GET with a dedicated beta-only `TELEGRAM_OUTBOX_SCHEDULER_SECRET`,
+aborts after 15 seconds, and logs only a fixed event name, HTTP status, an
+allowlisted execution state, and elapsed time. It never reads response bodies
+or logs URLs, raw headers, exception text, or secret values. The Vercel outbox
+route accepts the dedicated secret without sharing the existing `CRON_SECRET`
+used by other beta cron jobs. The unsupported one-minute Vercel outbox cron was
+removed from the branch's canonical `vercel.json`; the other three remain.
 
-Deployment remains an explicit operator action after the beta outbox has
-passed its manual delivery/retry gate and the Cloudflare account/provider choice
-is approved. From `workers/beta-outbox-scheduler/`:
+The following operator sequence was completed for beta on 29/09/2026. Repeat
+it only for an approved rotation, recovery, or separate environment. From
+`workers/beta-outbox-scheduler/`:
 
-1. Run `npx wrangler deploy` with `SCHEDULER_ENABLED=false`. The Cron Trigger
-   will exist but will safely skip requests.
-2. Add the beta-only `CRON_SECRET` using `npx wrangler secret put CRON_SECRET`.
-   Enter the value from the approved secure source; do not put it in source,
-   shell history, or `vars`.
+1. Run `npx wrangler deploy` **from `workers/beta-outbox-scheduler/`** with
+   `SCHEDULER_ENABLED=false`. The Cron Trigger will exist but safely skip
+   requests. Running this command from the repository root is not equivalent:
+   Wrangler may try to migrate the Next.js application.
+2. Add the dedicated beta-only secret to the beta Vercel project and use
+   `npx wrangler secret put TELEGRAM_OUTBOX_SCHEDULER_SECRET` for the same value.
+   Do not put it in source, shell history, or `vars`.
 3. Change `SCHEDULER_ENABLED` to `true` in `wrangler.jsonc`, deploy again, and
    confirm the scheduler reports only completion/status metadata. A 401 means
    the beta secret binding is mismatched; 5xx means inspect the beta Vercel
-   function without exposing its response body.
+   function without exposing its response body. A 200 with an allowlisted
+   `skipped_*` execution state does not certify retry recovery.
 4. Verify the target hostname is the beta project and measure oldest due row,
    cron completion/HTTP status, timeout count, and Cloudflare free CPU usage.
    Keep this as a best-effort ~5-minute sweep, with a conservative operational
@@ -153,22 +161,52 @@ is approved. From `workers/beta-outbox-scheduler/`:
 
 Rollback: set `SCHEDULER_ENABLED` to `false` and deploy to stop requests
 immediately. Then set `triggers.crons` to an empty array and deploy to remove
-the schedule. Delete the Cloudflare `CRON_SECRET` binding only if the scheduler
+the schedule. Delete the Cloudflare `TELEGRAM_OUTBOX_SCHEDULER_SECRET` binding only if the scheduler
 will not be reused. This does not change the Vercel deployment, its flags, or
 the outbox rows. Do not point the Worker at the legacy/Production hostname.
 
 Focused local tests (no provider credentials or network calls):
 `node --test workers/beta-outbox-scheduler/test/worker.test.mjs`.
 
+### Beta recovery evidence — 29/09/2026
+
+- The Cloudflare account's current plan was verified as Workers Free; the
+  dashboard showed five available Cron Triggers/account and a 100,000/day
+  request limit. The scheduler uses one trigger, every five minutes.
+- A synthetic `telegram_operations` row and one `telegram_delivery_outbox`
+  row were inserted **only into `beta-hermes`**, targeting the linked beta QA
+  chat with a message explicitly labelled as a technical test. No transaction
+  or reimbursement row was inserted. The delivery started in a simulated
+  `retryable` state at attempt 1 with a stable provider-unavailable code.
+- The first authenticated Cloudflare tick returned HTTP 200 but skipped work
+  because `NOTIFICATIONS_ENABLED=false`. This exposed an incorrect coupling:
+  that setting is the proactive-notification kill switch, while outbox retry
+  recovery concerns replies already initiated by users. The outbox route now
+  uses its independent `TELEGRAM_OUTBOX_WORKER_ENABLED` gate; proactive alerts
+  remain disabled. Only an allowlisted execution state is logged, never a
+  response body or raw header.
+- At 18:40:25 UTC the tick logged `processed`, HTTP 200, 2360 ms elapsed. By
+  18:40:27 UTC the canary row was `sent`, attempt 2, with a provider message ID;
+  its lease and error fields were clear. Read-only counts remained 14
+  transactions, four reimbursement requests and exactly one canary delivery.
+  Local temp-libSQL integration also verified 503→retryable→sent and one
+  winner under overlapping worker invocations without financial writes.
+- Cloudflare Metrics showed seven invocations, zero errors and 0.79 ms median
+  CPU for the active version, below the Free 10 ms/invocation limit. These are
+  pilot measurements, not an uptime or tail-latency guarantee. No Pages
+  project, paid upgrade, legacy endpoint, production DB or production bot was
+  involved.
+
 No scheduler is to target legacy Production until a separate release approval.
-Beta and Production must use distinct target URLs and `CRON_SECRET` values.
+Beta and Production must use distinct target URLs and scheduler secret values.
 
 ## Evidence and primary references
 
 - Read-only `vercel cron list` for `eindi-acme/hermes-finantial-tracker` on
   2026-09-26 returned the three schedules in the table above.
-- Legacy `vercel.json` has those same three jobs; the H04d branch's local
-  `vercel.json` has a fourth one-minute `/api/cron/telegram-outbox` entry.
+- Legacy `vercel.json` has those same three jobs. The H04d branch originally
+  had a fourth one-minute outbox entry, which Vercel Hobby rejected; it was
+  removed after the isolated Cloudflare schedule was selected for beta.
 - H04d worker implementation: `app/api/cron/telegram-outbox/route.ts`,
   `lib/telegram/outbox-worker.ts`, and `lib/telegram/outbox-dispatcher.ts`.
 - [Vercel cron usage and pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing)

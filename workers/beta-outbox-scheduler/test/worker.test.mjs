@@ -6,7 +6,7 @@ import { BETA_OUTBOX_URL, createOutboxScheduler } from "../src/worker.mjs";
 const betaEnv = {
   OUTBOX_WORKER_URL: BETA_OUTBOX_URL,
   SCHEDULER_ENABLED: "true",
-  CRON_SECRET: "test-only-secret",
+  TELEGRAM_OUTBOX_SCHEDULER_SECRET: "test-only-secret",
 };
 
 function captureLogger() {
@@ -14,11 +14,12 @@ function captureLogger() {
   return { entries, log: (entry) => entries.push(entry) };
 }
 
-test("Wrangler config is pinned to the beta worker and starts disabled", () => {
+test("Wrangler config pins the active beta worker schedule", () => {
   const config = JSON.parse(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
   assert.deepEqual(config.triggers.crons, ["*/5 * * * *"]);
+  assert.equal(config.workers_dev, false);
   assert.equal(config.vars.OUTBOX_WORKER_URL, BETA_OUTBOX_URL);
-  assert.equal(config.vars.SCHEDULER_ENABLED, "false");
+  assert.equal(config.vars.SCHEDULER_ENABLED, "true");
 });
 
 test("targets only the pinned beta endpoint and sends bearer authentication", async () => {
@@ -41,6 +42,21 @@ test("targets only the pinned beta endpoint and sends bearer authentication", as
   assert.equal(request.init.signal instanceof AbortSignal, true);
 });
 
+test("logs only an allowlisted execution state from the beta response header", async () => {
+  const logger = captureLogger();
+  const run = createOutboxScheduler({
+    logger,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "X-Hermes-Outbox-Execution": "skipped_worker_disabled" }),
+    }),
+  });
+
+  await run(betaEnv);
+  assert.deepEqual(JSON.parse(logger.entries[0]).execution, "skipped_worker_disabled");
+});
+
 test("rejects any configured non-beta or modified target without fetching", async () => {
   let fetches = 0;
   const logger = captureLogger();
@@ -52,13 +68,13 @@ test("rejects any configured non-beta or modified target without fetching", asyn
   assert.equal(fetches, 0);
 });
 
-test("skips while disabled and fails closed when the cron secret is missing", async () => {
+test("skips while disabled and fails closed when the dedicated scheduler secret is missing", async () => {
   let fetches = 0;
   const logger = captureLogger();
   const run = createOutboxScheduler({ logger, fetchImpl: async () => { fetches += 1; } });
 
   assert.deepEqual(await run({ ...betaEnv, SCHEDULER_ENABLED: "false" }), { ok: true, skipped: true });
-  assert.deepEqual(await run({ ...betaEnv, CRON_SECRET: " " }), { ok: false, reason: "missing_secret" });
+  assert.deepEqual(await run({ ...betaEnv, TELEGRAM_OUTBOX_SCHEDULER_SECRET: " " }), { ok: false, reason: "missing_secret" });
   assert.equal(fetches, 0);
 });
 

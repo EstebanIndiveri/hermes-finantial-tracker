@@ -34,7 +34,8 @@ export function createOutboxScheduler({
       safeLogger(logger, { event: "outbox_scheduler_failed", reason: "invalid_target" });
       return { ok: false, reason: "invalid_target" };
     }
-    if (typeof env.CRON_SECRET !== "string" || env.CRON_SECRET.trim().length === 0) {
+    if (typeof env.TELEGRAM_OUTBOX_SCHEDULER_SECRET !== "string" ||
+      env.TELEGRAM_OUTBOX_SCHEDULER_SECRET.trim().length === 0) {
       safeLogger(logger, { event: "outbox_scheduler_failed", reason: "missing_secret" });
       return { ok: false, reason: "missing_secret" };
     }
@@ -45,13 +46,17 @@ export function createOutboxScheduler({
     try {
       const response = await fetchImpl(BETA_OUTBOX_URL, {
         method: "GET",
-        headers: { Authorization: `Bearer ${env.CRON_SECRET}` },
+        headers: { Authorization: `Bearer ${env.TELEGRAM_OUTBOX_SCHEDULER_SECRET}` },
         signal: controller.signal,
       });
       const result = { ok: response.ok, status: response.status };
+      const executionHeader = response.headers?.get?.("X-Hermes-Outbox-Execution");
+      const execution = ["processed", "skipped_worker_disabled"]
+        .includes(executionHeader) ? executionHeader : "unknown";
       safeLogger(logger, {
         event: response.ok ? "outbox_scheduler_completed" : "outbox_scheduler_http_error",
         status: response.status,
+        execution,
         durationMs: Date.now() - startedAt,
       });
       // Do not read or log the body; the application may return private data.

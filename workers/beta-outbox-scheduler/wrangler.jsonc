@@ -2,11 +2,12 @@
   "name": "hermes-beta-outbox-scheduler",
   "main": "src/worker.mjs",
   "compatibility_date": "2026-09-29",
+  "workers_dev": false,
   "triggers": {
     "crons": ["*/5 * * * *"]
   },
   "vars": {
     "OUTBOX_WORKER_URL": "https://hermes-finantial-tracker-z2.vercel.app/api/cron/telegram-outbox",
-    "SCHEDULER_ENABLED": "false"
+    "SCHEDULER_ENABLED": "true"
   }
 }
