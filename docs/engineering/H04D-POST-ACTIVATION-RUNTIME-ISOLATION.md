@@ -36,7 +36,7 @@ This attests the build environment of a **new** beta deployment, not a prior dep
 
 ## Current beta facts supplied to the work
 
-The current beta deployment is Vercel `Production` target inside the separate beta project. The [29/09 review record](H04D-ISOLATION-REVIEW-2026-09-29.md) lists the authenticated project, DB, bot and deployment identities, the successful build assertion (including fingerprint match), aliases, and remaining interpretation limits. The private local receipts and manifest passed the hardened runner with `ok:true`, `postActivationRuntimeConsistent:true`, and `isolationVerified:false`. Owner review is still required for a formal certificate.
+The current beta deployment is Vercel `Production` target inside the separate beta project. The [29/09 review record](H04D-ISOLATION-REVIEW-2026-09-29.md) lists the authenticated project, DB, bot and deployment identities, the successful build assertion (including fingerprint match), aliases, and remaining interpretation limits. The private local receipts and manifest passed the hardened runner with `ok:true`, `postActivationRuntimeConsistent:true`, and `isolationVerified:false`. Esteban explicitly accepted that residual for the **current beta pilot only** on 29/09; the machine result remains unchanged and any new deployment or binding change requires fresh evidence.
 
 ## Tests
 
