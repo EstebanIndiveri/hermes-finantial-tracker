@@ -18,6 +18,12 @@ The validator fails on missing/stale evidence, unsupported sources, identity col
 
 Formal certification still requires human review of provider provenance, the current deployment's binding inventory (names and secret references, never values), proof the deployed beta runtime uses the declared beta bindings, and acceptance of residual risks. It must never promote local declarations alone to `isolationVerified: true`.
 
+## Beta build-time binding assertion
+
+`scripts/assert-beta-build-isolation.mjs` runs before the isolated Next build. It is silent outside an explicitly gated beta deployment (`HERMES_BETA_ISOLATION_ASSERT=true`). When gated, it fails the build unless the actual build environment selects the exact beta app origin, Turso host, bot token ID prefix and declared bot ID/username, beta session cookie, active inbox/outbox/worker flags, live AI/OCR, disabled proactive alerts, and nonempty required beta secrets. The only emitted event has fixed check names and pass/fail booleans; no value or digest is logged.
+
+This attests the build environment of a **new** beta deployment, not a prior deployment and not the cryptographic non-reuse of every secret. Vercel documents that environment variable changes apply to new deployments, not previous ones. The gate must be enabled only in the separate beta project's Production environment; a failed gated build must leave the existing beta deployment in service. Capture the deployment ID and the allowlisted build event as a redacted receipt, then check the live alias points to that deployment. Do not enable this variable in the legacy project.
+
 ## Current beta facts supplied to the work
 
 The deployment is Vercel `Production` target inside the separate beta project. The beta project, Turso database, and Telegram bot IDs are recorded in the implementation status. These facts are fixture inputs for tests only; this document does not say they have been refreshed from provider receipts by this validator. Before using the contract for certification, capture fresh receipts for beta and legacy metadata and have an owner review them.
