@@ -1,6 +1,6 @@
 # H04d isolation evidence review — 2026-09-29
 
-Status: **open; `isolationVerified=false`**. This is a redacted evidence index, not a release certificate. No legacy configuration, data or deployment was changed by these checks.
+Status: **closed for the current beta pilot only by explicit owner acceptance on 29/09/2026; automated `isolationVerified=false` remains unchanged**. This is a redacted evidence index supporting a scoped human decision, not a legacy-production release certificate. No legacy configuration, data or deployment was changed by these checks.
 
 ## Authenticated provider identities
 
@@ -23,9 +23,11 @@ Status: **open; `isolationVerified=false`**. This is a redacted evidence index, 
 - Read-only HTTP probes after the deploy returned 200 for beta `/login` and 401 for unauthenticated beta `/api/cron/telegram-outbox`. They created no financial rows or Telegram updates.
 - The pre-activation manifest verifier must remain unchanged; it explicitly requires flags off and provider stubs. The separate post-activation validator checks declaration consistency but deliberately returns `isolationVerified=false` pending a reviewed provider/runtime evidence package.
 
-## Remaining closure gates
+## Owner decision and residual limits
 
 1. The gated build-time attestation for the **current** beta deployment passed, including all six secret fingerprints, and the beta alias was checked. This proves the environment snapshot used to build the active beta deployment matches the documented beta identities and original six-secret receipt. It is not a readback of secrets from the running function, nor proof about any old deployment URL.
-2. Receipts, digests and the post-activation consistency run are complete locally. Esteban must review provenance and accept or reject the remaining limitation that the check attests the active deployment's build-time environment snapshot, not a direct readback from every running function or retired deployment URL. Only that owner decision can close the formal certificate; the validator deliberately continues to output `isolationVerified:false`.
+2. Receipts, digests and the post-activation consistency run are complete locally. Esteban explicitly accepted the remaining build-snapshot-versus-running-function limitation on 29/09 **for the current beta pilot only**. The validator deliberately continues to output `isolationVerified:false`; the human scope decision must not be encoded as a machine verification result.
+
+This scoped closure does not certify retired deployment URLs or authorize a push, legacy release or promotion. Any active beta deployment/binding/identity change requires fresh evidence. Before a future production promotion, Codex must review access to old deployment URLs and rerun the assertion on the candidate; Esteban must separately authorize that release.
 
 No step above authorizes a legacy push, deploy, webhook change, DB migration or query of financial rows.
