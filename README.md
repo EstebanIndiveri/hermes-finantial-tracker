@@ -4,9 +4,18 @@
 
 Hermes Finance es un sistema completo de gestión financiera personal que te ayuda a mantener el control de tus gastos mensuales, establecer presupuestos por categoría, y recibir alertas automáticas cuando te acercas a los límites. Todo gestionado desde Telegram o una interfaz web moderna.
 
+## Estado, auditoría y plan
+
+La línea legacy desplegada permanece en `main`. El desarrollo y las pruebas de
+estabilización se hacen en la rama beta aislada; su estado, owners y puertas de
+cierre están en el [registro de implementación](docs/engineering/IMPLEMENTATION-STATUS.md).
+Para entender la auditoría original, el plan general, sus revisiones y los
+cortes PR/H04d/ACT, empezá por el [mapa de documentación](docs/README.md).
+El merge a `main` exige PR, CI verde y autorización explícita de release.
+
 ## 🚀 Stack Tecnológico
 
-- **Frontend**: [Next.js 15](https://nextjs.org/) con App Router, TypeScript, Tailwind CSS
+- **Frontend**: [Next.js 16](https://nextjs.org/) con App Router, TypeScript, Tailwind CSS
 - **UI Components**: [shadcn/ui](https://ui.shadcn.com/) (Radix UI + Tailwind)
 - **Base de datos**: [Turso](https://turso.tech/) (SQLite edge distribuido) + [Drizzle ORM](https://orm.drizzle.team/)
 - **Bot**: [Telegram Bot API](https://core.telegram.org/bots/api)
@@ -143,17 +152,14 @@ Para verificar que funciona:
 
 ```bash
 npm run build  # verificar que el build funciona localmente
-git push origin main  # Vercel despliega automáticamente
 ```
 
-No usar ese flujo para staging: primero completar el runbook H04d y mantener
-aislados proyecto, DB, bot, webhook, secretos y cookie. La configuración de
-runtime de una beta aislada es `AI_MODE=stub`, `OCR_MODE=stub`,
-`NOTIFICATIONS_ENABLED=false` y
-`SESSION_COOKIE_NAME=hermes_beta_session`. Los valores `stub` impiden las
-llamadas a proveedores; `NOTIFICATIONS_ENABLED=false` solo detiene entregas
-proactivas, no las respuestas directas solicitadas mediante un webhook
-autorizado.
+El proyecto beta tiene Vercel, Turso, bot y cookie propios. Seguir el
+[runbook H04d](docs/engineering/PR-08-H04D-STAGING-REHEARSAL-RUNBOOK.md) y el
+[estado operativo](docs/engineering/IMPLEMENTATION-STATUS.md) para sus flags,
+proveedores, crons y despliegue vigente. `main` sigue protegido como línea
+legacy; un merge aprobado activaría su flujo de despliegue y por eso requiere
+una decisión de release separada.
 
 ## 🤖 Configuración del Bot de Telegram
 
@@ -221,7 +227,7 @@ Elimina (soft delete) el último gasto registrado
 
 ```
 gasto 47k en el super para la comida de la semana
-Interpreta el gasto en lenguaje natural y lo registra automáticamente
+Interpreta el gasto en lenguaje natural y presenta una propuesta para confirmar
 ```
 
 ### Ejemplos de uso

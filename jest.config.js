@@ -9,6 +9,7 @@ module.exports = {
     '/node_modules/',
     '<rootDir>/e2e/',
     '<rootDir>/scripts/__tests__/',
+    '<rootDir>/workers/beta-outbox-scheduler/test/',
   ],
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: { module: 'commonjs', rootDir: './' } }],

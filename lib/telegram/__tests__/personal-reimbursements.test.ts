@@ -266,7 +266,12 @@ describe("telegram reimbursements", () => {
       [{ name: "QA" }],
       [],
       [{ name: "Supermercado" }],
-      [{ userId: "user-2", telegramId: "telegram-2" }],
+      [
+        { userId: "user-1", telegramId: "telegram-1" },
+        { userId: "user-2", telegramId: "telegram-2" },
+        { userId: "user-3", telegramId: null },
+        { userId: "user-4", telegramId: "telegram-4" },
+      ],
       [],
       [{ total: 5000 }],
       [{ name: "Supermercado", emoji: "🛒", slug: "supermercado" }],
@@ -296,8 +301,21 @@ describe("telegram reimbursements", () => {
       })),
     };
     const operationSpy = jest.spyOn(telegramFinancialOperation, "runTelegramOperation");
+    const committedResults = new Map<string, unknown>();
+    let financialWriteCount = 0;
     (operationSpy as unknown as jest.Mock).mockImplementation(async (_runner, input, write) => {
+      const priorResult = committedResults.get(input.identity.operationId);
+      if (priorResult) {
+        return {
+          kind: "committed",
+          operationId: input.identity.operationId,
+          reused: true,
+          result: priorResult,
+        };
+      }
+      financialWriteCount += 1;
       const writeResult = await write(transaction);
+      committedResults.set(input.identity.operationId, writeResult.result);
       return {
         kind: "committed",
         operationId: input.identity.operationId,
@@ -307,6 +325,13 @@ describe("telegram reimbursements", () => {
     });
 
     try {
+      const operationContext = createTelegramOperationContext({
+        botId: "bot-1",
+        updateId: "expense-reimbursement-update",
+        chatId: "chat-1",
+        callbackMessageId: 77,
+        action: "personal.callback",
+      });
       const response = await handlePersonalCallback(
         "chat-1",
         "telegram-1",
@@ -314,13 +339,16 @@ describe("telegram reimbursements", () => {
         "group-1",
         "expense:confirm_reimbursement",
         77,
-        createTelegramOperationContext({
-          botId: "bot-1",
-          updateId: "expense-reimbursement-update",
-          chatId: "chat-1",
-          callbackMessageId: 77,
-          action: "personal.callback",
-        }),
+        operationContext,
+      );
+      const repeatedResponse = await handlePersonalCallback(
+        "chat-1",
+        "telegram-1",
+        "user-1",
+        "group-1",
+        "expense:confirm_reimbursement",
+        77,
+        operationContext,
       );
 
       const transactionRow = insertValues.find(({ values }) =>
@@ -340,8 +368,22 @@ describe("telegram reimbursements", () => {
         amount: 5000,
         status: "pending",
       }));
-      expect(deliveries.some((delivery) => delivery.chat_id === "telegram-2")).toBe(true);
+      const groupDeliveries = deliveries.filter((delivery) =>
+        typeof delivery.delivery_key === "string" && delivery.chat_id !== "chat-1",
+      );
+      expect(groupDeliveries.map((delivery) => delivery.chat_id).sort()).toEqual([
+        "telegram-2",
+        "telegram-4",
+      ]);
+      expect(groupDeliveries.map((delivery) => delivery.delivery_key)).toEqual([
+        expect.any(String),
+        expect.any(String),
+      ]);
+      expect(new Set(groupDeliveries.map((delivery) => delivery.delivery_key)).size).toBe(2);
       expect(response.text).toContain("Reintegro solicitado. Ya avisamos al grupo.");
+      expect(repeatedResponse.text).toBe(response.text);
+      expect(financialWriteCount).toBe(1);
+      expect(insertValues).toHaveLength(5);
       expect(mockCreateReimbursement).not.toHaveBeenCalled();
     } finally {
       operationSpy.mockRestore();

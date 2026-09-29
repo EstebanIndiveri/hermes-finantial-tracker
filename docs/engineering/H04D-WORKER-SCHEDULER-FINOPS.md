@@ -1,6 +1,6 @@
 # H04d worker scheduler and FinOps decision
 
-Assessment date: 2026-09-26. Scope: beta outbox worker and a read-only check of
+Assessment date: 2026-09-26; revised 2026-09-29. Scope: beta outbox worker and a read-only check of
 the legacy Production project's cron definitions. No Production configuration,
 database, secret, webhook, or traffic was changed.
 
@@ -57,11 +57,11 @@ described as retry recovery suitable for a connected beta pilot.
 
 ## Options
 
-1. **Keep the worker disabled while completing account/link and financial QA.**
-   This has zero poll traffic and no added provider. The outbox can remain off
-   until its own verification gate; direct legacy-style sends continue on the
-   webhook path. Use a single authenticated worker invocation in controlled QA
-   to test the route, then keep it off again.
+1. **Keep the worker disabled during the remaining group QA.** This has zero
+   poll traffic and no added provider. The beta outbox is now on and normal
+   replies are attempted inline; only unattended retry recovery is missing.
+   Use a controlled authenticated worker invocation to test a due retry, then
+   leave the worker off until the scheduler gate is ready.
 2. **External Cloudflare Cron Trigger every five minutes (recommended for a
    low-cost beta safety sweep, subject to implementation and validation).**
    A minimal Worker can call only the beta worker URL with a beta-only
@@ -72,21 +72,29 @@ described as retry recovery suitable for a connected beta pilot.
    inside it; otherwise use the paid Workers plan or choose another scheduler.
    This adds an operational provider and a secret binding, so do not create it
    without an explicit provider/account decision.
-3. **Vercel Pro with five-minute polling.** This is the simplest single-vendor
+3. **Upstash QStash schedule every five minutes.** Its current Free tier allows
+   1,000 messages/day and 10 active schedules; 288 polls/day fit if usage on
+   that account remains below the cap. It can call the existing endpoint
+   without deploying scheduler code, but it introduces another custodian for
+   the beta authorization header and its delivery/logging policy must be
+   reviewed before storing that secret. Use only a beta-only credential and
+   disable response-body logging where supported. This is the lowest-code
+   alternative if a Cloudflare account is not available.
+4. **Vercel Pro with five-minute polling.** This is the simplest single-vendor
    control plane and supports the schedule, but costs a $20/month platform fee
    (with $20 included usage credit) before any additional seat or excess usage.
    Consider it when the app itself needs other Pro capabilities or measured
    latency demands a tighter bound.
-4. **Vercel Pro with one-minute polling.** Reserve for a demonstrated sub-five-
+5. **Vercel Pro with one-minute polling.** Reserve for a demonstrated sub-five-
    minute retry SLA or high enough queue volume that a five-minute interval is
    insufficient. At the current five-claim cap that is 300 claims/hour versus
    60 claims/hour at five-minute polling. Measure backlog, age of oldest due
    row, and actual function usage before choosing this.
-5. **GitHub Actions schedule.** Not recommended for a runtime queue: GitHub
+6. **GitHub Actions schedule.** Not recommended for a runtime queue: GitHub
    documents a five-minute minimum and warns scheduled runs may be delayed or
    dropped during high load. Every-five-minute polling would also start 8,640
    workflow jobs/month, adding runner churn and potentially billable minutes.
-6. **Event-driven delayed wakeups (future optimization).** Schedule a wake-up
+7. **Event-driven delayed wakeups (future optimization).** Schedule a wake-up
    for each row's `next_attempt_at`, retain a 15-minute safety sweep for
    missed wakeups, and keep leases/idempotency as the concurrency fence. This
    best matches retry timing and avoids empty polls, but adds queue-provider
@@ -96,10 +104,10 @@ described as retry recovery suitable for a connected beta pilot.
 ## Recommendation and sequence
 
 Do not unblock H04d by buying Vercel Pro and do not deploy a daily worker merely
-to make the cron gate appear green. First finish beta account login, Telegram
-linking, and a synthetic financial E2E with the existing flags. Then enable
-outbox separately and verify one immediate delivery plus one forced retry using
-the authenticated worker manually. Capture the row transitions and latency.
+to make the cron gate appear green. Beta account/link, individual financial
+E2E and inline outbox delivery already passed. Finish required group fanout,
+then stage a controlled retry using the authenticated worker manually and
+capture row transitions and latency before activating a recurring scheduler.
 
 If the measured product requirement is recovery within five minutes, implement
 an isolated Cloudflare Worker with `*/5 * * * *`, beta-only URL/secret, timeout,
@@ -110,6 +118,46 @@ the requirement is below five minutes or Cloudflare Free's CPU limit is
 insufficient, compare actual measured Vercel function usage against the $20
 Pro credit before upgrading. Keep the one-minute cron as a config-only option;
 do not enable it by default.
+
+### Local scheduler implementation and operator steps
+
+The isolated scheduler source and focused tests are in
+`workers/beta-outbox-scheduler/`. It pins the only permitted target in code to
+`https://hermes-finantial-tracker-z2.vercel.app/api/cron/telegram-outbox` and
+also requires the configured URL to match exactly. Its checked-in Wrangler
+config schedules every five minutes but sets `SCHEDULER_ENABLED=false`; it has
+no secret value. The handler makes one GET with the Bearer secret, aborts after
+15 seconds, and logs only a fixed event name, HTTP status, and elapsed time.
+It never reads response bodies or logs URLs, headers, exception text, or secret
+values.
+
+Deployment remains an explicit operator action after the beta outbox has
+passed its manual delivery/retry gate and the Cloudflare account/provider choice
+is approved. From `workers/beta-outbox-scheduler/`:
+
+1. Run `npx wrangler deploy` with `SCHEDULER_ENABLED=false`. The Cron Trigger
+   will exist but will safely skip requests.
+2. Add the beta-only `CRON_SECRET` using `npx wrangler secret put CRON_SECRET`.
+   Enter the value from the approved secure source; do not put it in source,
+   shell history, or `vars`.
+3. Change `SCHEDULER_ENABLED` to `true` in `wrangler.jsonc`, deploy again, and
+   confirm the scheduler reports only completion/status metadata. A 401 means
+   the beta secret binding is mismatched; 5xx means inspect the beta Vercel
+   function without exposing its response body.
+4. Verify the target hostname is the beta project and measure oldest due row,
+   cron completion/HTTP status, timeout count, and Cloudflare free CPU usage.
+   Keep this as a best-effort ~5-minute sweep, with a conservative operational
+   recovery target of under 10 minutes; Cloudflare does not provide that as an
+   application SLA.
+
+Rollback: set `SCHEDULER_ENABLED` to `false` and deploy to stop requests
+immediately. Then set `triggers.crons` to an empty array and deploy to remove
+the schedule. Delete the Cloudflare `CRON_SECRET` binding only if the scheduler
+will not be reused. This does not change the Vercel deployment, its flags, or
+the outbox rows. Do not point the Worker at the legacy/Production hostname.
+
+Focused local tests (no provider credentials or network calls):
+`node --test workers/beta-outbox-scheduler/test/worker.test.mjs`.
 
 No scheduler is to target legacy Production until a separate release approval.
 Beta and Production must use distinct target URLs and `CRON_SECRET` values.
@@ -128,5 +176,6 @@ Beta and Production must use distinct target URLs and `CRON_SECRET` values.
 - [Cloudflare Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
 - [Cloudflare Workers limits](https://developers.cloudflare.com/workers/platform/limits/)
 - [Cloudflare Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)
+- [Upstash QStash Free limits and pricing](https://upstash.com/pricing/qstash)
 - [GitHub Actions schedule behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
 - [Telegram Bot API webhook delivery](https://core.telegram.org/bots/api#webhookinfo)
