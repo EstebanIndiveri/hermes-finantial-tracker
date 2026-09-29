@@ -57,9 +57,10 @@ described as retry recovery suitable for a connected beta pilot.
 
 ## Options
 
-1. **Keep the worker disabled during the remaining group QA.** This has zero
-   poll traffic and no added provider. The beta outbox is now on and normal
-   replies are attempted inline; only unattended retry recovery is missing.
+1. **Keep the worker disabled until retry recovery is rehearsed.** This has
+   zero poll traffic and no added provider. The beta outbox is on and normal
+   replies, including the 29/09 live two-member reimbursement/payment canary,
+   were delivered inline; only unattended retry recovery is missing.
    Use a controlled authenticated worker invocation to test a due retry, then
    leave the worker off until the scheduler gate is ready.
 2. **External Cloudflare Cron Trigger every five minutes (recommended for a
@@ -105,8 +106,8 @@ described as retry recovery suitable for a connected beta pilot.
 
 Do not unblock H04d by buying Vercel Pro and do not deploy a daily worker merely
 to make the cron gate appear green. Beta account/link, individual financial
-E2E and inline outbox delivery already passed. Finish required group fanout,
-then stage a controlled retry using the authenticated worker manually and
+E2E and required live group fanout passed on 29/09. Next stage a controlled
+retry using the authenticated worker manually and
 capture row transitions and latency before activating a recurring scheduler.
 
 If the measured product requirement is recovery within five minutes, implement
