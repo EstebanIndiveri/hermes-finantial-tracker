@@ -99,10 +99,10 @@ describe("formatResumen", () => {
     });
 
     expect(result).toContain("📊 Resumen 2025-05");
-    expect(result).toContain("Ingreso: $2,000.00");
-    expect(result).toContain("Gastado: $1,200.00");
-    expect(result).toContain("Ahorro proyectado: $800.00");
-    expect(result).toContain("Tipo de cambio: $1.050");
+    expect(result).toContain("Ingreso: USD $2,000.00");
+    expect(result).toContain("Gastado: USD $1,200.00");
+    expect(result).toContain("Ahorro proyectado: USD $800.00");
+    expect(result).toContain("Tipo de cambio: 1.050 ARS/USD");
     expect(result).toContain("Estado: 🟢 GREEN");
   });
 

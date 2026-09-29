@@ -47,10 +47,10 @@ export function formatResumen(params: {
   return [
     `<b>📊 Resumen ${params.month}</b>`,
     ``,
-    `Ingreso: ${formatUSD(params.income_usd)}`,
-    `Gastado: ${formatUSD(params.total_spent_usd)}`,
-    `Ahorro proyectado: ${formatUSD(params.ahorro_proyectado_usd)}`,
-    `Tipo de cambio: $${params.exchange_rate.toLocaleString("es-AR")}`,
+    `Ingreso: USD ${formatUSD(params.income_usd)}`,
+    `Gastado: USD ${formatUSD(params.total_spent_usd)}`,
+    `Ahorro proyectado: USD ${formatUSD(params.ahorro_proyectado_usd)}`,
+    `Tipo de cambio: ${params.exchange_rate.toLocaleString("es-AR")} ARS/USD`,
     ``,
     `Estado: ${icon} ${params.status}`,
   ].join("\n");
