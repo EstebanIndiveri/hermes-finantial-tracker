@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { createHash } from "node:crypto";
 
 const EXPECTED = Object.freeze({
   appOrigin: "https://hermes-finantial-tracker-z2.vercel.app",
@@ -27,6 +28,16 @@ const REQUIRED_SECRETS = Object.freeze([
   "OCR_SPACE_API_KEY",
 ]);
 
+const BETA_SECRET_KEYS = Object.freeze({
+  cron: "CRON_SECRET",
+  database: "TURSO_AUTH_TOKEN",
+  session: "SESSION_SECRET",
+  telegramBot: "TELEGRAM_BOT_TOKEN",
+  telegramWebhook: "TELEGRAM_SECRET_TOKEN",
+  webAccess: "WEB_ACCESS_TOKEN",
+});
+const SHA256 = /^[a-f0-9]{64}$/;
+
 const CHECK_NAMES = Object.freeze([
   "beta_app_origin",
   "beta_database_host",
@@ -36,6 +47,7 @@ const CHECK_NAMES = Object.freeze([
   "beta_runtime_modes",
   "beta_notifications_disabled",
   "required_secrets_present",
+  "beta_secret_fingerprints_match",
 ]);
 
 function nonempty(environment, key) {
@@ -54,6 +66,35 @@ function databaseHost(value) {
   }
 }
 
+function betaSecretFingerprintsMatch(environment) {
+  const rawExpected = environment.HERMES_BETA_SECRET_FINGERPRINTS;
+  if (typeof rawExpected !== "string" || rawExpected.trim().length === 0) return false;
+
+  let expected;
+  try {
+    expected = JSON.parse(rawExpected);
+  } catch {
+    return false;
+  }
+  if (!expected || typeof expected !== "object" || Array.isArray(expected)) return false;
+  const expectedKeys = Object.keys(BETA_SECRET_KEYS).sort();
+  if (JSON.stringify(Object.keys(expected).sort()) !== JSON.stringify(expectedKeys)) return false;
+
+  const expectedDigests = expectedKeys.map((key) => expected[key]);
+  if (expectedDigests.some((digest) => typeof digest !== "string" || !SHA256.test(digest))) return false;
+  if (new Set(expectedDigests).size !== expectedDigests.length) return false;
+
+  const actualDigests = expectedKeys.map((key) => {
+    const secret = environment[BETA_SECRET_KEYS[key]];
+    if (typeof secret !== "string" || secret.length === 0) return null;
+    return createHash("sha256").update(secret, "utf8").digest("hex");
+  });
+  if (actualDigests.some((digest) => digest === null) || new Set(actualDigests).size !== actualDigests.length) {
+    return false;
+  }
+  return expectedKeys.every((key, index) => actualDigests[index] === expected[key]);
+}
+
 /** Return only fixed, allowlisted check names; never echo environment contents. */
 export function evaluateBetaBuildIsolation(environment) {
   const token = environment.TELEGRAM_BOT_TOKEN;
@@ -69,6 +110,7 @@ export function evaluateBetaBuildIsolation(environment) {
     beta_runtime_modes: environment.AI_MODE === EXPECTED.aiMode && environment.OCR_MODE === EXPECTED.ocrMode,
     beta_notifications_disabled: environment.NOTIFICATIONS_ENABLED === EXPECTED.notificationsEnabled,
     required_secrets_present: REQUIRED_SECRETS.every((key) => nonempty(environment, key)),
+    beta_secret_fingerprints_match: betaSecretFingerprintsMatch(environment),
   };
   return {
     passed: Object.values(passed).every(Boolean),
@@ -84,6 +126,7 @@ export function runBetaBuildIsolationAssertion(environment, output = console) {
   output.log(JSON.stringify({
     event: "beta_build_isolation_attested",
     passed: result.passed,
+    beta_secret_fingerprints_match: result.checks.includes("beta_secret_fingerprints_match"),
     checks: result.checks,
     failedChecks: result.failedChecks,
   }));

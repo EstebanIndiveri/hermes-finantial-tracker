@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -8,6 +9,14 @@ import {
 } from "../assert-beta-build-isolation.mjs";
 
 const scriptPath = fileURLToPath(new URL("../assert-beta-build-isolation.mjs", import.meta.url));
+const betaSecretEnvironmentKeys = {
+  cron: "CRON_SECRET",
+  database: "TURSO_AUTH_TOKEN",
+  session: "SESSION_SECRET",
+  telegramBot: "TELEGRAM_BOT_TOKEN",
+  telegramWebhook: "TELEGRAM_SECRET_TOKEN",
+  webAccess: "WEB_ACCESS_TOKEN",
+};
 const validEnvironment = {
   HERMES_BETA_ISOLATION_ASSERT: "true",
   NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
@@ -30,6 +39,12 @@ const validEnvironment = {
   GROQ_API_KEY: "synthetic-groq-key",
   OCR_SPACE_API_KEY: "synthetic-ocr-key",
 };
+validEnvironment.HERMES_BETA_SECRET_FINGERPRINTS = JSON.stringify(
+  Object.fromEntries(Object.entries(betaSecretEnvironmentKeys).map(([key, environmentKey]) => [
+    key,
+    createHash("sha256").update(validEnvironment[environmentKey], "utf8").digest("hex"),
+  ])),
+);
 
 test("attests matching beta build environment", () => {
   const result = evaluateBetaBuildIsolation(validEnvironment);
@@ -58,6 +73,7 @@ test("fails closed on legacy or mismatched identities and runtime settings", () 
     ["SESSION_SECRET", ""],
     ["TELEGRAM_SECRET_TOKEN", ""],
     ["WEB_ACCESS_TOKEN", ""],
+    ["HERMES_BETA_SECRET_FINGERPRINTS", "not-json"],
   ];
 
   for (const [key, value] of mismatches) {
@@ -66,16 +82,37 @@ test("fails closed on legacy or mismatched identities and runtime settings", () 
   }
 });
 
+test("requires exact, distinct fingerprints for the six beta secrets", () => {
+  const expected = JSON.parse(validEnvironment.HERMES_BETA_SECRET_FINGERPRINTS);
+  const changedSecret = { ...validEnvironment, SESSION_SECRET: "sentinel-different-session-secret" };
+  assert.equal(evaluateBetaBuildIsolation(changedSecret).passed, false);
+  assert.ok(evaluateBetaBuildIsolation(changedSecret).failedChecks.includes("beta_secret_fingerprints_match"));
+
+  const missing = { ...validEnvironment };
+  delete missing.HERMES_BETA_SECRET_FINGERPRINTS;
+  assert.equal(evaluateBetaBuildIsolation(missing).passed, false);
+
+  const malformedShape = { ...validEnvironment, HERMES_BETA_SECRET_FINGERPRINTS: JSON.stringify({ ...expected, extra: "0".repeat(64) }) };
+  assert.equal(evaluateBetaBuildIsolation(malformedShape).passed, false);
+
+  const collision = { ...expected, database: expected.cron };
+  assert.equal(evaluateBetaBuildIsolation({
+    ...validEnvironment,
+    HERMES_BETA_SECRET_FINGERPRINTS: JSON.stringify(collision),
+  }).passed, false);
+});
+
 test("prints one allowlisted evidence event without environment values", () => {
   const output = [];
   const ok = runBetaBuildIsolationAssertion(validEnvironment, { log: (line) => output.push(line) });
   assert.equal(ok, true);
   assert.equal(output.length, 1);
   const event = JSON.parse(output[0]);
-  assert.deepEqual(Object.keys(event).sort(), ["checks", "event", "failedChecks", "passed"].sort());
+  assert.deepEqual(Object.keys(event).sort(), ["beta_secret_fingerprints_match", "checks", "event", "failedChecks", "passed"].sort());
   assert.equal(event.event, "beta_build_isolation_attested");
   assert.equal(event.passed, true);
-  for (const secret of [validEnvironment.TELEGRAM_BOT_TOKEN, validEnvironment.TURSO_AUTH_TOKEN, validEnvironment.GROQ_API_KEY]) {
+  assert.equal(event.beta_secret_fingerprints_match, true);
+  for (const secret of [validEnvironment.TELEGRAM_BOT_TOKEN, validEnvironment.TURSO_AUTH_TOKEN, validEnvironment.GROQ_API_KEY, validEnvironment.HERMES_BETA_SECRET_FINGERPRINTS]) {
     assert.equal(output[0].includes(secret), false);
   }
 });
@@ -87,6 +124,7 @@ test("failure output does not expose bad origins, database URLs, tokens, or secr
     TURSO_DATABASE_URL: "libsql://legacy-secret-db.invalid?auth=sentinel-db-auth",
     TELEGRAM_BOT_TOKEN: "8884948884:sentinel-legacy-token",
     SESSION_SECRET: "sentinel-session-secret",
+    HERMES_BETA_SECRET_FINGERPRINTS: validEnvironment.HERMES_BETA_SECRET_FINGERPRINTS,
   };
   const result = spawnSync(process.execPath, [scriptPath], {
     encoding: "utf8",
@@ -100,14 +138,17 @@ test("failure output does not expose bad origins, database URLs, tokens, or secr
     sentinels.TURSO_DATABASE_URL,
     sentinels.TELEGRAM_BOT_TOKEN,
     sentinels.SESSION_SECRET,
+    sentinels.HERMES_BETA_SECRET_FINGERPRINTS,
     "sentinel-db-auth",
   ]) {
     assert.equal(result.stdout.includes(secret), false);
   }
   const event = JSON.parse(result.stdout);
   assert.equal(event.passed, false);
+  assert.equal(event.beta_secret_fingerprints_match, false);
   assert.ok(event.failedChecks.includes("beta_app_origin"));
   assert.ok(event.failedChecks.includes("beta_telegram_identity"));
+  assert.ok(event.failedChecks.includes("beta_secret_fingerprints_match"));
 });
 
 test("gate off leaves local build output untouched", () => {
