@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { users, transactions, bot_messages, split_sessions, splits, reimbursementRequests } from "@/lib/db/schema";
+import { users, transactions, split_sessions, splits, reimbursementRequests } from "@/lib/db/schema";
 import { eq, and, gte, lte, lt } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
+import { isIncomeCategory } from "@/lib/finance/income";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
@@ -46,12 +47,9 @@ export async function GET(req: NextRequest) {
     const results: { userId: string; sent: boolean; reason?: string }[] = [];
 
     for (const user of allUsers) {
-      // Resolve the destination from this user only; never use a shared env chat.
-      const lastMsg = await db.query.bot_messages.findFirst({
-        where: eq(bot_messages.user_id, user.id),
-        orderBy: (m, { desc }) => desc(m.created_at),
-      });
-      const chatId = lastMsg?.telegram_chat_id ?? user.telegram_user_id ?? null;
+      // A previous message may belong to an unrelated group chat. Proactive
+      // financial summaries go only to the user's linked private Telegram ID.
+      const chatId = user.telegram_user_id ?? null;
 
       if (!chatId) {
         results.push({ userId: user.id, sent: false, reason: "no_chat_id" });
@@ -98,14 +96,14 @@ export async function GET(req: NextRequest) {
         saving_goal_usd: summary.saving_goal_usd,
         status: summary.status,
         exchange_rate: summary.exchange_rate,
-        categories: categoryBreakdown.map(c => ({
+        categories: categoryBreakdown.filter(c => !c.is_income).map(c => ({
           name: c.name,
           emoji: c.emoji,
           gastado_ars: c.gastado_ars,
           budget_ars: c.budget_ars,
           status: c.status,
         })),
-        todayTransactions: todayTx.map(t => ({
+        todayTransactions: todayTx.filter(t => t.category && !isIncomeCategory(t.category.slug)).map(t => ({
           amount_ars: t.amount_ars,
           category: t.category?.name ?? "Sin categoría",
           emoji: t.category?.emoji ?? "📦",

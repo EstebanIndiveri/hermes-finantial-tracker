@@ -130,7 +130,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     (buildDailyAlert as jest.Mock).mockReturnValue({ shouldSend: true, message: "daily" });
   }
 
-  it("uses each user's persisted chat instead of TELEGRAM_CHAT_ID", async () => {
+  it("uses each user's linked private Telegram ID instead of a stale chat or TELEGRAM_CHAT_ID", async () => {
     setupDailyProcessing([
       { id: "u1", telegram_user_id: "tg-u1", active_telegram_group_id: "g1" },
       { id: "u2", telegram_user_id: "tg-u2", active_telegram_group_id: "g2" },
@@ -144,14 +144,17 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(sendTelegramMessage).toHaveBeenNthCalledWith(1, "chat-u1", "daily");
-    expect(sendTelegramMessage).toHaveBeenNthCalledWith(2, "chat-u2", "daily");
+    expect(sendTelegramMessage).toHaveBeenNthCalledWith(1, "tg-u1", "daily");
+    expect(sendTelegramMessage).toHaveBeenNthCalledWith(2, "tg-u2", "daily");
     expect(sendTelegramMessage).not.toHaveBeenCalledWith("global-chat", expect.anything());
+    expect(sendTelegramMessage).not.toHaveBeenCalledWith("chat-u1", expect.anything());
+    expect(sendTelegramMessage).not.toHaveBeenCalledWith("chat-u2", expect.anything());
+    expect(db.query.bot_messages.findFirst).not.toHaveBeenCalled();
     expect(resolveAuthorizedTelegramGroup).toHaveBeenNthCalledWith(1, "u1", "g1");
     expect(resolveAuthorizedTelegramGroup).toHaveBeenNthCalledWith(2, "u2", "g2");
   });
 
-  it("falls back to that user's telegram id when no bot message exists", async () => {
+  it("uses the linked private Telegram ID when no bot message exists", async () => {
     setupDailyProcessing([{ id: "u1", telegram_user_id: "tg-u1", active_telegram_group_id: "g1" }]);
     (db.query.bot_messages.findFirst as jest.Mock).mockResolvedValue(undefined);
 
@@ -178,6 +181,40 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(getCategoryBreakdown).not.toHaveBeenCalled();
     expect(db.query.transactions.findMany).not.toHaveBeenCalled();
     expect(sendTelegramMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not send to a stale group chat when the user has no linked private Telegram ID", async () => {
+    setupDailyProcessing([{ id: "u1", telegram_user_id: null, active_telegram_group_id: "g1" }]);
+    (db.query.bot_messages.findFirst as jest.Mock).mockResolvedValue({ telegram_chat_id: "stale-group-chat" });
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(await response.json()).toMatchObject({ results: [{ userId: "u1", sent: false, reason: "no_chat_id" }] });
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(db.query.bot_messages.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("passes only expense transactions and categories to the daily alert projection", async () => {
+    setupDailyProcessing([{ id: "u1", telegram_user_id: "tg-u1", active_telegram_group_id: "g1" }]);
+    (db.query.transactions.findMany as jest.Mock).mockResolvedValue([
+      { amount_ars: 2000, category: { slug: "ingresos", name: "Ingresos", emoji: "💵" } },
+      { amount_ars: 137, category: { slug: "supermercado", name: "Supermercado", emoji: "🛒" } },
+    ]);
+    (getCategoryBreakdown as jest.Mock).mockResolvedValue([
+      { name: "Ingresos", emoji: "💵", is_income: true, gastado_ars: 2000, budget_ars: 1000, status: "OK" },
+      { name: "Supermercado", emoji: "🛒", is_income: false, gastado_ars: 137, budget_ars: 500, status: "OK" },
+    ]);
+
+    await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(buildDailyAlert).toHaveBeenCalledWith(expect.objectContaining({
+      todayTransactions: [{ amount_ars: 137, category: "Supermercado", emoji: "🛒" }],
+      categories: [{ name: "Supermercado", emoji: "🛒", gastado_ars: 137, budget_ars: 500, status: "OK" }],
+    }));
   });
 
   it("skips stale or unauthorized group context", async () => {

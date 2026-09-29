@@ -107,4 +107,34 @@ describe("GET /api/export", () => {
     expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from("xlsx-content"));
     expect(generateXLSX).toHaveBeenCalledWith([], []);
   });
+
+  test("keeps income in movements but excludes it from expense and budget summaries", async () => {
+    (db.query.transactions.findMany as jest.Mock).mockResolvedValue([
+      { date: "2026-09-10", merchant: "Disco", category_id: "expense", category: { slug: "supermercado", name: "Supermercado", emoji: "🛒" }, amount_ars: 137, description: null },
+      { date: "2026-09-11", merchant: null, category_id: "income", category: { slug: "ingresos", name: "Ingresos", emoji: "💵" }, amount_ars: 2000, description: "sueldo" },
+    ]);
+    (db.query.categories.findMany as jest.Mock).mockResolvedValue([
+      { id: "expense", slug: "supermercado", name: "Supermercado", emoji: "🛒" },
+      { id: "income", slug: "ingresos", name: "Ingresos", emoji: "💵" },
+    ]);
+    (db.query.budgets.findMany as jest.Mock).mockResolvedValue([
+      { category_id: "expense", budget_ars: 500, hard_limit: 1 },
+    ]);
+
+    const xlsx = await GET(new NextRequest("http://localhost:3000/api/export?month=2026-09&format=xlsx"));
+    expect(xlsx.status).toBe(200);
+    expect(generateXLSX).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ categoryName: "Supermercado", amount_ars: 137 }),
+        expect.objectContaining({ categoryName: "Ingresos", amount_ars: 2000 }),
+      ]),
+      [{ name: "Supermercado", emoji: "🛒", budget_ars: 500, gastado_ars: 137, hard_limit: 1 }],
+    );
+
+    const csv = await GET(new NextRequest("http://localhost:3000/api/export?month=2026-09&format=csv"));
+    expect(csv.status).toBe(200);
+    expect(generateCSV).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ categoryName: "Ingresos", amount_ars: 2000 }),
+    ]));
+  });
 });

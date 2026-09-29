@@ -10,6 +10,7 @@ import { CategoryDonut } from "@/components/dashboard/CategoryDonut";
 import { MonthSelector } from "@/components/dashboard/MonthSelector";
 import { TransactionList } from "@/components/dashboard/TransactionList";
 import { ExportPanel } from "@/components/dashboard/ExportPanel";
+import { calculateSavingsPercent } from "@/lib/finance/rules";
 
 export const dynamic = "force-dynamic";
 
@@ -48,9 +49,10 @@ export default async function DashboardPage({
   const spentARS = categoryBreakdown
     .filter(c => !c.is_income)
     .reduce((acc, c) => acc + c.gastado_ars, 0);
-  const incomeARS = (summary?.income_usd ?? 0) * (summary?.exchange_rate ?? 1);
-  const ahorroARS = incomeARS - spentARS;
-  const pctAhorro = incomeARS > 0 ? Math.round((ahorroARS / incomeARS) * 100) : 0;
+  const pctAhorro = calculateSavingsPercent({
+    income_usd: summary?.income_usd ?? 0,
+    ahorro_proyectado_usd: summary?.ahorro_proyectado_usd ?? 0,
+  });
   const ahorroUSD = summary?.ahorro_proyectado_usd ?? 0;
   const goalUSD = summary?.saving_goal_usd ?? 0;
   const status = summary?.status ?? "GREEN";
@@ -144,7 +146,7 @@ export default async function DashboardPage({
           <div className="h-status-stat">
             <div className="h-stat-label">Gastado</div>
             <div className={`h-stat-val${spentARS > 0 ? " red" : ""}`}>
-              ${spentARS.toLocaleString("es-AR")}
+              ARS ${spentARS.toLocaleString("es-AR")}
             </div>
           </div>
           <div className="h-status-stat">

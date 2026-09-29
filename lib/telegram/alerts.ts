@@ -81,7 +81,7 @@ export function buildDailyAlert(ctx: AlertContext): AlertDecision {
     : null;
 
   lines.push(`<b>📊 Mes ${ctx.month}:</b>`);
-  lines.push(`Gastado: ${formatUSD(ctx.total_spent_usd)} | Ahorro: ${formatUSD(ctx.ahorro_proyectado_usd)}${goalPct !== null ? ` (${goalPct}% de meta)` : ""}`);
+  lines.push(`Gastado: USD ${formatUSD(ctx.total_spent_usd)} | Ahorro: USD ${formatUSD(ctx.ahorro_proyectado_usd)}${goalPct !== null ? ` (${goalPct}% de meta)` : ""}`);
   lines.push(`Estado: ${statusIcon} ${ctx.status}`);
 
   // ── Alertas de categorías ──

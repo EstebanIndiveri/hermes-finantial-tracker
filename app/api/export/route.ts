@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { generateCSV, generateXLSX } from "@/lib/export/generate";
 import type { ExportTransaction, ExportCategory } from "@/lib/export/generate";
 import { getGroupMembership } from "@/lib/groups/permissions";
+import { isIncomeCategory } from "@/lib/finance/income";
 
 const MONTH_REGEX = /^\d{4}-\d{2}$/;
 
@@ -73,10 +74,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const spentMap: Record<string, number> = {};
     for (const tx of txRows) {
+      if (isIncomeCategory(tx.category?.slug)) continue;
       spentMap[tx.category_id] = (spentMap[tx.category_id] ?? 0) + (tx.amount_ars ?? 0);
     }
 
-    const exportCats: ExportCategory[] = allCats.map((cat) => ({
+    const exportCats: ExportCategory[] = allCats.filter((cat) => !isIncomeCategory(cat.slug)).map((cat) => ({
       name: cat.name,
       emoji: cat.emoji,
       budget_ars: budgetMap[cat.id]?.budget_ars ?? 0,

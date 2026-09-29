@@ -15,6 +15,12 @@ export function calculateMonthStatus(input: MonthStatusInput): MonthStatus {
   return "RED";
 }
 
+/** Keep the dashboard percentage in the same USD projection as its saving figure. */
+export function calculateSavingsPercent(input: { income_usd: number; ahorro_proyectado_usd: number }): number {
+  if (input.income_usd <= 0) return 0;
+  return Math.round((input.ahorro_proyectado_usd / input.income_usd) * 100);
+}
+
 interface CategoryStatusInput {
   gastado_ars: number;
   budget_ars: number;
