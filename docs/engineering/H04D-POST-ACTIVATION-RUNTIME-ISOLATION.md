@@ -12,6 +12,16 @@ Call `validatePostActivationIsolation(input, { now })` from `scripts/validate-po
 
 Never put access tokens, API keys, cookies, database URLs containing credentials, or secret values in this manifest or its receipts. Store receipts through the repository's approved evidence handling; do not commit private receipts. A path and digest only prove which receipt was reviewed; the operator still has to confirm that the receipt came from the named authenticated CLI/API.
 
+For the 29/09 review, private, Git-ignored receipts are under `config/h04d-evidence.local/` (mode `0700`, files `0600`) and the manifest is `config/h04d-post-activation.local.json` (`0600`). Run the hardened local wrapper with absolute paths:
+
+```bash
+node scripts/run-post-activation-isolation-local.mjs \
+  --manifest /private/tmp/hermes-h04d-nlp-verification/config/h04d-post-activation.local.json \
+  --evidence-root /private/tmp/hermes-h04d-nlp-verification/config/h04d-evidence.local
+```
+
+The wrapper validates each receipt's actual SHA-256 and JSON, rejects symlinks, traversal, missing/extra files and secret-like field names, then runs the policy. Its output intentionally still says `isolationVerified:false` until owner review; do not edit that field by hand.
+
 ## Interpretation
 
 The validator fails on missing/stale evidence, unsupported sources, identity collisions, non-beta deployment identity, inactive beta flags, stub AI/OCR, or enabled proactive alerts. A passing result reports `postActivationRuntimeConsistent: true` but always `isolationVerified: false` and `certificationState: "not-certified"`.
@@ -20,14 +30,14 @@ Formal certification still requires human review of provider provenance, the cur
 
 ## Beta build-time binding assertion
 
-`scripts/assert-beta-build-isolation.mjs` runs before the isolated Next build. It is silent outside an explicitly gated beta deployment (`HERMES_BETA_ISOLATION_ASSERT=true`). When gated, it fails the build unless the actual build environment selects the exact beta app origin, Turso host, bot token ID prefix and declared bot ID/username, beta session cookie, active inbox/outbox/worker flags, live AI/OCR, disabled proactive alerts, and nonempty required beta secrets. The only emitted event has fixed check names and pass/fail booleans; no value or digest is logged.
+`scripts/assert-beta-build-isolation.mjs` runs before the isolated Next build. It is silent outside an explicitly gated beta deployment (`HERMES_BETA_ISOLATION_ASSERT=true`). When gated, it fails the build unless the actual build environment selects the exact beta app origin, Turso host, bot token ID prefix and declared bot ID/username, beta session cookie, active inbox/outbox/worker flags, live AI/OCR, disabled proactive alerts, nonempty required beta secrets, and exact matches for the six secret fingerprints from the private beta receipt. The expected digest map is stored as the sensitive `HERMES_BETA_SECRET_FINGERPRINTS` binding **only in beta Production**. The only emitted event has fixed check names and pass/fail booleans; no value or digest is logged.
 
-This attests the build environment of a **new** beta deployment, not a prior deployment and not the cryptographic non-reuse of every secret. Vercel documents that environment variable changes apply to new deployments, not previous ones. The gate must be enabled only in the separate beta project's Production environment; a failed gated build must leave the existing beta deployment in service. Capture the deployment ID and the allowlisted build event as a redacted receipt, then check the live alias points to that deployment. Do not enable this variable in the legacy project.
+This attests the build environment of a **new** beta deployment, not a prior deployment or a direct readback from a running function. Vercel documents that environment variable changes apply to new deployments, not previous ones. The gate must be enabled only in the separate beta project's Production environment; a failed gated build must leave the existing beta deployment in service. Capture the deployment ID and the allowlisted build event as a redacted receipt, then check the live alias points to that deployment. Do not enable these variables in the legacy project.
 
 ## Current beta facts supplied to the work
 
-The deployment is Vercel `Production` target inside the separate beta project. The beta project, Turso database, and Telegram bot IDs are recorded in the implementation status. These facts are fixture inputs for tests only; this document does not say they have been refreshed from provider receipts by this validator. Before using the contract for certification, capture fresh receipts for beta and legacy metadata and have an owner review them.
+The current beta deployment is Vercel `Production` target inside the separate beta project. The [29/09 review record](H04D-ISOLATION-REVIEW-2026-09-29.md) lists the authenticated project, DB, bot and deployment identities, the successful build assertion (including fingerprint match), aliases, and remaining interpretation limits. The private local receipts and manifest passed the hardened runner with `ok:true`, `postActivationRuntimeConsistent:true`, and `isolationVerified:false`. Owner review is still required for a formal certificate.
 
 ## Tests
 
-Focused policy coverage lives in `scripts/__tests__/validate-post-activation-isolation.test.mjs`. It verifies successful consistency evaluation, freshness and provenance references, provider collisions, active-beta settings, forbidden secret fields, and the invariant that this contract cannot certify isolation.
+Focused policy coverage lives in `scripts/__tests__/validate-post-activation-isolation.test.mjs` and `scripts/__tests__/run-post-activation-isolation-local.test.mjs`. It verifies consistency, freshness, collisions, active-beta settings, file/digest integrity, secret-field rejection, and the invariant that a local declaration cannot certify isolation.
