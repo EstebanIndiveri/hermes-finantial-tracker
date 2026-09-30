@@ -1,7 +1,10 @@
-# ACT-07/H10 — proyecciones por canal (corte local)
+# ACT-07/H10 — proyecciones por canal
 
-Estado: implementación y regresiones locales; **sin despliegue beta ni cambio
-legacy**. El [plan general](../audit/PLAN-DE-ACCION.md) asigna ACT-07 a las
+Estado 30/09/2026: implementación y regresiones locales completas; desplegado
+**solo en beta** como `dpl_5jxNMY8Z3iMDToef7N57QKdjTTyV` desde
+`bd0269bec6c91125852b6225a32f2f8e827adac0`. Aceptación visual beta de
+`resumen` y XLSX pendiente de Esteban; **sin cambio legacy**. El
+[plan general](../audit/PLAN-DE-ACCION.md) asigna ACT-07 a las
 proyecciones de ingreso/gasto; ACT-10 corresponde a propuestas/callbacks.
 
 ## Contrato del corte
@@ -40,6 +43,10 @@ Esto **no** certifica conversión ARS→USD al escribir, contabilidad multimoned
 clasificación histórica más allá del slug legacy `ingresos`, ni todas las
 políticas de alertas proactivas. Esos contratos siguen en ACT-05/07/17.
 Antes de activar alertas hay que auditar los demás destinatarios y
-condiciones de envío. Antes del próximo deployment beta se repetirá el gate
-de aislamiento H04d sobre el nuevo deployment/alias; Esteban validará los
-textos con `resumen` y un XLSX beta. Producción legacy permanece inmutable.
+condiciones de envío. El gate técnico H04d se repitió sobre el nuevo
+deployment/alias: assertion de build aprobada, seis fingerprints beta
+coincidentes y manifiesto local postactivación consistente. La aceptación
+humana del residual para este deployment queda pendiente de Esteban; no se
+atribuye automáticamente la aceptación del deployment anterior. Esteban
+validará los textos con `resumen` y un XLSX beta; Codex cerrará ACT-07 tras
+registrar esa evidencia. Producción legacy permanece inmutable.

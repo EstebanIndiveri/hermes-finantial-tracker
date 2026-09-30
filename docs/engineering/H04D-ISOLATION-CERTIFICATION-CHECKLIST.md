@@ -71,3 +71,22 @@ no una tarea pendiente para el piloto beta ya certificado.
 
 El certificado de aislamiento no certifica semántica financiera, entrega
 grupal ni recuperación de outbox: son gates independientes del mismo H04d.
+
+## Revalidación del deployment beta del 30/09/2026
+
+El certificado del 29/09 conserva valor histórico para
+`dpl_HNDia23nZzffCKety38UUUcPsHdY`, pero no se aplica automáticamente al
+nuevo deployment activo `dpl_5jxNMY8Z3iMDToef7N57QKdjTTyV`. Codex repitió
+los gates técnicos: alias y proyecto beta comprobados, legacy alias sin
+cambios, build assertion aprobada con los seis fingerprints coincidentes,
+recibos privados refrescados y runner postactivación `ok:true`/
+`postActivationRuntimeConsistent:true`/`isolationVerified:false`. Los recibos
+de identidad Turso/Telegram del 29/09 siguen frescos. Se verificó `/login`
+beta 200 y worker sin autorización 401, sin escrituras financieras.
+
+**Estado de este deployment:** evidencia técnica completa; renovación de la
+aceptación humana residual pendiente. Owner de evidencia: Codex. Owner de la
+decisión: Esteban. Criterio de cierre: Esteban acepta explícitamente para
+`dpl_5jxNMY8Z3iMDToef7N57QKdjTTyV` la misma limitación de snapshot de
+build frente a readback de runtime; Codex registra la decisión sin alterar
+`isolationVerified:false`. Ver el [addendum de evidencia](H04D-ISOLATION-REVIEW-2026-09-29.md#addendum--beta-deployment-30092026).

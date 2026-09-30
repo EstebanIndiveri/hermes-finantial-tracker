@@ -31,3 +31,35 @@ Status: **closed for the current beta pilot only by explicit owner acceptance on
 This scoped closure does not certify retired deployment URLs or authorize a push, legacy release or promotion. Any active beta deployment/binding/identity change requires fresh evidence. Before a future production promotion, Codex must review access to old deployment URLs and rerun the assertion on the candidate; Esteban must separately authorize that release.
 
 No step above authorizes a legacy push, deploy, webhook change, DB migration or query of financial rows.
+
+## Addendum — beta deployment 30/09/2026
+
+The 29/09 scoped certificate above is historical: its named deployment was
+superseded. The active beta alias now resolves to
+`dpl_5jxNMY8Z3iMDToef7N57QKdjTTyV`, built from the clean local source SHA
+`bd0269bec6c91125852b6225a32f2f8e827adac0` in the separate beta Vercel
+project (`prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`). Its Vercel target is named
+`production` **within that beta project only**. Read-only inspection still
+found the legacy alias on `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+The new build emitted one redacted `beta_build_isolation_attested` event with
+`passed:true`, `beta_secret_fingerprints_match:true`, the nine expected checks
+and no failed checks. The beta Production binding-name inventory included the
+assertion and expected-fingerprint controls; no secret value was read into this
+document. Fresh beta Vercel/runtime receipts and digests were put in the
+private, ignored evidence package. The post-activation runner returned
+`ok:true`, `postActivationRuntimeConsistent:true`,
+`providerMetadataComparison:"distinct-identities-declared"`, and correctly
+`isolationVerified:false`. Provider identity receipts from 29/09 remain within
+the contract's seven-day freshness window. Beta `/login` returned HTTP 200;
+an unauthenticated beta worker request returned HTTP 401. These probes did
+not create financial rows or Telegram updates.
+
+**Decision still required:** the 29/09 owner acceptance explicitly covered
+the then-current deployment and required revalidation after a deployment
+change. Codex has completed technical reattestation for the new active beta
+deployment; Esteban owns acceptance or rejection of the same documented
+build-snapshot-versus-running-function residual for this deployment. Until
+then, label the new deployment technically consistent but **not yet renewed
+as a scoped human isolation certificate**. Neither the old nor a future beta
+certificate authorizes legacy changes or a production release.

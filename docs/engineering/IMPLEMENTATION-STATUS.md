@@ -331,7 +331,7 @@ was changed.
 The next-step paragraph in this 28/09 snapshot is superseded by the live
 29/09 closure snapshot below.
 
-### Current closure snapshot — 29/09/2026
+### Historical closure snapshot — 29/09/2026
 
 | Cut / gate | State | Owner and next evidence |
 | --- | --- | --- |
@@ -351,3 +351,33 @@ authorizes promotion to legacy `main` or certifies retired deployments. The
 baseline audit's wider ACT-01–ACT-18 roadmap remains in force; completing H04d
 does not close financial-domain, IA/OCR evaluation, observability or release
 phase work.
+
+### Current continuation — 30/09/2026
+
+The 29/09 snapshot above remains historical. This is the live follow-up after
+the beta-only ACT-07 deployment; no legacy project, DB, bot, webhook, branch
+or release was changed. The active beta alias points to
+`dpl_5jxNMY8Z3iMDToef7N57QKdjTTyV` from clean source
+`bd0269bec6c91125852b6225a32f2f8e827adac0`, target `production` inside
+the **separate beta project**. The legacy alias still points to
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. Node 22 gates for that exact source:
+92/92 Jest suites and 779/779 tests, typecheck and Webpack build pass, lint
+0 errors/68 existing warnings. The build's fail-closed beta assertion passed
+all nine checks, including six matching secret fingerprints. Private
+post-activation evidence passed `ok:true` and
+`postActivationRuntimeConsistent:true`; `isolationVerified:false` remains
+intact. See the [30/09 isolation addendum](H04D-ISOLATION-REVIEW-2026-09-29.md#addendum--beta-deployment-30092026).
+
+| Cut / gate | State and closure condition | Owner / follow-up |
+| --- | --- | --- |
+| ACT-07/H10 projection consumers | Code, regression and beta deployment complete. **Visual beta acceptance open**: `resumen` must show currency explicitly and the September XLSX expense/category summary must exclude `ingresos` while Movimientos retains them. Alerts remain disabled, so their private-recipient behavior is covered locally only. | Esteban performs the two read-only beta checks and reports result; Codex reconciles and records closure or fixes a finding. Do not enable notifications as part of this check. |
+| H04d-ISOLATION-CERT renewal | Technical reattestation for the new active beta deployment complete; **human scope decision open** because the 29/09 acceptance named the previous deployment. Automated `isolationVerified:false` is expected, not an error. | Esteban explicitly accepts or rejects the documented residual for the new deployment ID; Codex records the decision and, if rejected, plans the additional runtime proof. No ownerless gap. |
+| H04d functional/group/worker pilot | Historical 29/09 beta gates remain closed for the observed flows; the new deployment passed code regression and isolation-build checks but has not received a fresh multimodal/group/worker canary. Do not silently extend the old observations to new code. | Codex retains regression and beta worker watch; Esteban supplies a new functional canary only if ACT-07 checks reveal a regression or before a broader promotion. No new financial test write is needed merely for the read-only ACT-07 cut. |
+| ACT-03 Drizzle toolchain | Accepted temporary dev-only residual, not resolved. | Esteban owns the risk decision; Codex rechecks before schema-generation/toolchain changes or a compatible upstream fix, as recorded above. |
+| ACT-16 payment wording | Open product-copy decision; no money-transfer integration exists. | Esteban decides whether `Pagar` means manual attestation; Codex implements copy and tests once decided. |
+
+No step in this table is ownerless. The next immediate gate is the read-only
+ACT-07 beta acceptance plus the renewed H04d residual decision. After those
+are recorded, Codex can select the next bounded cut from the
+[general action plan](../audit/PLAN-DE-ACCION.md) without conflating a beta
+pilot certificate with a legacy release.
