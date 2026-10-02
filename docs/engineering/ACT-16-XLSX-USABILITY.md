@@ -1,6 +1,6 @@
 # ACT-16 — legibilidad y exploración del XLSX
 
-Estado 02/10/2026: **corte local completo** en `codex/act16-export-usability`,
+Estado 02/10/2026: **corte local completo** en la rama beta de trabajo,
 sin despliegue ni cambio de datos. 92/92 suites, 783/783 tests, typecheck,
 lint sin errores (68 warnings existentes) y build pasaron con Node 22. Owner
 de implementación y pruebas: Codex. Owner de aceptación visual tras un
@@ -22,9 +22,10 @@ no de conciliación. El archivo del usuario es evidencia, no se modifica.
   la semántica ingreso/gasto de ACT-07. No cambiar CSV ni rutas de exportación.
 - Dar a cada hoja filtros en las columnas del rango poblado, encabezado fijo,
   anchos legibles, texto largo ajustable y formatos numéricos ARS claros.
-- Añadir barras visuales nativas de Excel en el gasto por categoría cuando
-  exista al menos una categoría; deben representar los números de la misma
-  hoja, sin prometer un gráfico histórico o un límite que no esté configurado.
+- Añadir barras de datos en gasto y un gráfico nativo editable de barras
+  agrupadas para presupuesto vs. gasto por categoría. El gráfico debe referir
+  las celdas de esta misma hoja; una categoría sin límite queda sin barra de
+  presupuesto, no se dibuja como presupuesto cero.
 - Mantener textos de usuario como strings, incluso si empiezan por `=`; no
   crear fórmulas ejecutables con datos financieros o texto de Telegram.
 - Probar exportación vacía, ingreso+gasto, filtros/anchos/congelación/barras,
@@ -32,16 +33,28 @@ no de conciliación. El archivo del usuario es evidencia, no se modifica.
   local. La aceptación visual exige descargar un nuevo XLSX **beta**, no
   reutilizar el archivo adjunto de octubre.
 
-## Exclusiones y seguimiento
+## Gráfico y aceptación pendiente
 
-Las barras de datos no son un gráfico de tendencias ni un chart separado.
-ExcelJS 4.4, el writer actual, no ofrece una API de charts en el contrato
-tipado instalado. Una hoja con gráficos comparativos verdaderos requiere
-evaluar un writer compatible, o una composición OOXML con pruebas de apertura
-en Excel/LibreOffice. Owner: Codex, siguiente subcorte ACT-16-CHARTS tras
-cerrar este corte y verificar que la solución no reintroduzca la dependencia
-`xlsx` reemplazada por seguridad. No se añadirá una dependencia ni un gráfico
-estático engañoso solo para completar la pantalla.
+El exportador inserta un gráfico nativo editable mediante partes OOXML
+conectadas a las celdas existentes de presupuesto y gasto de `Resumen por
+categoría`. Como ExcelJS 4.4 no incluye una API tipada para charts, `fflate`
+actualiza el paquete XLSX; no se reintroduce la dependencia `xlsx`. Una
+categoría sin límite queda sin barra de presupuesto. Las pruebas revisan
+relaciones, referencias y lectura del libro con ExcelJS. LibreOffice abrió y
+renderizó la gráfica, que sobrevivió un guardado de ida y vuelta a XLSX.
+
+La aceptación visual en Microsoft Excel de un nuevo XLSX beta sigue abierta
+bajo Esteban.
+
+Verificación local final: 92 suites/784 tests, typecheck, build, auditoría de
+runtime (cero hallazgos) y lint sin errores. Una apertura independiente con
+openpyxl reconoció un `BarChart`, las tres hojas, la regla de formato y las
+cifras sintéticas de presupuesto/gasto; sus avisos sobre extensiones de
+formato condicional no implicaron pérdida del gráfico en la carga. El método
+ZIP recompone el archivo entero en memoria, igual que el writer actual:
+Codex debe medir tamaño, memoria y latencia antes de habilitar exportaciones
+de grupos con volumen muy superior al piloto. No hay cambio de esquema ni
+escritura financiera.
 
 La propuesta multimoneda es ACT-05/06, no parte de esta mejora visual. No se
 alteran cotización, `amount_ars`, `amount_usd`, presupuestos ni esquema.

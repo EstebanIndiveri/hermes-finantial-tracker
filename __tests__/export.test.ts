@@ -411,14 +411,40 @@ describe("generateXLSX", () => {
     const summaryXml = rawWorksheetXml(buffer, "Resumen por categoría");
     expect(summaryXml).toContain('sqref="C2:C3"');
     expect(summaryXml).toContain('<dataBar');
+    expect(summaryXml).toContain('rgb="FF93C5FD"');
+  });
+
+  it("adds an editable budget-versus-spend category chart using summary cells", async () => {
+    const buffer = await generateXLSX(sampleTxs, sampleCats);
+    const contentTypes = unzipEntry(buffer, "[Content_Types].xml");
+    const summaryXml = rawWorksheetXml(buffer, "Resumen por categoría");
+    const summaryRels = unzipEntry(buffer, "xl/worksheets/_rels/sheet2.xml.rels");
+    const drawing = unzipEntry(buffer, "xl/drawings/drawing1.xml");
+    const drawingRels = unzipEntry(buffer, "xl/drawings/_rels/drawing1.xml.rels");
+    const chart = unzipEntry(buffer, "xl/charts/chart1.xml");
+
+    expect(contentTypes).toContain("/xl/drawings/drawing1.xml");
+    expect(contentTypes).toContain("/xl/charts/chart1.xml");
+    expect(summaryXml).toMatch(/<drawing\b[^>]*r:id="rId\d+"/);
+    expect(summaryRels).toContain("../drawings/drawing1.xml");
+    expect(drawing).toContain("<xdr:twoCellAnchor");
+    expect(drawingRels).toContain("../charts/chart1.xml");
+    expect(chart).toContain("<c:barDir val=\"bar\"/>");
+    expect(chart).toContain("'Resumen por categoría'!$A$2:$A$3");
+    expect(chart).toContain("'Resumen por categoría'!$B$2:$B$3");
+    expect(chart).toContain("'Resumen por categoría'!$C$2:$C$3");
+    expect(chart).toContain("Presupuesto");
+    expect(chart).toContain("Gastado");
   });
 
   it("keeps the empty export readable without adding a non-existent chart", async () => {
-    const workbook = await readWorkbook(await generateXLSX([], []));
+    const buffer = await generateXLSX([], []);
+    const workbook = await readWorkbook(buffer);
     const movements = workbook.getWorksheet("Movimientos")!;
     expect(movements.autoFilter).toBe("A1:E1");
     expect(movements.getColumn(5).width).toBeGreaterThanOrEqual(35);
     expect(movements.rowCount).toBe(1);
+    expect(() => unzipEntry(buffer, "xl/charts/chart1.xml")).toThrow("ZIP entry not found");
   });
 
   it("expands a normal long or multiline description instead of clipping it", async () => {

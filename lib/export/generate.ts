@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { unzipSync, zipSync } from "fflate";
 
 export interface ExportTransaction {
   date: string;
@@ -45,6 +46,91 @@ function escapeCSVValue(value: string): string {
   const escapedValue = sanitizedValue.replace(/"/g, '""');
 
   return /[",\n\r]/.test(escapedValue) ? `"${escapedValue}"` : escapedValue;
+}
+
+function escapeXML(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function categoryChartXml(cats: ExportCategory[]): string {
+  const lastRow = cats.length + 1;
+  const sheet = "'Resumen por categoría'";
+  const categoryName = (index: number) => `${cats[index].emoji} ${cats[index].name}`;
+  const stringCache = (values: string[]) =>
+    `<c:strCache><c:ptCount val="${values.length}"/>${values.map((value, index) => `<c:pt idx="${index}"><c:v>${escapeXML(value)}</c:v></c:pt>`).join("")}</c:strCache>`;
+  const numericCache = (values: Array<number | null>) =>
+    `<c:numCache><c:formatCode>#,##0.00</c:formatCode><c:ptCount val="${values.length}"/>${values.map((value, index) => value === null ? "" : `<c:pt idx="${index}"><c:v>${value}</c:v></c:pt>`).join("")}</c:numCache>`;
+  const series = (
+    index: number,
+    titleColumn: "B" | "C",
+    valueColumn: "B" | "C",
+    title: string,
+    values: Array<number | null>,
+    color: string,
+  ) => `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:strRef><c:f>${sheet}!$${titleColumn}$1</c:f>${stringCache([title])}</c:strRef></c:tx><c:spPr><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:ln><a:noFill/></a:ln></c:spPr><c:cat><c:strRef><c:f>${sheet}!$A$2:$A$${lastRow}</c:f>${stringCache(cats.map((_, categoryIndex) => categoryName(categoryIndex)))}</c:strRef></c:cat><c:val><c:numRef><c:f>${sheet}!$${valueColumn}$2:$${valueColumn}$${lastRow}</c:f>${numericCache(values)}</c:numRef></c:val></c:ser>`;
+  const budgetValues = cats.map((cat) => cat.budget_ars > 0 ? cat.budget_ars : null);
+  const spendValues = cats.map((cat) => cat.gastado_ars);
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:lang val="es-AR"/><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:rPr lang="es-AR"/><a:t>Presupuesto vs. gastado por categoría (ARS)</a:t></a:r><a:endParaRPr lang="es-AR"/></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/><c:barChart><c:barDir val="bar"/><c:grouping val="clustered"/><c:varyColors val="0"/>${series(0, "B", "B", "Presupuesto (ARS)", budgetValues, "2563EB")}${series(1, "C", "C", "Gastado (ARS)", spendValues, "F97316")}<c:gapWidth val="70"/><c:overlap val="0"/><c:axId val="10"/><c:axId val="20"/></c:barChart><c:catAx><c:axId val="10"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:axPos val="l"/><c:delete val="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:ln><a:noFill/></a:ln></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900"/></a:pPr><a:endParaRPr lang="es-AR"/></a:p></c:txPr><c:crossAx val="20"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx><c:valAx><c:axId val="20"/><c:scaling><c:orientation val="minMax"/><c:minorUnit val="1"/></c:scaling><c:axPos val="b"/><c:majorGridlines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="D9E2F3"/></a:solidFill></a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="#,##0" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:ln><a:noFill/></a:ln></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900"/></a:pPr><a:endParaRPr lang="es-AR"/></a:p></c:txPr><c:crossAx val="10"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx></c:plotArea><c:legend><c:legendPos val="b"/><c:layout/><c:overlay val="0"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900"/></a:pPr><a:endParaRPr lang="es-AR"/></a:p></c:txPr></c:legend><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/><c:showDLblsOverMax val="0"/></c:chart><c:printSettings><c:headerFooter/><c:pageMargins b="0.75" l="0.7" r="0.7" t="0.75" header="0.3" footer="0.3"/><c:pageSetup/></c:printSettings></c:chartSpace>`;
+}
+
+function withCategoryChart(buffer: Buffer, cats: ExportCategory[]): Buffer {
+  if (cats.length === 0) return buffer;
+
+  const files = unzipSync(buffer);
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  const read = (path: string): string => {
+    const contents = files[path];
+    if (!contents) throw new Error(`Cannot attach category chart: missing XLSX part ${path}`);
+    return decoder.decode(contents);
+  };
+  const write = (path: string, contents: string) => {
+    files[path] = encoder.encode(contents);
+  };
+  const contentTypes = read("[Content_Types].xml");
+  const summarySheet = read("xl/worksheets/sheet2.xml");
+
+  if (
+    !contentTypes.includes("</Types>") ||
+    !summarySheet.includes("</worksheet>") ||
+    files["xl/worksheets/_rels/sheet2.xml.rels"] !== undefined ||
+    summarySheet.includes("<drawing")
+  ) {
+    throw new Error("Cannot attach category chart: invalid XLSX package structure");
+  }
+
+  write(
+    "[Content_Types].xml",
+    contentTypes.replace(
+      "</Types>",
+      '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/><Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/></Types>',
+    ),
+  );
+  write(
+    "xl/worksheets/sheet2.xml",
+    summarySheet.replace("</worksheet>", '<drawing r:id="rId1"/></worksheet>'),
+  );
+  write(
+    "xl/worksheets/_rels/sheet2.xml.rels",
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+  );
+  write(
+    "xl/drawings/drawing1.xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${cats.length + 2}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>8</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${cats.length + 18}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="Presupuesto vs. gastado por categoría"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>`,
+  );
+  write(
+    "xl/drawings/_rels/drawing1.xml.rels",
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/></Relationships>',
+  );
+  write("xl/charts/chart1.xml", categoryChartXml(cats));
+
+  return Buffer.from(zipSync(files, { level: 6 }));
 }
 
 function styleExportSheet(
@@ -156,15 +242,19 @@ export function generateXLSX(
   summarySheet.addRows(summaryRows);
   styleExportSheet(summarySheet, [32, 23, 20, 20, 15], [2, 3, 4]);
   if (cats.length > 0) {
+    // ExcelJS's runtime serializer supports this required OOXML color, although
+    // its DataBarRuleType declaration omits the property.
+    const dataBarRule: ExcelJS.DataBarRuleType & { color: { argb: string } } = {
+      type: "dataBar",
+      priority: 1,
+      showValue: true,
+      gradient: false,
+      cfvo: [{ type: "num", value: 0 }, { type: "max" }],
+      color: { argb: "FF93C5FD" },
+    };
     summarySheet.addConditionalFormatting({
       ref: `C2:C${cats.length + 1}`,
-      rules: [{
-        type: "dataBar",
-        priority: 1,
-        showValue: true,
-        gradient: false,
-        cfvo: [{ type: "num", value: 0 }, { type: "max" }],
-      }],
+      rules: [dataBarRule],
     });
   }
 
@@ -180,5 +270,5 @@ export function generateXLSX(
   budgetSheet.addRows(budgetRows);
   styleExportSheet(budgetSheet, [32, 25, 17], [2]);
 
-  return workbook.xlsx.writeBuffer().then((buffer) => Buffer.from(buffer));
+  return workbook.xlsx.writeBuffer().then((buffer) => withCategoryChart(Buffer.from(buffer), cats));
 }
