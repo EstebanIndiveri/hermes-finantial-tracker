@@ -452,4 +452,8 @@ decision record](ACT-05-CURRENCY-DECISION.md). Existing rows and legacy
 production must not be reinterpreted. The recurring transaction writer's
 hard-coded ARS/USD rate of 1200 is a correctness blocker for a mode-aware
 recurring path; Codex owns its removal or fail-closed containment before
-ARS/ARS activation, with regression tests.
+ARS/ARS activation, with regression tests. A separate schema gate is owned by
+Codex: `transactions.amount_usd` is currently `NOT NULL`; an ARS-only write
+without FX must never fabricate a USD amount. Activation requires a
+rehearsed, compatible nullable/typed-amount migration on isolated beta copies
+with backup and reconciliation, not just a UI flag.
