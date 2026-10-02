@@ -1,6 +1,6 @@
 # ACT-05/06 — decisión de moneda y cotización
 
-Estado: propuesta de contrato; **sin aprobación de producto ni migración**. Owner de la decisión: Esteban. Owner de diseño, pruebas e implementación posterior: Codex. Legacy y sus datos quedan fuera de este corte.
+Estado 02/10/2026: **dirección de producto aprobada parcialmente; sin migración ni cambio funcional**. Esteban pidió conservar el modo actual ARS/USD y añadir un modo ARS/ARS para operar en una sola moneda sin exigir cotización. Owner de las decisiones restantes: Esteban. Owner de contrato, pruebas e implementación: Codex. Legacy y sus datos quedan fuera de este corte.
 
 ## Estado comprobado en octubre
 
@@ -11,9 +11,14 @@ Estado: propuesta de contrato; **sin aprobación de producto ni migración**. Ow
 
 ## Recomendación de producto: dos etapas compatibles
 
-1. **Modo ARS primero.** Permitir presupuesto, ingreso y gasto en ARS con cotización USD opcional. Sin cotización, mostrar totales, límites y ahorro en ARS; las proyecciones USD deben indicar “no disponibles”, nunca dividir por 1 ni inventar una tasa. Si se proporciona cotización, mostrar USD como dato derivado con fuente/fecha visibles. La tasa y el redondeo del momento deben quedar fijados para el movimiento, no recalcular operaciones históricas al cambiar el mes.
-2. **Multimoneda real, después.** Solo tras una decisión separada: moneda de origen por movimiento, moneda base del grupo, reglas de conversión por fecha y proveedor, presupuesto por moneda, reembolsos/splits y exportes conciliados, y pruebas de cambio de tasa/histórico.
+1. **ARS/USD actual, preservado.** Ingreso mensual, metas y ahorro proyectado en USD; movimientos y límites de categoría en ARS según el código vigente, con equivalente USD calculado al registrar. No cambiar meses históricos ni presentar una cotización nueva como si se hubiera aplicado a un gasto pasado. Esteban debe confirmar si «presupuesto en USD» significa que también quiere cambiar los límites de categoría; el XLSX de octubre muestra ese límite en ARS.
+2. **ARS/ARS nuevo.** Ingreso, metas, ahorro proyectado, límites y movimientos se evalúan en ARS. La cotización USD no es requisito para guardar ni consultar; si se decide mostrar una referencia USD opcional, debe etiquetarse como derivada, nunca alterar el saldo ARS ni rellenarse con una tasa ficticia de 1.
+3. **Multimoneda real, fuera de este corte.** Registrar un gasto original en USD, presupuestos en varias monedas y reembolsos entre monedas requiere un contrato adicional de conversión por operación y fecha.
 
 ## Puertas antes de código o beta
 
-Decidir si el grupo tendrá ARS como moneda base y si el ingreso se configura en ARS, USD o ambos; definir qué muestra `resumen` cuando falta FX y qué fecha/fuente de tasa se usa. Luego escribir contrato monetario/rounding y casos de regresión en web, comando, lenguaje natural, voz, OCR, alertas, exportes y reembolsos. Cualquier esquema debe ser aditivo, con backfill reproducible sobre copia beta y conciliación de `amount_ars`/`amount_usd`; no reinterpretar filas legacy ni activar un cambio de lectura antes de completar backfill y rollback por flags.
+Faltan tres decisiones que cambian el diseño: si los límites de categoría del modo mixto continúan en ARS; si la elección de modo es por mes del grupo o global; y si un mes que ya tiene movimientos puede cambiar de modo. Recomendación de seguridad: modo por mes del grupo, sin cambio de modo tras el primer movimiento, y nuevos meses ARS/ARS con cotización realmente opcional.
+
+Después de esas decisiones, escribir contrato monetario/rounding y casos de regresión en web, comando, lenguaje natural, voz, OCR, recurrentes, alertas, exportes y reembolsos. El cron de Ripio hoy actualiza todos los ajustes del mes, incluidos grupos que en ARS/ARS no necesitarían cotización; deberá filtrar los modos y no sobrescribir una decisión manual. El writer recurrente hoy divide por una tasa fija de 1200 (`lib/db/recurring-queries.ts`); esto es un defecto preexistente que debe corregirse o bloquearse explícitamente antes de activar ARS/ARS.
+
+La migración será aditiva y con default que preserve ARS/USD en los registros existentes. No convertir automáticamente `income_usd`, metas ni `amount_usd` históricos. Un snapshot de moneda/tasa por nueva operación evita que la cotización mensual posterior cambie su interpretación; los campos existentes permanecen para compatibilidad hasta completar backfill, conciliación y rollback por flags en beta. Nada de esto autoriza cambios en legacy.

@@ -429,3 +429,27 @@ made by this release.
 All open gates have explicit owners. The next beta actions are spreadsheet and
 dashboard visual QA plus H04d receipt refresh; no additional synthetic expense
 is required for either visual check.
+
+### October XLSX feedback and currency decision — 02/10/2026
+
+Esteban downloaded `hermes-2026-10 (2).xlsx` from the new beta release and
+reported the XLSX is much improved. Codex inspected it read-only: Movimientos
+has the October ARS 10,000 expense and ARS 20,000 income; Resumen por categoría
+has only Supermercado, with ARS 100,000 category limit, ARS 10,000 spent and
+one native editable bar chart linked to those cells. All three sheets have
+filters and frozen headers. This closes **ACT-16 XLSX acceptance for the
+observed October specimen**; the longer-description and empty-export cases
+remain regression-tested locally. No workbook was edited. The dashboard
+percentage visual acceptance is still Esteban-owned and open.
+
+Esteban clarified that ACT-05 must preserve the existing mixed ARS/USD mode
+and add a single-currency **ARS/ARS** option for monthly income, saving goal,
+projected saving and spending, without mandatory FX. Codex owns contract,
+tests and staged implementation after the remaining product choices are
+resolved: whether category limits stay ARS in mixed mode, mode scope, and
+whether an already populated month can switch modes. See the [currency
+decision record](ACT-05-CURRENCY-DECISION.md). Existing rows and legacy
+production must not be reinterpreted. The recurring transaction writer's
+hard-coded ARS/USD rate of 1200 is a correctness blocker for a mode-aware
+recurring path; Codex owns its removal or fail-closed containment before
+ARS/ARS activation, with regression tests.
