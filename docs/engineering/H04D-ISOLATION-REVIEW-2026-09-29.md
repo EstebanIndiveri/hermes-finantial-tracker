@@ -55,7 +55,7 @@ the contract's seven-day freshness window. Beta `/login` returned HTTP 200;
 an unauthenticated beta worker request returned HTTP 401. These probes did
 not create financial rows or Telegram updates.
 
-**Decision still required:** the 29/09 owner acceptance explicitly covered
+**Historical decision request (resolved below):** the 29/09 owner acceptance explicitly covered
 the then-current deployment and required revalidation after a deployment
 change. Codex has completed technical reattestation for the new active beta
 deployment; Esteban owns acceptance or rejection of the same documented
@@ -63,3 +63,24 @@ build-snapshot-versus-running-function residual for this deployment. Until
 then, label the new deployment technically consistent but **not yet renewed
 as a scoped human isolation certificate**. Neither the old nor a future beta
 certificate authorizes legacy changes or a production release.
+
+## Owner decision — 02/10/2026: bounded beta-pilot policy
+
+Esteban explicitly accepted the same documented residual for the 30/09 beta
+deployment and, going forward, as a **beta-pilot-only policy**. The residual is
+the absence of a direct readback of every running-function secret and of a
+certificate for retired deployment URLs. The technical gate for the active
+30/09 deployment had already passed and its distinct beta provider identities
+were recorded above. This human acceptance renews its **scoped pilot** status;
+it does not change the automated `isolationVerified:false` result.
+
+For each later beta deployment, Codex must rerun the build-time fail-closed
+identity/secret-fingerprint assertion and the post-activation alias, provider
+identity and receipt checks against that **exact deployment**. A code-only
+change with unchanged identities, bindings and controls can use this standing
+acceptance once those checks pass. If the Vercel project, Turso DB, Telegram
+bot or webhook, a required binding or secret fingerprint changes, any check
+fails or evidence is stale/incomplete, the prior acceptance does **not** cover
+the new deployment: stop, label H04d open and obtain Esteban's fresh decision.
+The policy does not certify retired URLs, authorize a legacy write/deploy or
+substitute for a separate production-release approval.
