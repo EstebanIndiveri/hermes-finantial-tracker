@@ -1,11 +1,11 @@
 # ACT-16 — legibilidad y exploración del XLSX
 
-Estado 02/10/2026: **corte local completo** en la rama beta de trabajo,
-sin despliegue ni cambio de datos. 92/92 suites, 783/783 tests, typecheck,
-lint sin errores (68 warnings existentes) y build pasaron con Node 22. Owner
-de implementación y pruebas: Codex. Owner de aceptación visual tras un
-deployment beta futuro: Esteban. El gate de dependencias runtime descrito en
-`IMPLEMENTATION-STATUS.md` debe resolverse antes de ese deployment.
+Estado 02/10/2026: **implementación completa y desplegada solo en beta** desde
+`e724b44`; aceptación visual del nuevo XLSX pendiente. 92/92 suites,
+784/784 tests, typecheck, lint sin errores (68 warnings existentes) y build
+pasaron con Node 22. La auditoría de dependencias de runtime reporta cero
+hallazgos. Owner de implementación y pruebas: Codex. Owner de aceptación
+visual: Esteban. No hubo cambio de datos.
 
 ## Hallazgo y evidencia
 
