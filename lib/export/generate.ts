@@ -47,6 +47,55 @@ function escapeCSVValue(value: string): string {
   return /[",\n\r]/.test(escapedValue) ? `"${escapedValue}"` : escapedValue;
 }
 
+function styleExportSheet(
+  sheet: ExcelJS.Worksheet,
+  widths: number[],
+  monetaryColumns: number[],
+): void {
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+  sheet.autoFilter = { from: "A1", to: `${String.fromCharCode(64 + widths.length)}${sheet.rowCount}` };
+  sheet.pageSetup.orientation = "landscape";
+  sheet.pageSetup.fitToPage = true;
+  sheet.pageSetup.fitToWidth = 1;
+  sheet.pageSetup.fitToHeight = 0;
+
+  widths.forEach((width, index) => {
+    const column = sheet.getColumn(index + 1);
+    column.width = width;
+    column.alignment = { vertical: "top", wrapText: true };
+  });
+
+  const header = sheet.getRow(1);
+  header.height = 30;
+  header.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+  header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF17324D" } };
+  header.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+
+  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
+    const row = sheet.getRow(rowNumber);
+    row.font = { name: "Arial", size: 10, color: { argb: "FF1E293B" } };
+    row.alignment = { vertical: "top", wrapText: true };
+    if (rowNumber % 2 === 0) {
+      row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F7FB" } };
+    }
+    const neededLines = Math.max(1, ...widths.map((width, index) => {
+      const value = row.getCell(index + 1).value;
+      if (typeof value !== "string") return 1;
+      const charsPerLine = Math.max(8, Math.floor(width * 0.85));
+      return value.split(/\r?\n/).reduce(
+        (lines, part) => lines + Math.max(1, Math.ceil(part.length / charsPerLine)),
+        0,
+      );
+    }));
+    row.height = Math.min(405, Math.max(22, neededLines * 16 + 6));
+  }
+
+  for (const columnNumber of monetaryColumns) {
+    sheet.getColumn(columnNumber).numFmt = '#,##0.00;[Red](#,##0.00);"-"';
+    sheet.getColumn(columnNumber).alignment = { vertical: "top", horizontal: "right", wrapText: true };
+  }
+}
+
 export function generateCSV(txs: ExportTransaction[]): string {
   const header = "Fecha,Comercio,Categoría,Monto (ARS),Descripción";
   const rows = txs.map((tx) => {
@@ -86,6 +135,7 @@ export function generateXLSX(
   ];
   const transactionsSheet = workbook.addWorksheet("Movimientos");
   transactionsSheet.addRows(transactionRows);
+  styleExportSheet(transactionsSheet, [16, 26, 29, 19, 52], [4]);
 
   const summaryRows = [
     ["Categoría", "Presupuesto (ARS)", "Gastado (ARS)", "Saldo (ARS)", "% Usado"],
@@ -104,6 +154,19 @@ export function generateXLSX(
   ];
   const summarySheet = workbook.addWorksheet("Resumen por categoría");
   summarySheet.addRows(summaryRows);
+  styleExportSheet(summarySheet, [32, 23, 20, 20, 15], [2, 3, 4]);
+  if (cats.length > 0) {
+    summarySheet.addConditionalFormatting({
+      ref: `C2:C${cats.length + 1}`,
+      rules: [{
+        type: "dataBar",
+        priority: 1,
+        showValue: true,
+        gradient: false,
+        cfvo: [{ type: "num", value: 0 }, { type: "max" }],
+      }],
+    });
+  }
 
   const budgetRows = [
     ["Categoría", "Límite mensual (ARS)", "Estado"],
@@ -115,6 +178,7 @@ export function generateXLSX(
   ];
   const budgetSheet = workbook.addWorksheet("Presupuestos");
   budgetSheet.addRows(budgetRows);
+  styleExportSheet(budgetSheet, [32, 25, 17], [2]);
 
   return workbook.xlsx.writeBuffer().then((buffer) => Buffer.from(buffer));
 }

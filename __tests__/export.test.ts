@@ -382,6 +382,56 @@ describe("generateXLSX", () => {
     expect(summary.getCell("E2").type).toBe(ExcelJS.ValueType.String);
   });
 
+  it("keeps headers visible and exposes usable filters and column widths on every sheet", async () => {
+    const workbook = await readWorkbook(await generateXLSX(sampleTxs, sampleCats));
+    const expectedLastColumns = ["E", "E", "C"];
+
+    workbook.worksheets.forEach((sheet, index) => {
+      expect(sheet.views).toEqual(expect.arrayContaining([expect.objectContaining({ state: "frozen", ySplit: 1 })]));
+      expect(sheet.autoFilter).toBe(`A1:${expectedLastColumns[index]}${sheet.rowCount}`);
+      expect(sheet.getRow(1).font.bold).toBe(true);
+      expect(sheet.getRow(1).height).toBeGreaterThanOrEqual(24);
+      expect(sheet.getColumn(1).width).toBeGreaterThanOrEqual(16);
+    });
+
+    const transactions = workbook.getWorksheet("Movimientos")!;
+    expect(transactions.getColumn(2).width).toBeGreaterThanOrEqual(24);
+    expect(transactions.getColumn(3).width).toBeGreaterThanOrEqual(24);
+    expect(transactions.getColumn(5).width).toBeGreaterThanOrEqual(35);
+    expect(transactions.getCell("E2").alignment.wrapText).toBe(true);
+    expect(transactions.getCell("D2").numFmt).toContain("#,##0");
+  });
+
+  it("adds native category-spend data bars without altering numeric amounts", async () => {
+    const buffer = await generateXLSX(sampleTxs, sampleCats);
+    const summary = (await readWorkbook(buffer)).getWorksheet("Resumen por categoría")!;
+
+    expect(summary.getCell("C2").value).toBe(15000);
+    expect(summary.getCell("C3").value).toBe(8500);
+    const summaryXml = rawWorksheetXml(buffer, "Resumen por categoría");
+    expect(summaryXml).toContain('sqref="C2:C3"');
+    expect(summaryXml).toContain('<dataBar');
+  });
+
+  it("keeps the empty export readable without adding a non-existent chart", async () => {
+    const workbook = await readWorkbook(await generateXLSX([], []));
+    const movements = workbook.getWorksheet("Movimientos")!;
+    expect(movements.autoFilter).toBe("A1:E1");
+    expect(movements.getColumn(5).width).toBeGreaterThanOrEqual(35);
+    expect(movements.rowCount).toBe(1);
+  });
+
+  it("expands a normal long or multiline description instead of clipping it", async () => {
+    const workbook = await readWorkbook(await generateXLSX(
+      [{ ...sampleTxs[0], description: `Compra semanal\n${"Detalle del ticket ".repeat(7)}` }],
+      sampleCats,
+    ));
+    const movements = workbook.getWorksheet("Movimientos")!;
+
+    expect(movements.getRow(2).height).toBeGreaterThan(38);
+    expect(movements.getCell("E2").alignment.wrapText).toBe(true);
+  });
+
   it("serializes workbook structure and cell types in OOXML, keeping formula-like merchants literal", async () => {
     const buffer = await generateXLSX(
       [{ ...sampleTxs[0], merchant: "=1+1" }],

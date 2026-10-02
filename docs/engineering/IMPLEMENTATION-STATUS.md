@@ -381,3 +381,24 @@ ACT-07 beta acceptance plus the renewed H04d residual decision. After those
 are recorded, Codex can select the next bounded cut from the
 [general action plan](../audit/PLAN-DE-ACCION.md) without conflating a beta
 pilot certificate with a legacy release.
+
+### Current continuation — 02/10/2026
+
+This section supersedes the 30/09 next-step text above without erasing its
+deployment record. The beta source and deployment remain the 30/09 versions;
+the changes below are **local only** on `codex/act16-export-usability`.
+
+| Cut / gate | Current state | Owner and next closure evidence |
+| --- | --- | --- |
+| ACT-07 individual projection/export visual check | **Closed for the beta individual flow.** Esteban's October `resumen` screenshot labels income/spending/savings in USD and ARS/USD rate. The October XLSX shows one ARS 10.000 expense and one ARS 20.000 income in Movimientos; only the expense is in category spending. Bounded-budget behavior remains covered by local tests, not this unlimited-budget specimen. Proactive notifications remain off. | Codex maintains regression. ACT-17 owns any future alert activation; no additional manual ACT-07 check is pending. |
+| ACT-16 XLSX readability | **Local cut complete**, not deployed: filters, fixed headers, widths, wrapping, ARS formatting and native category-spend data bars. It preserves financial rows and CSV. Node 22 gates passed: 92 suites/783 tests, typecheck, lint 0 errors/68 existing warnings and build. [Contract](ACT-16-XLSX-USABILITY.md). | Codex owns gated beta deployment after the runtime dependency cut below, plus H04d reattestation. Esteban reviews a newly downloaded XLSX. No legacy change. |
+| ACT-16-CHARTS | Planned after the readability cut, **not yet implemented**. Native, editable category budget/spending charts require a compatible writer strategy; do not reintroduce the removed vulnerable `xlsx` package or mislabel a static image as editable. | Codex researches and implements a bounded chart cut with workbook-open and source-reconciliation tests; Esteban accepts the beta layout. |
+| ACT-05/06 currency semantics | Product/architecture decision open, no migration started. Current budgets and transaction input are ARS; USD income/projection uses a required monthly exchange rate. There is no source-currency or per-operation rate snapshot, so general multicurrency is not supported. | Esteban chooses either an ARS-only mode with optional USD reporting rate or true mixed-currency entry; Codex then writes the money/rounding/backfill contract and staged migration proposal before code. Legacy rows must not be reinterpreted. |
+| H04d isolation renewal | Technical gate passed for beta deployment `dpl_5jxNMY8Z3iMDToef7N57QKdjTTyV`; `isolationVerified:false` denotes the intentional inability of the local verifier to attest every running function. The prior human acceptance named the older deployment. | Esteban accepts the documented build-snapshot residual for this deployment, or requests stronger runtime evidence. Codex records the decision. Propose a standing **beta-only** policy so unchanged risks need technical reattestation, not repeated human ratification after every deploy; this policy itself requires Esteban's approval. |
+| Dashboard percentage precision | October dashboard displays `100%` after ARS 10.000 spent because the savings ratio is rounded to a whole percent; the underlying USD savings remains below income. This is presentation, not a duplicated transaction. | Codex owns an ACT-16 follow-up to display one decimal or a `<100%` guard with regression before beta rollout; no financial model change. |
+| ACT-03 Drizzle toolchain / payment wording | Historical accepted residual and ACT-16 payment wording decision remain as recorded in the 29/09 table. | Esteban owns the accepted dependency risk and manual-payment wording decision; Codex owns recheck/implementation after triggers or decision. |
+| ACT-03 runtime dependency security | **New pre-deploy gate:** fresh 02/10 `npm audit --omit=dev` reports four transitive findings (three high, one moderate) in `brace-expansion`, `fast-uri`, `ip-address`, `undici`. These are not covered by the previously accepted dev-only Drizzle residual. The tree places `fast-uri`, `ip-address`, and `undici` under the `shadcn` CLI currently declared as a production dependency, and `brace-expansion` under ExcelJS as well as dev tooling. No automatic fix or deployment was applied. | Codex owns a separate bounded dependency cut: verify runtime use of `shadcn`, move it to dev-only if safe, resolve compatible lockfile fixes, rerun full gates and both audit scopes, and document any residual before beta deployment. Esteban only decides if a remaining material risk must be accepted; no silent acceptance. |
+
+Every unfinished item has an owner and a specific gate. No production release,
+schema change, financial write, webhook or notification toggle is implied by
+this record.

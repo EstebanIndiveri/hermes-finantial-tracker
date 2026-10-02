@@ -2,8 +2,9 @@
 
 Estado 30/09/2026: implementación y regresiones locales completas; desplegado
 **solo en beta** como `dpl_5jxNMY8Z3iMDToef7N57QKdjTTyV` desde
-`bd0269bec6c91125852b6225a32f2f8e827adac0`. Aceptación visual beta de
-`resumen` y XLSX pendiente de Esteban; **sin cambio legacy**. El
+`bd0269bec6c91125852b6225a32f2f8e827adac0`. El 02/10 Esteban aportó
+captura de `resumen` de octubre y el XLSX beta: **aceptación visual del corte
+individual completada, sin cambio legacy**. El
 [plan general](../audit/PLAN-DE-ACCION.md) asigna ACT-07 a las
 proyecciones de ingreso/gasto; ACT-10 corresponde a propuestas/callbacks.
 
@@ -47,6 +48,13 @@ condiciones de envío. El gate técnico H04d se repitió sobre el nuevo
 deployment/alias: assertion de build aprobada, seis fingerprints beta
 coincidentes y manifiesto local postactivación consistente. La aceptación
 humana del residual para este deployment queda pendiente de Esteban; no se
-atribuye automáticamente la aceptación del deployment anterior. Esteban
-validará los textos con `resumen` y un XLSX beta; Codex cerrará ACT-07 tras
-registrar esa evidencia. Producción legacy permanece inmutable.
+atribuye automáticamente la aceptación del deployment anterior.
+
+La captura de `resumen` muestra ingreso, gasto y ahorro en USD y la cotización
+ARS/USD. El XLSX de octubre contiene ARS 10.000 en `supermercado` y ARS 20.000
+en `ingresos` dentro de `Movimientos`; el resumen por categoría solo incluye
+el gasto. Esto cierra la validación visual del recorrido individual ACT-07.
+La alerta diaria sigue apagada en beta y solo tiene regresión local; su
+activación requiere ACT-17. La mejora de formato del XLSX se trata por
+separado en [ACT-16](ACT-16-XLSX-USABILITY.md). Producción legacy permanece
+inmutable.
