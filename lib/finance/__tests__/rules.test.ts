@@ -15,8 +15,11 @@ test("RED when ahorro < saving_goal_yellow", () => {
 test("savings percentage uses the same persisted USD projection as the summary", () => {
   // A current ARS exchange rate must not revalue historical USD transactions.
   expect(calculateSavingsPercent({ income_usd: 100, ahorro_proyectado_usd: 50 })).toBe(50);
+  expect(calculateSavingsPercent({ income_usd: 100, ahorro_proyectado_usd: 100 })).toBe(100);
   expect(calculateSavingsPercent({ income_usd: 100, ahorro_proyectado_usd: -20 })).toBe(-20);
   expect(calculateSavingsPercent({ income_usd: 0, ahorro_proyectado_usd: 0 })).toBe(0);
+  expect(calculateSavingsPercent({ income_usd: 4826.5, ahorro_proyectado_usd: 4820.25 })).toBe(99.9);
+  expect(calculateSavingsPercent({ income_usd: 100000, ahorro_proyectado_usd: 99999 })).toBe(99.9);
 });
 
 test("OK when budget_ars = 0 (unlimited)", () => {

@@ -152,7 +152,7 @@ export default async function DashboardPage({
           <div className="h-status-stat">
             <div className="h-stat-label">% Ahorro</div>
             <div className={`h-stat-val${pctAhorro >= 50 ? " green" : " red"}`}>
-              {pctAhorro}%
+              {pctAhorro.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
             </div>
           </div>
         </div>
