@@ -402,3 +402,29 @@ the changes below are **local only** on `codex/act16-export-usability`.
 Every unfinished item has an owner and a specific gate. No production release,
 schema change, financial write, webhook or notification toggle is implied by
 this record.
+
+### Beta deployment and acceptance — 02/10/2026, after local cuts
+
+This section supersedes the earlier “local only” wording above for the exact
+cuts deployed today. A clean local commit `e724b44` was deployed directly by
+CLI to the **separate beta Vercel project** `prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`
+as `dpl_BeEyrGrvnJb8yMrZSb2QWk7LrPxk` (READY). The beta canonical alias
+points there. The build emitted `beta_build_isolation_attested` with
+`passed:true`, `beta_secret_fingerprints_match:true`, all nine checks and no
+failures. Read-only beta `/login` returned 200; unauthenticated worker route
+returned 401. The legacy canonical alias still points to
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. No `main` change, Git push, legacy
+deployment, DB/schema/financial write, bot/webhook change or flag toggle was
+made by this release.
+
+| Gate | State | Owner / exact closure or re-entry |
+| --- | --- | --- |
+| ACT-16 XLSX readability and editable chart | **Code deployed to beta; operator acceptance open.** Local gates: 92 suites/784 tests, typecheck/build, lint 0 errors (68 existing warnings), runtime audit 0. A synthetic workbook reopened with one native chart and unchanged numbers. | Esteban downloads a **new October XLSX from beta** and checks chart, filters, category separation and unclipped text in his spreadsheet app; Codex records any finding and fixes it before closure. The old attached XLSX remains historical evidence. |
+| ACT-16 dashboard percentage | **Code deployed to beta; visual acceptance open.** October-like values now format to `99,9%`, not false `100%`; financial values unchanged. | Esteban checks `% Ahorro` in October beta; Codex compares with income/ahorro shown and closes or fixes. |
+| ACT-03 runtime dependency security | **Deployed in beta.** Clean local audit of production dependencies found zero advisories. Full audit still has four moderate dev-only Drizzle/esbuild findings under the previously accepted temporary risk. | Codex rechecks on the next dependency/schema-generation cut; Esteban remains residual-risk owner. No forced breaking downgrade. |
+| H04d per-deployment reattestation | **In progress for this exact new beta deployment.** Build fingerprint/identity assertion, Vercel project/alias distinction, beta basic probes and unchanged legacy alias passed. The standing beta-only acceptance from 02/10 applies only after the private post-activation receipts/provider comparison for this deployment are refreshed and pass; `isolationVerified:false` remains by design. | Codex owns fresh redacted evidence and post-activation runner. If a provider identity/binding/fingerprint changed, a check fails or evidence is unavailable, stop the scoped certificate and return the residual to Esteban for decision. Existing beta remains usable as a pilot, not a certified release to legacy. |
+| ACT-05/06 optional FX | **Product decision open; no schema or financial behavior changed.** [ARS-first proposal](ACT-05-CURRENCY-DECISION.md). | Esteban chooses ARS base with optional USD projection or mixed-currency scope; Codex then writes money/rounding/backfill tests and additive migration plan. |
+
+All open gates have explicit owners. The next beta actions are spreadsheet and
+dashboard visual QA plus H04d receipt refresh; no additional synthetic expense
+is required for either visual check.
