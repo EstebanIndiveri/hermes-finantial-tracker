@@ -10,12 +10,12 @@ interface CategoryAlert {
 
 interface AlertContext {
   month: string;
-  income_usd: number;
-  total_spent_usd: number;
-  ahorro_proyectado_usd: number;
-  saving_goal_usd: number;
+  accountingCurrency: "USD" | "ARS";
+  income: number;
+  totalSpent: number;
+  projectedSavings: number;
+  savingGoal: number;
   status: string;
-  exchange_rate: number;
   categories: CategoryAlert[];
   todayTransactions: { amount_ars: number; category: string; emoji: string }[];
   isMonday: boolean;
@@ -76,12 +76,13 @@ export function buildDailyAlert(ctx: AlertContext): AlertDecision {
 
   // ── Estado del mes ──
   const statusIcon = ctx.status === "GREEN" ? "🟢" : ctx.status === "YELLOW" ? "🟡" : "🔴";
-  const goalPct = ctx.saving_goal_usd > 0
-    ? Math.round((ctx.ahorro_proyectado_usd / ctx.saving_goal_usd) * 100)
+  const goalPct = ctx.savingGoal > 0
+    ? Math.round((ctx.projectedSavings / ctx.savingGoal) * 100)
     : null;
+  const formatAccountingAmount = ctx.accountingCurrency === "ARS" ? formatARS : formatUSD;
 
   lines.push(`<b>📊 Mes ${ctx.month}:</b>`);
-  lines.push(`Gastado: USD ${formatUSD(ctx.total_spent_usd)} | Ahorro: USD ${formatUSD(ctx.ahorro_proyectado_usd)}${goalPct !== null ? ` (${goalPct}% de meta)` : ""}`);
+  lines.push(`Gastado: ${ctx.accountingCurrency} ${formatAccountingAmount(ctx.totalSpent)} | Ahorro: ${ctx.accountingCurrency} ${formatAccountingAmount(ctx.projectedSavings)}${goalPct !== null ? ` (${goalPct}% de meta)` : ""}`);
   lines.push(`Estado: ${statusIcon} ${ctx.status}`);
 
   // ── Alertas de categorías ──

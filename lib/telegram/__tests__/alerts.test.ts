@@ -2,12 +2,12 @@ import { buildDailyAlert } from "../alerts";
 
 const base = {
   month: "2026-09",
-  income_usd: 1002.5,
-  total_spent_usd: 74.23,
-  ahorro_proyectado_usd: 928.27,
-  saving_goal_usd: 0,
+  accountingCurrency: "USD" as const,
+  income: 1002.5,
+  totalSpent: 74.23,
+  projectedSavings: 928.27,
+  savingGoal: 0,
   status: "GREEN",
-  exchange_rate: 1600,
   categories: [],
   todayTransactions: [],
   isMonday: false,
@@ -15,6 +15,20 @@ const base = {
 
 it("does not send a daily expense alert without expenses or a critical status", () => {
   expect(buildDailyAlert(base)).toEqual({ shouldSend: false, message: "" });
+});
+
+it("uses only ARS in an ARS-only alert and never prints fabricated USD", () => {
+  const result = buildDailyAlert({
+    ...base,
+    accountingCurrency: "ARS",
+    income: 100000,
+    totalSpent: 25000,
+    projectedSavings: 75000,
+    savingGoal: 80000,
+    todayTransactions: [{ amount_ars: 100, category: "Supermercado", emoji: "🛒" }],
+  });
+  expect(result.message.replaceAll("\u00a0", " ")).toContain("Gastado: ARS $ 25.000 | Ahorro: ARS $ 75.000");
+  expect(result.message).not.toContain("USD");
 });
 
 it("reports only supplied expenses in ARS while the month totals remain USD", () => {

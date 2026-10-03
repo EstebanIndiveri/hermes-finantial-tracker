@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { users, transactions, split_sessions, splits, reimbursementRequests } from "@/lib/db/schema";
+import { users, transactions, monthly_settings, split_sessions, splits, reimbursementRequests } from "@/lib/db/schema";
 import { eq, and, gte, lte, lt } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
-import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
+import { getMonthSummary, getAccountingMonthProjection, getCategoryBreakdown } from "@/lib/finance/summaries";
+import { calculateMonthStatus } from "@/lib/finance/rules";
 import { isIncomeCategory } from "@/lib/finance/income";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
@@ -78,26 +79,57 @@ export async function GET(req: NextRequest) {
         with: { category: true },
       });
 
-      const [summary, categoryBreakdown] = await Promise.all([
-        getMonthSummary(groupId, month),
-        getCategoryBreakdown(groupId, month),
-      ]);
-
-      if (!summary) {
-        // No USD summary also covers a month whose currency mode or required
-        // USD values are not supported by this legacy alert projection.
+      const settings = await db.query.monthly_settings.findFirst({
+        where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
+      });
+      const mode = settings?.currency_mode;
+      if (!settings || (mode !== "USD_ARS" && mode !== "ARS_ARS") ||
+        (mode === "ARS_ARS" && process.env.ACT05_ARS_MODE_ENABLED !== "true")) {
         results.push({ userId: user.id, sent: false, reason: "summary_unavailable" });
         continue;
       }
 
+      let financials;
+      if (mode === "ARS_ARS") {
+        const projection = await getAccountingMonthProjection(groupId, month);
+        if (!projection || projection.mode !== "ARS_ARS" ||
+          settings.saving_goal_yellow_ars == null || !Number.isFinite(settings.saving_goal_yellow_ars)) {
+          results.push({ userId: user.id, sent: false, reason: "summary_unavailable" });
+          continue;
+        }
+        financials = {
+          accountingCurrency: "ARS" as const,
+          income: projection.effectiveIncome,
+          totalSpent: projection.totalExpenses,
+          projectedSavings: projection.projectedSavings,
+          savingGoal: projection.savingGoal,
+          status: calculateMonthStatus({
+            income_usd: projection.effectiveIncome,
+            total_spent_usd: projection.totalExpenses,
+            saving_goal_usd: projection.savingGoal,
+            saving_goal_yellow: settings.saving_goal_yellow_ars,
+          }),
+        };
+      } else {
+        const summary = await getMonthSummary(groupId, month);
+        if (!summary) {
+          results.push({ userId: user.id, sent: false, reason: "summary_unavailable" });
+          continue;
+        }
+        financials = {
+          accountingCurrency: "USD" as const,
+          income: summary.income_usd,
+          totalSpent: summary.total_spent_usd,
+          projectedSavings: summary.ahorro_proyectado_usd,
+          savingGoal: summary.saving_goal_usd,
+          status: summary.status,
+        };
+      }
+      const categoryBreakdown = await getCategoryBreakdown(groupId, month);
+
       const { shouldSend, message } = buildDailyAlert({
         month,
-        income_usd: summary.income_usd,
-        total_spent_usd: summary.total_spent_usd,
-        ahorro_proyectado_usd: summary.ahorro_proyectado_usd,
-        saving_goal_usd: summary.saving_goal_usd,
-        status: summary.status,
-        exchange_rate: summary.exchange_rate,
+        ...financials,
         categories: categoryBreakdown.filter(c => !c.is_income).map(c => ({
           name: c.name,
           emoji: c.emoji,

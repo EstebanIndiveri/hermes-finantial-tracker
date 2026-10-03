@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { GET } from "../route";
 import { db } from "@/lib/db/client";
-import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
+import { getMonthSummary, getCategoryBreakdown, getAccountingMonthProjection } from "@/lib/finance/summaries";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
@@ -15,10 +15,11 @@ jest.mock("@/lib/db/client", () => ({
       transactions: { findMany: jest.fn() },
       split_sessions: { findMany: jest.fn() },
       splits: { findFirst: jest.fn() },
+      monthly_settings: { findFirst: jest.fn() },
     },
   },
 }));
-jest.mock("@/lib/finance/summaries", () => ({ getMonthSummary: jest.fn(), getCategoryBreakdown: jest.fn() }));
+jest.mock("@/lib/finance/summaries", () => ({ getMonthSummary: jest.fn(), getCategoryBreakdown: jest.fn(), getAccountingMonthProjection: jest.fn() }));
 jest.mock("@/lib/telegram/send-message", () => ({ sendTelegramMessage: jest.fn() }));
 jest.mock("@/lib/telegram/alerts", () => ({ buildDailyAlert: jest.fn() }));
 jest.mock("@/lib/telegram/authorized-group-context", () => ({ resolveAuthorizedTelegramGroup: jest.fn() }));
@@ -126,6 +127,8 @@ describe("GET /api/cron/daily-alerts authorization", () => {
       status: "GREEN",
       exchange_rate: 1000,
     });
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "USD_ARS" });
+    (getAccountingMonthProjection as jest.Mock).mockResolvedValue(null);
     (getCategoryBreakdown as jest.Mock).mockResolvedValue([]);
     (buildDailyAlert as jest.Mock).mockReturnValue({ shouldSend: true, message: "daily" });
   }
@@ -196,6 +199,36 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     });
     expect(buildDailyAlert).not.toHaveBeenCalled();
     expect(sendTelegramMessage).not.toHaveBeenCalled();
+  });
+
+  it("builds an ARS-only alert from the ARS projection and configured yellow threshold", async () => {
+    setupDailyProcessing([{ id: "u1", telegram_user_id: "tg-u1", active_telegram_group_id: "g1" }]);
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS", saving_goal_yellow_ars: 70000 });
+    (getAccountingMonthProjection as jest.Mock).mockResolvedValue({ mode: "ARS_ARS", accountingCurrency: "ARS", effectiveIncome: 100000, totalExpenses: 25000, projectedSavings: 75000, savingGoal: 80000 });
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(getMonthSummary).not.toHaveBeenCalled();
+    expect(buildDailyAlert).toHaveBeenCalledWith(expect.objectContaining({
+      accountingCurrency: "ARS", income: 100000, totalSpent: 25000,
+      projectedSavings: 75000, savingGoal: 80000, status: "YELLOW",
+    }));
+  });
+
+  it("does not send an ARS-only alert while the feature flag is off", async () => {
+    setupDailyProcessing([{ id: "u1", telegram_user_id: "tg-u1", active_telegram_group_id: "g1" }]);
+    delete process.env.ACT05_ARS_MODE_ENABLED;
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS", saving_goal_yellow_ars: 70000 });
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+    expect(await response.json()).toMatchObject({ results: [{ sent: false, reason: "summary_unavailable" }] });
+    expect(getAccountingMonthProjection).not.toHaveBeenCalled();
+    expect(buildDailyAlert).not.toHaveBeenCalled();
   });
 
   it("does not send to a stale group chat when the user has no linked private Telegram ID", async () => {

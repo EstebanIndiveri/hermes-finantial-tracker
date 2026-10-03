@@ -696,8 +696,28 @@ pruebas leen el XLSX generado como ZIP/ExcelJS y comprueban cabeceras, tipos
 numéricos, filtros y gráfico; no se realizó QA visual en Excel ni descarga
 desde beta. No hubo cambio en DB, flags, despliegue o producción legacy.
 
-**Próximo corte abierto ACT-05e, owner Codex:** adaptar alertas y sus cálculos
-al modo mensual, con flag apagada y sin llamadas externas; después abordar
-reintegros y la UI para elegir el modo en cortes separados. La anomalía canary
-beta en `telegram_operations` mantiene owner Codex antes de migrar beta;
-Esteban conserva la aceptación funcional y decisión de release.
+**Checkpoint histórico:** ACT-05e se cerró localmente el 03/10 (ver abajo).
+Después siguen reintegros y la UI para elegir el modo en cortes separados. La
+anomalía canary beta en `telegram_operations` mantiene owner Codex antes de
+migrar beta; Esteban conserva la aceptación funcional y decisión de release.
+
+### ACT-05e alertas por modo contable — 03/10/2026
+
+**Corte local cerrado, owner Codex.** El resumen proactivo diario consulta el
+modo de grupo/mes y usa la proyección ARS/ARS solo con flag habilitada,
+configuración completa y umbral amarillo ARS válido. Gastos, ahorro y meta se
+formatean en la moneda contable correspondiente; la lista de gastos y los
+límites de categoría siguen en ARS. USD/ARS mantiene su cálculo y formato
+anteriores. Si falta modo, configuración o proyección, no se envía un resumen
+financiero inventado. El control de membresía y el destino privado de Telegram
+se preservan. Los recordatorios de compartidos y reintegros no cambiaron.
+
+Gates locales Node 22: harness 84/84; Jest 97 suites y 850/850 tests;
+typecheck y build verdes; lint 0 errores y 67 warnings preexistentes. Las
+pruebas de alertas y cron usaron proveedores simulados; no hubo envíos reales,
+cambio de cron, DB, flag o deploy.
+
+**Próximo corte abierto ACT-05f, owner Codex:** verificar y adaptar reintegros
+para que no conviertan ni etiqueten ARS/ARS como USD. Después, la UI para
+seleccionar el modo mensual conserva owner Codex y requiere QA de Esteban en
+beta. El canary `telegram_operations` se atenderá antes de migrar beta.
