@@ -244,6 +244,59 @@ describe("telegram recurring messages", () => {
     }));
   });
 
+  it("builds ARS-only command and natural-language proposals without USD assumptions", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    mockParseFinancialMessage.mockResolvedValue({
+      intent: "register_expense",
+      amount_ars: 501,
+      category: "supermercado",
+      merchant: null,
+      needs_confirmation: true,
+      requires_reimbursement: false,
+      confidence: 0.95,
+    });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({
+      currency_mode: "ARS_ARS",
+      income_ars: 100000,
+      saving_goal_ars: 20000,
+    });
+
+    const command = await handleTelegramMessage({
+      update_id: 9891,
+      message: { text: "/gasto 500 supermercado", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+    const natural = await handleTelegramMessage({
+      update_id: 9892,
+      message: { text: "Gasté 501 en supermercado sin reintegro", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1", undefined, "voice");
+
+    for (const proposal of [command, natural]) {
+      expect(proposal.text).toContain("ARS");
+      expect(proposal.text).toContain("¿Registramos este gasto?");
+      expect(proposal.text).not.toMatch(/USD|ARS\s*\/\s*USD|cotizaci[oó]n/i);
+      expect(proposal.replyMarkup?.inline_keyboard?.flat().some((button) => button.callback_data === "expense:confirm")).toBe(true);
+    }
+    expect(setConversationState).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not open an ARS-only proposal while the Telegram feature flag is off", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "false";
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({
+      currency_mode: "ARS_ARS",
+      income_ars: 100000,
+      saving_goal_ars: 20000,
+    });
+
+    const proposal = await handleTelegramMessage({
+      update_id: 9893,
+      message: { text: "/gasto 500 supermercado", chat: { id: 10 }, from: { id: 20 } },
+    }, "user-1", "group-1");
+
+    expect(proposal.text).toContain("modo ARS está desactivado");
+    expect(proposal.replyMarkup).toBeUndefined();
+    expect(setConversationState).not.toHaveBeenCalled();
+  });
+
   it("uses an income-specific confirmation without offering reimbursement", async () => {
     (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({
       id: "category-income", name: "Ingresos", emoji: "💰", slug: "ingresos",

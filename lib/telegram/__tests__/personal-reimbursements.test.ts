@@ -214,6 +214,56 @@ describe("telegram reimbursements", () => {
     });
   });
 
+  it("does not re-propose an edited receipt for a disabled ARS-only month", async () => {
+    const pendingReceipt = { id: "receipt-1", parsed_amount_ars: 5000, parsed_merchant: "Almacén" };
+    (mockDb.select as jest.Mock).mockReturnValue({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({
+          orderBy: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([pendingReceipt]) })),
+        })),
+      })),
+    });
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-1", slug: "supermercado" });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({
+      currency_mode: "ARS_ARS", income_ars: 100000, saving_goal_ars: 20000,
+    });
+
+    const response = await handlePersonalCallback(
+      "chat-1", "telegram-1", "user-1", "group-1", "receipt:select_category:supermercado",
+    );
+
+    expect(response.text).toContain("modo ARS está deshabilitado");
+    expect(mockDb.update).not.toHaveBeenCalled();
+    expect(mockClearConversationState).not.toHaveBeenCalled();
+  });
+
+  it("re-proposes an edited receipt in a valid ARS-only month without writing a transaction", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    const pendingReceipt = { id: "receipt-1", parsed_amount_ars: 5000, parsed_merchant: "Almacén" };
+    (mockDb.select as jest.Mock).mockReturnValue({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({
+          orderBy: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([pendingReceipt]) })),
+        })),
+      })),
+    });
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({
+      id: "cat-1", slug: "supermercado", name: "Supermercado", emoji: "🛒",
+    });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({
+      currency_mode: "ARS_ARS", income_ars: 100000, saving_goal_ars: 20000,
+    });
+
+    const response = await handlePersonalCallback(
+      "chat-1", "telegram-1", "user-1", "group-1", "receipt:select_category:supermercado",
+    );
+
+    expect(response.text).toContain("$5.000 ARS");
+    expect(response.replyMarkup).toBeDefined();
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
   it("fails closed instead of partially writing a reimbursement without durable operation context", async () => {
     const pendingReceipt = {
       id: "receipt-1",

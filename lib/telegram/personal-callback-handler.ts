@@ -1117,6 +1117,18 @@ export async function handlePersonalCallback(
       });
       if (!cat) return { text: `❌ Categoría <b>${slug}</b> no encontrada en tu grupo.`, edit: true };
 
+      const amount = pending.parsed_amount_ars;
+      if (amount == null || !Number.isFinite(amount) || amount <= 0) {
+        return { text: "❌ El ticket no tiene un monto válido. Editalo o enviá la foto nuevamente.", edit: true };
+      }
+      const month = getActiveMonthArgentina();
+      const settings = await db.query.monthly_settings.findFirst({
+        where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
+      });
+      if (!preparePersonalTransaction(settings, amount)) {
+        return { text: unavailableMessage(settings), edit: true };
+      }
+
       await db.update(receipt_imports)
         .set({ parsed_category_slug: slug })
         .where(eq(receipt_imports.id, pending.id))
@@ -1124,7 +1136,6 @@ export async function handlePersonalCallback(
 
       await clearConversationState(chatId, telegramUserId);
 
-      const amount = pending.parsed_amount_ars!;
       const merchant = pending.parsed_merchant ?? undefined;
       const date = pending.parsed_date ?? new Date().toISOString().slice(0, 10);
 

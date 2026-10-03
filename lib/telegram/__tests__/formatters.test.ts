@@ -1,4 +1,4 @@
-import { formatTransactionConfirm, formatResumen, formatDisponible } from "../formatters";
+import { formatTransactionConfirm, formatResumen, formatDisponible, formatPuedo } from "../formatters";
 
 const nbsp = "\u00A0"; // non-breaking space used by Intl.NumberFormat
 
@@ -179,6 +179,24 @@ describe("formatResumen", () => {
 
     expect(result).toContain("Estado: 🔴 RED");
   });
+
+  it("should format an ARS-only summary without USD or exchange-rate output", () => {
+    const result = formatResumen({
+      currency_mode: "ARS_ARS",
+      month: "2026-10",
+      income_ars: 1200000,
+      total_spent_ars: 450000,
+      ahorro_proyectado_ars: 750000,
+      status: "GREEN",
+    });
+
+    expect(result).toContain(`Ingreso: ARS $${nbsp}1.200.000`);
+    expect(result).toContain(`Gastado: ARS $${nbsp}450.000`);
+    expect(result).toContain(`Ahorro proyectado: ARS $${nbsp}750.000`);
+    expect(result).not.toContain("USD");
+    expect(result).not.toContain("ARS/USD");
+    expect(result).not.toContain("Tipo de cambio");
+  });
 });
 
 describe("formatDisponible", () => {
@@ -251,5 +269,70 @@ describe("formatDisponible", () => {
     });
 
     expect(result).toContain("Sin límite definido");
+  });
+
+  it("should label ARS-only category amounts and preserve unlimited budgets", () => {
+    const result = formatDisponible({
+      currency_mode: "ARS_ARS",
+      category: "Supermercado",
+      emoji: "🛒",
+      budget_ars: 0,
+      gastado_ars: 15000,
+      disponible_ars: null,
+      status: "OK",
+    });
+
+    expect(result).toContain("Presupuesto: Sin límite");
+    expect(result).toContain(`Gastado: ARS $${nbsp}15.000`);
+    expect(result).toContain("Sin límite definido");
+    expect(result).not.toContain("USD");
+    expect(result).not.toContain("ARS/USD");
+  });
+});
+
+describe("formatPuedo", () => {
+  it("should format an ARS-only simulation in ARS including savings and goal", () => {
+    const result = formatPuedo({
+      currency_mode: "ARS_ARS",
+      amount_ars: 10000,
+      category: "Supermercado",
+      emoji: "🛒",
+      gastado_ars: 25000,
+      budget_ars: 50000,
+      newCategoryStatus: "OK",
+      disponible_after: 15000,
+      ahorro_ars_before: 250000,
+      ahorro_ars_after: 240000,
+      newMonthStatus: "GREEN",
+      saving_goal_ars: 200000,
+    });
+
+    expect(result).toContain(`¿Podés gastar ARS $${nbsp}10.000`);
+    expect(result).toContain(`Gastado: ARS $${nbsp}35.000 de ARS $${nbsp}50.000`);
+    expect(result).toContain(`Disponible: ARS $${nbsp}15.000`);
+    expect(result).toContain(`Antes: ARS $${nbsp}250.000 → Después: ARS $${nbsp}240.000`);
+    expect(result).toContain(`Meta: ARS $${nbsp}200.000 (120% alcanzado)`);
+    expect(result).not.toContain("USD");
+    expect(result).not.toContain("ARS/USD");
+  });
+
+  it("should preserve USD_ARS simulation formatting", () => {
+    const result = formatPuedo({
+      amount_ars: 10000,
+      category: "Supermercado",
+      emoji: "🛒",
+      gastado_ars: 25000,
+      budget_ars: 50000,
+      newCategoryStatus: "OK",
+      disponible_after: 15000,
+      ahorro_usd_before: 250,
+      ahorro_usd_after: 240,
+      newMonthStatus: "GREEN",
+      saving_goal_usd: 200,
+    });
+
+    expect(result).toContain("Antes: $250.00 → Después: $240.00");
+    expect(result).toContain("Meta: $200.00 (120% alcanzado)");
+    expect(result).not.toContain("ARS $250.00");
   });
 });

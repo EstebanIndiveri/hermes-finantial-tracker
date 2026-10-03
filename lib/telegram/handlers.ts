@@ -2,7 +2,9 @@ import { db } from "@/lib/db/client";
 import { transactions, categories, monthly_settings, budgets, bot_messages, receipt_imports, telegram_link_codes, users, groups, group_members } from "@/lib/db/schema";
 import { eq, and, sum, desc, gt } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
-import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
+import { getAccountingMonthProjection, getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
+import type { MonthProjection } from "@/lib/finance/month-projection";
+import { formatARS } from "@/lib/finance/formatters";
 import { calculateCategoryStatus, calculateMonthStatus } from "@/lib/finance/rules";
 import { formatResumen, formatDisponible, formatPuedo } from "./formatters";
 import { ocrTelegramPhoto, ocrTelegramDocument } from "./ocr";
@@ -79,6 +81,126 @@ function hasUsableUsdMonthSummary(
 }
 
 const USD_MONTH_UNAVAILABLE_MESSAGE = "Este mes no tiene una configuración USD/ARS válida para Telegram. No se registró ningún movimiento.";
+const ARS_MODE_DISABLED_MESSAGE = "El modo ARS está desactivado para Telegram. No se registró ningún movimiento.";
+const ARS_MONTH_UNAVAILABLE_MESSAGE = "Este mes no tiene una configuración ARS válida para Telegram. No se registró ningún movimiento.";
+const ARS_QUERY_UNAVAILABLE_MESSAGE = "No puedo calcular la consulta: el modo ARS está desactivado o la configuración mensual está incompleta.";
+
+type TelegramMonthCurrency =
+  | { mode: "USD_ARS" | "UNCONFIGURED" }
+  | {
+      mode: "ARS_ARS";
+      projection: Extract<MonthProjection, { mode: "ARS_ARS" }> | null;
+      savingGoalYellow: number | null;
+    };
+
+async function getTelegramMonthCurrency(groupId: string, month: string): Promise<TelegramMonthCurrency> {
+  const settings = await db.query.monthly_settings.findFirst({
+    where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
+  });
+  if (!settings) return { mode: "UNCONFIGURED" };
+  const mode = settings.currency_mode ?? "USD_ARS";
+  if (mode === "USD_ARS") return { mode };
+  if (mode !== "ARS_ARS") {
+    return { mode: "ARS_ARS", projection: null, savingGoalYellow: null };
+  }
+  const savingGoalYellow = settings.saving_goal_yellow_ars;
+  if (process.env.ACT05_ARS_MODE_ENABLED !== "true" || savingGoalYellow == null || !Number.isFinite(savingGoalYellow)) {
+    return { mode: "ARS_ARS", projection: null, savingGoalYellow: null };
+  }
+  const projection = await getAccountingMonthProjection(groupId, month);
+  return {
+    mode: "ARS_ARS",
+    projection: projection?.mode === "ARS_ARS" ? projection : null,
+    savingGoalYellow,
+  };
+}
+
+function simulateArsExpense(params: {
+  amountArs: number;
+  categorySlug: string | null;
+  projection: Extract<MonthProjection, { mode: "ARS_ARS" }>;
+  savingGoalYellow: number;
+  breakdown: Awaited<ReturnType<typeof getCategoryBreakdown>>;
+}): string {
+  const { amountArs, categorySlug, projection, savingGoalYellow, breakdown } = params;
+  const totalSpentAfter = projection.totalExpenses + amountArs;
+  const projectedSavingsAfter = projection.effectiveIncome - totalSpentAfter;
+  const monthStatus = calculateMonthStatus({
+    income_usd: projection.effectiveIncome,
+    total_spent_usd: totalSpentAfter,
+    saving_goal_usd: projection.savingGoal,
+    saving_goal_yellow: savingGoalYellow,
+  });
+
+  if (categorySlug) {
+    const category = breakdown.find((item) =>
+      item.slug === categorySlug || item.name.toLowerCase() === categorySlug.replace(/_/g, " "),
+    );
+    if (!category) {
+      const available = breakdown.map((item) => item.slug).join(", ");
+      return `No encontré la categoría "${categorySlug}".\nDisponibles: ${available}`;
+    }
+    const newSpent = category.gastado_ars + amountArs;
+    return formatPuedo({
+      currency_mode: "ARS_ARS",
+      amount_ars: amountArs,
+      category: category.name,
+      emoji: category.emoji,
+      gastado_ars: category.gastado_ars,
+      budget_ars: category.budget_ars,
+      newCategoryStatus: calculateCategoryStatus({ gastado_ars: newSpent, budget_ars: category.budget_ars }),
+      disponible_after: category.budget_ars > 0 ? category.budget_ars - newSpent : null,
+      ahorro_ars_before: projection.projectedSavings,
+      ahorro_ars_after: projectedSavingsAfter,
+      saving_goal_ars: projection.savingGoal,
+      newMonthStatus: monthStatus,
+    });
+  }
+
+  const monthIcon = monthStatus === "GREEN" ? "🟢" : monthStatus === "YELLOW" ? "🟡" : "🔴";
+  const decision = monthStatus === "RED"
+    ? "🔴 <b>Cuidado</b> — este gasto pondría tu ahorro en rojo."
+    : monthStatus === "YELLOW"
+      ? "🟡 <b>Podés, pero con cuidado</b> — estarías ajustado."
+      : "🟢 <b>Sí podés</b> — sin comprometer tus metas.";
+  return [
+    `💭 <b>¿Podés gastar ARS ${formatARS(amountArs)}?</b>`,
+    "",
+    decision,
+    "",
+    "<b>💰 Impacto en ahorro:</b>",
+    `Antes: ARS ${formatARS(projection.projectedSavings)} → Después: ARS ${formatARS(projectedSavingsAfter)} ${monthIcon}`,
+    projection.savingGoal > 0
+      ? `Meta: ARS ${formatARS(projection.savingGoal)} (${Math.round((projectedSavingsAfter / projection.savingGoal) * 100)}% alcanzado)`
+      : "",
+  ].filter((line) => line !== "").join("\n");
+}
+
+type ProposalCurrencyResult =
+  | { status: "ready"; mode: "USD_ARS" | "ARS_ARS" }
+  | { status: "unavailable"; message: string };
+
+async function getProposalCurrencyMode(groupId: string, month: string): Promise<ProposalCurrencyResult> {
+  const settings = await db.query.monthly_settings.findFirst({
+    where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
+  });
+  if (!settings) return { status: "unavailable", message: "Sin configuración mensual. Configurá desde la web." };
+
+  // Settings created before ACT-05 default to USD_ARS. Preserve this path for
+  // legacy rows while rejecting unknown modes.
+  const mode = settings.currency_mode ?? "USD_ARS";
+  if (mode === "USD_ARS") return { status: "ready", mode };
+  if (mode !== "ARS_ARS") return { status: "unavailable", message: ARS_MONTH_UNAVAILABLE_MESSAGE };
+  if (process.env.ACT05_ARS_MODE_ENABLED !== "true") {
+    return { status: "unavailable", message: ARS_MODE_DISABLED_MESSAGE };
+  }
+  if (
+    settings.income_ars == null || !Number.isFinite(settings.income_ars) ||
+    settings.saving_goal_ars == null || !Number.isFinite(settings.saving_goal_ars)
+  ) return { status: "unavailable", message: ARS_MONTH_UNAVAILABLE_MESSAGE };
+
+  return { status: "ready", mode };
+}
 
 /**
  * Parses a number from text, supporting:
@@ -559,6 +681,9 @@ async function buildExpenseOrExceptionMessage(
 ): Promise<PersonalBotMessage> {
   const normalizedReimbursementIntent = reimbursementIntent ?? (requires_reimbursement ? "yes" : "unknown");
   const shouldRequestReimbursement = normalizedReimbursementIntent === "yes";
+  const currency = await getProposalCurrencyMode(groupId, month);
+  if (currency.status !== "ready") return { text: currency.message };
+
   const budget = await db.query.budgets.findFirst({
     where: and(
       eq(budgets.group_id, groupId),
@@ -700,6 +825,25 @@ export async function handleTelegramMessage(
   }
 
   if (text === "/resumen") {
+    const accounting = await getTelegramMonthCurrency(groupId, month);
+    if (accounting.mode === "ARS_ARS") {
+      if (!accounting.projection || accounting.savingGoalYellow == null) return { text: ARS_QUERY_UNAVAILABLE_MESSAGE };
+      return {
+        text: formatResumen({
+          currency_mode: "ARS_ARS",
+          month,
+          income_ars: accounting.projection.effectiveIncome,
+          total_spent_ars: accounting.projection.totalExpenses,
+          ahorro_proyectado_ars: accounting.projection.projectedSavings,
+          status: calculateMonthStatus({
+            income_usd: accounting.projection.effectiveIncome,
+            total_spent_usd: accounting.projection.totalExpenses,
+            saving_goal_usd: accounting.projection.savingGoal,
+            saving_goal_yellow: accounting.savingGoalYellow,
+          }),
+        }),
+      };
+    }
     const summary = await getMonthSummary(groupId, month);
     if (!summary) return { text: "No hay configuración para este mes. Configurá desde la web." };
     if (!hasUsableUsdMonthSummary(summary)) return { text: USD_MONTH_UNAVAILABLE_MESSAGE };
@@ -771,6 +915,10 @@ export async function handleTelegramMessage(
 
   if (text.startsWith("/disponible")) {
     const rawArg = text.slice("/disponible".length).trim();
+    const accounting = await getTelegramMonthCurrency(groupId, month);
+    if (accounting.mode === "ARS_ARS" && (!accounting.projection || accounting.savingGoalYellow == null)) {
+      return { text: ARS_QUERY_UNAVAILABLE_MESSAGE };
+    }
 
     // No argument → show all categories summary
     if (!rawArg) {
@@ -779,7 +927,9 @@ export async function handleTelegramMessage(
         .filter(c => c.budget_ars > 0)
         .map(c => {
           const icon = c.status === "OK" ? "🟢" : c.status === "WARNING" ? "🟡" : "🔴";
-          const disp = c.disponible_ars !== null ? `$${c.disponible_ars.toLocaleString("es-AR")} disponible` : "sin límite";
+          const disp = c.disponible_ars !== null
+            ? `${accounting.mode === "ARS_ARS" ? `ARS ${formatARS(c.disponible_ars)}` : `$${c.disponible_ars.toLocaleString("es-AR")}`} disponible`
+            : "sin límite";
           return `${icon} ${c.emoji} ${c.name}: ${disp}`;
         });
       return {
@@ -815,6 +965,7 @@ export async function handleTelegramMessage(
 
     return {
       text: formatDisponible({
+        currency_mode: accounting.mode === "ARS_ARS" ? "ARS_ARS" : "USD_ARS",
         category: catData.name,
         emoji: catData.emoji,
         budget_ars: catData.budget_ars,
@@ -888,7 +1039,7 @@ export async function handleTelegramMessage(
       const catRows = r.parsed_category_slug
         ? await db.select().from(categories).where(and(eq(categories.slug, r.parsed_category_slug), eq(categories.group_id, groupId))).limit(1)
         : [];
-      return buildReceiptProposalMessage({
+      return buildReceiptProposalForMonth(groupId, month, {
         amount_ars: newAmount,
         categorySlug: catRows[0]?.slug ?? r.parsed_category_slug ?? undefined,
         categoryName: catRows[0]?.name ?? r.parsed_category_slug ?? "sin categoría",
@@ -922,7 +1073,7 @@ export async function handleTelegramMessage(
       const rows = await db.select().from(receipt_imports).where(eq(receipt_imports.id, ed.import_id)).limit(1);
       const r = rows[0];
       if (!r?.parsed_amount_ars) return { text: "❌ Ticket no encontrado." };
-      return buildReceiptProposalMessage({
+      return buildReceiptProposalForMonth(groupId, month, {
         amount_ars: r.parsed_amount_ars,
         categorySlug: cat.slug,
         categoryName: cat.name,
@@ -954,7 +1105,7 @@ export async function handleTelegramMessage(
       const catDispRows = r.parsed_category_slug
         ? await db.select().from(categories).where(and(eq(categories.slug, r.parsed_category_slug), eq(categories.group_id, groupId))).limit(1)
         : [];
-      return buildReceiptProposalMessage({
+      return buildReceiptProposalForMonth(groupId, month, {
         amount_ars: r.parsed_amount_ars,
         categorySlug: catDispRows[0]?.slug ?? r.parsed_category_slug ?? undefined,
         categoryName: catDispRows[0]?.name ?? r.parsed_category_slug ?? "sin categoría",
@@ -1165,7 +1316,7 @@ export async function handleTelegramMessage(
         });
         
         if (cat) {
-          return buildReceiptProposalMessage({
+          return buildReceiptProposalForMonth(groupId, month, {
             amount_ars: amount,
             categorySlug: cat.slug,
             categoryName: cat.name,
@@ -1399,6 +1550,21 @@ export async function handleTelegramMessage(
 
     const slug = parts[2]?.toLowerCase() ?? null;
 
+    const accounting = await getTelegramMonthCurrency(groupId, month);
+    if (accounting.mode === "ARS_ARS") {
+      if (!accounting.projection || accounting.savingGoalYellow == null) return { text: ARS_QUERY_UNAVAILABLE_MESSAGE };
+      const breakdown = await getCategoryBreakdown(groupId, month);
+      return {
+        text: simulateArsExpense({
+          amountArs: amount_ars,
+          categorySlug: slug,
+          projection: accounting.projection,
+          savingGoalYellow: accounting.savingGoalYellow,
+          breakdown,
+        }),
+      };
+    }
+
     const [summary, breakdown] = await Promise.all([
       getMonthSummary(groupId, month),
       getCategoryBreakdown(groupId, month),
@@ -1526,7 +1692,7 @@ export async function handleTelegramMessage(
         }
 
         // State already persisted in receipt_imports (status=pending) — no in-memory set needed
-        return buildReceiptProposalMessage({
+        return buildReceiptProposalForMonth(groupId, month, {
           amount_ars: parsed.amount_ars,
           categorySlug: cat.slug,
           categoryName: cat.name, categoryEmoji: cat.emoji,
@@ -1627,7 +1793,7 @@ export async function handleTelegramMessage(
     }
 
     // State already persisted in receipt_imports (status=pending)
-    return buildReceiptProposalMessage({
+    return buildReceiptProposalForMonth(groupId, month, {
       amount_ars,
       categorySlug: cat.slug,
       categoryName: cat.name, categoryEmoji: cat.emoji,
@@ -1965,6 +2131,25 @@ export async function handleTelegramMessage(
 
   // ── query_summary → /resumen ──
   if (parsed.intent === "query_summary") {
+    const accounting = await getTelegramMonthCurrency(groupId, month);
+    if (accounting.mode === "ARS_ARS") {
+      if (!accounting.projection || accounting.savingGoalYellow == null) return { text: ARS_QUERY_UNAVAILABLE_MESSAGE };
+      return {
+        text: formatResumen({
+          currency_mode: "ARS_ARS",
+          month,
+          income_ars: accounting.projection.effectiveIncome,
+          total_spent_ars: accounting.projection.totalExpenses,
+          ahorro_proyectado_ars: accounting.projection.projectedSavings,
+          status: calculateMonthStatus({
+            income_usd: accounting.projection.effectiveIncome,
+            total_spent_usd: accounting.projection.totalExpenses,
+            saving_goal_usd: accounting.projection.savingGoal,
+            saving_goal_yellow: accounting.savingGoalYellow,
+          }),
+        }),
+      };
+    }
     const summary = await getMonthSummary(groupId, month);
     if (!summary) return { text: "No hay configuración para este mes. Configurá desde la web." };
     if (!hasUsableUsdMonthSummary(summary)) return { text: USD_MONTH_UNAVAILABLE_MESSAGE };
@@ -1991,6 +2176,10 @@ export async function handleTelegramMessage(
   // ── query_available → /disponible ──
   if (parsed.intent === "query_available") {
     const slug = parsed.category?.toLowerCase() ?? null;
+    const accounting = await getTelegramMonthCurrency(groupId, month);
+    if (accounting.mode === "ARS_ARS" && (!accounting.projection || accounting.savingGoalYellow == null)) {
+      return { text: ARS_QUERY_UNAVAILABLE_MESSAGE };
+    }
     if (!slug) {
       // No specific category — show all
       const breakdown = await getCategoryBreakdown(groupId, month);
@@ -1998,7 +2187,9 @@ export async function handleTelegramMessage(
         .filter(c => c.budget_ars > 0)
         .map(c => {
           const icon = c.status === "OK" ? "🟢" : c.status === "WARNING" ? "🟡" : "🔴";
-          const disp = c.disponible_ars !== null ? `$${c.disponible_ars.toLocaleString("es-AR")} disponible` : "sin límite";
+          const disp = c.disponible_ars !== null
+            ? `${accounting.mode === "ARS_ARS" ? `ARS ${formatARS(c.disponible_ars)}` : `$${c.disponible_ars.toLocaleString("es-AR")}`} disponible`
+            : "sin límite";
           return `${icon} ${c.emoji} ${c.name}: ${disp}`;
         });
       return {
@@ -2029,6 +2220,7 @@ export async function handleTelegramMessage(
     if (!catData) return { text: `Sin datos para ${cat.name} este mes.` };
     return {
       text: formatDisponible({
+        currency_mode: accounting.mode === "ARS_ARS" ? "ARS_ARS" : "USD_ARS",
         category: catData.name,
         emoji: catData.emoji,
         budget_ars: catData.budget_ars,
@@ -2046,6 +2238,20 @@ export async function handleTelegramMessage(
       return { text: "Entendí que querés saber si podés gastar algo, pero no detecté el monto. Ej: \"puedo gastar 36000 en restaurante\"" };
     }
     const slug = parsed.category?.toLowerCase() ?? null;
+    const accounting = await getTelegramMonthCurrency(groupId, month);
+    if (accounting.mode === "ARS_ARS") {
+      if (!accounting.projection || accounting.savingGoalYellow == null) return { text: ARS_QUERY_UNAVAILABLE_MESSAGE };
+      const breakdown = await getCategoryBreakdown(groupId, month);
+      return {
+        text: simulateArsExpense({
+          amountArs: amount_ars,
+          categorySlug: slug,
+          projection: accounting.projection,
+          savingGoalYellow: accounting.savingGoalYellow,
+          breakdown,
+        }),
+      };
+    }
     const [summary, breakdown] = await Promise.all([
       getMonthSummary(groupId, month),
       getCategoryBreakdown(groupId, month),
@@ -2562,6 +2768,17 @@ export function buildReceiptProposalMessage({
       reimbursementIntent: draftResult.draft.reimbursement,
     }),
   };
+}
+
+/** Applies the month mode/feature gate before presenting an OCR/caption proposal. */
+async function buildReceiptProposalForMonth(
+  groupId: string,
+  month: string,
+  input: Parameters<typeof buildReceiptProposalMessage>[0],
+): Promise<PersonalBotMessage> {
+  const currency = await getProposalCurrencyMode(groupId, month);
+  if (currency.status !== "ready") return { text: currency.message };
+  return buildReceiptProposalMessage(input);
 }
 
 /** Builds a category selection keyboard for when OCR can't detect category */

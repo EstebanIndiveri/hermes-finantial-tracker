@@ -601,7 +601,7 @@ Pruebas enfocadas cubren la rama transaccional con outbox y la rama directa,
 modos USD/ARS y ARS/ARS, flag apagada, ajustes incompletos y fallo de
 proyección. No hubo migración, deploy, webhook ni cambio en beta o legacy.
 
-**Siguiente corte abierto, owner Codex:** adaptar el armado de propuestas y
+**Checkpoint histórico del corte siguiente (cerrado abajo), owner Codex:** adaptar el armado de propuestas y
 las consultas Telegram (`resumen`, `disponible`) que aún dependen del resumen
 USD, con pruebas de comando, texto natural, voz y OCR; una escritura correcta
 en el callback no equivale todavía a un flujo ARS/ARS de extremo a extremo.
@@ -611,3 +611,39 @@ modo/fuente Ripio permanecen abiertos con owner Codex. La anomalía canary de
 Después de esos cortes locales, Codex debe rehacer backup, conciliación y
 aislamiento para migrar únicamente la DB beta con autorización separada;
 Esteban será owner del QA funcional y de cualquier decisión de release.
+
+### ACT-05 propuestas y consultas Telegram — 03/10/2026
+
+**Corte local cerrado, owner Codex.** El preflight común de propuestas de
+gasto por comando, texto natural y voz, y el de tickets OCR/caption/edición,
+respeta el modo mensual y la flag ARS/ARS antes de mostrar una confirmación.
+La selección de categoría de un ticket editado también comprueba modo,
+configuración y monto antes de volver a proponer; ninguna de estas rutas
+escribe una transacción antes de la confirmación. El callback vuelve a
+validar en la escritura, por lo que un cambio entre propuesta y confirmación
+no la saltea.
+
+`/resumen`, `/disponible` y `/puedo`, y sus intents de texto natural, leen y
+formatean la proyección ARS/ARS cuando corresponde. El estado y la simulación
+usan `saving_goal_yellow_ars` del mes, no un umbral inventado; presupuestos
+de categoría siguen en ARS. Con flag apagada, configuración incompleta o
+proyección inconsistente, las consultas ARS fallan cerradas. Las rutas
+USD/ARS mantienen sus cálculos previos. El mismo handler procesa el texto
+transcrito de voz; no se hizo una llamada real a proveedores en este corte.
+
+Gates locales Node 22: harness 84/84; Jest 95 suites y 833/833 tests;
+typecheck y build verdes; lint 0 errores, 67 warnings preexistentes. Se
+verificaron propuestas de gasto, consultas por comando/texto natural, casos
+ARS/ARS con flag apagada, umbral ARS configurado y ticket editado. Ningún
+recurso remoto cambió: beta conserva esquema/flag/código desplegado previos y
+legacy sigue intacto.
+
+**Próximo corte abierto ACT-05c, owner Codex:** adaptar primero el dashboard
+y sus pruebas al modo contable, sin interpretar `amount_usd=NULL` como cero.
+Después, en cortes separados bajo el mismo owner, quedan alertas, XLSX,
+reembolsos y UI para elegir modo/fuente de cotización. La anomalía canary beta
+en `telegram_operations` sigue con owner Codex y requiere revisión aislada
+antes de migrar beta. Al cerrar esos gates locales,
+Codex repetirá export/backup, conciliación, aislamiento y migración solamente
+en beta con autorización separada; Esteban conserva el QA funcional y una
+eventual decisión de release. No activar `ACT05_ARS_MODE_ENABLED` antes.

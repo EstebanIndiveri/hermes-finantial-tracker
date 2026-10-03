@@ -1,4 +1,5 @@
 import { formatARS, formatUSD } from "@/lib/finance/formatters";
+import type { CurrencyMode } from "@/lib/finance/currency-mode";
 
 type TransactionConfirmBase = {
   amount_ars: number;
@@ -47,15 +48,38 @@ export function formatTransactionConfirm(params: TransactionConfirmBase & Transa
   return lines.filter((l): l is string => l !== null).join("\n");
 }
 
-export function formatResumen(params: {
-  month: string;
-  income_usd: number;
-  total_spent_usd: number;
-  ahorro_proyectado_usd: number;
-  status: string;
-  exchange_rate: number;
-}): string {
+type SummaryFormatParams =
+  | {
+      currency_mode?: "USD_ARS";
+      month: string;
+      income_usd: number;
+      total_spent_usd: number;
+      ahorro_proyectado_usd: number;
+      status: string;
+      exchange_rate: number;
+    }
+  | {
+      currency_mode: "ARS_ARS";
+      month: string;
+      income_ars: number;
+      total_spent_ars: number;
+      ahorro_proyectado_ars: number;
+      status: string;
+    };
+
+export function formatResumen(params: SummaryFormatParams): string {
   const icon = params.status === "GREEN" ? "🟢" : params.status === "YELLOW" ? "🟡" : "🔴";
+  if (params.currency_mode === "ARS_ARS") {
+    return [
+      `<b>📊 Resumen ${params.month}</b>`,
+      ``,
+      `Ingreso: ARS ${formatARS(params.income_ars)}`,
+      `Gastado: ARS ${formatARS(params.total_spent_ars)}`,
+      `Ahorro proyectado: ARS ${formatARS(params.ahorro_proyectado_ars)}`,
+      ``,
+      `Estado: ${icon} ${params.status}`,
+    ].join("\n");
+  }
   return [
     `<b>📊 Resumen ${params.month}</b>`,
     ``,
@@ -69,6 +93,7 @@ export function formatResumen(params: {
 }
 
 export function formatDisponible(params: {
+  currency_mode?: CurrencyMode;
   category: string;
   emoji: string;
   budget_ars: number;
@@ -77,37 +102,57 @@ export function formatDisponible(params: {
   status: string;
 }): string {
   const statusIcon = params.status === "OK" ? "🟢 OK" : params.status === "WARNING" ? "🟡 WARNING" : "🔴 CLOSED";
+  const formatAmount = (amount: number) => params.currency_mode === "ARS_ARS"
+    ? `ARS ${formatARS(amount)}`
+    : formatARS(amount);
   return [
     `<b>${params.emoji} ${params.category}</b>`,
-    `Presupuesto: ${params.budget_ars > 0 ? formatARS(params.budget_ars) : "Sin límite"}`,
-    `Gastado: ${formatARS(params.gastado_ars)}`,
-    params.disponible_ars !== null ? `Disponible: ${formatARS(params.disponible_ars)}` : "Sin límite definido",
+    `Presupuesto: ${params.budget_ars > 0 ? formatAmount(params.budget_ars) : "Sin límite"}`,
+    `Gastado: ${formatAmount(params.gastado_ars)}`,
+    params.disponible_ars !== null ? `Disponible: ${formatAmount(params.disponible_ars)}` : "Sin límite definido",
     `Estado: ${statusIcon}`,
   ].join("\n");
 }
 
-export function formatPuedo(params: {
+type CanSpendBase = {
   amount_ars: number;
   category: string;
   emoji: string;
-  // Categoría actual
   gastado_ars: number;
   budget_ars: number;
   newCategoryStatus: string;
   disponible_after: number | null;
-  // Ahorro
-  ahorro_usd_before: number;
-  ahorro_usd_after: number;
   newMonthStatus: string;
-  saving_goal_usd: number;
-}): string {
+};
+
+type CanSpendFormatParams = CanSpendBase & (
+  | {
+      currency_mode?: "USD_ARS";
+      ahorro_usd_before: number;
+      ahorro_usd_after: number;
+      saving_goal_usd: number;
+    }
+  | {
+      currency_mode: "ARS_ARS";
+      ahorro_ars_before: number;
+      ahorro_ars_after: number;
+      saving_goal_ars: number;
+    }
+);
+
+export function formatPuedo(params: CanSpendFormatParams): string {
   const {
     amount_ars, category, emoji,
     gastado_ars, budget_ars,
     newCategoryStatus, disponible_after,
-    ahorro_usd_before, ahorro_usd_after,
-    newMonthStatus, saving_goal_usd,
+    newMonthStatus,
   } = params;
+  const isArsOnly = params.currency_mode === "ARS_ARS";
+  const formatAmount = (amount: number) => isArsOnly ? `ARS ${formatARS(amount)}` : formatARS(amount);
+  const savingsBefore = isArsOnly ? params.ahorro_ars_before : params.ahorro_usd_before;
+  const savingsAfter = isArsOnly ? params.ahorro_ars_after : params.ahorro_usd_after;
+  const savingsGoal = isArsOnly ? params.saving_goal_ars : params.saving_goal_usd;
+  const formatSavings = (amount: number) => isArsOnly ? `ARS ${formatARS(amount)}` : formatUSD(amount);
 
   const catIcon = newCategoryStatus === "OK" ? "🟢" : newCategoryStatus === "WARNING" ? "🟡" : "🔴";
   const monthIcon = newMonthStatus === "GREEN" ? "🟢" : newMonthStatus === "YELLOW" ? "🟡" : "🔴";
@@ -125,22 +170,22 @@ export function formatPuedo(params: {
   }
 
   const lines = [
-    `💭 <b>¿Podés gastar ${formatARS(amount_ars)} en ${emoji} ${category}?</b>`,
+    `💭 <b>¿Podés gastar ${formatAmount(amount_ars)} en ${emoji} ${category}?</b>`,
     ``,
     decision,
     ``,
     `<b>${emoji} ${category} después del gasto:</b>`,
-    `Gastado: ${formatARS(gastado_ars + amount_ars)}${budget_ars > 0 ? ` de ${formatARS(budget_ars)}` : " (sin límite)"}`,
+    `Gastado: ${formatAmount(gastado_ars + amount_ars)}${budget_ars > 0 ? ` de ${formatAmount(budget_ars)}` : " (sin límite)"}`,
     disponible_after !== null && disponible_after > 0
-      ? `Disponible: ${formatARS(disponible_after)} ${catIcon}`
+      ? `Disponible: ${formatAmount(disponible_after)} ${catIcon}`
       : disponible_after !== null && disponible_after <= 0
         ? `Sin disponible restante ${catIcon}`
         : `Sin presupuesto definido ${catIcon}`,
     ``,
     `<b>💰 Impacto en ahorro:</b>`,
-    `Antes: ${formatUSD(ahorro_usd_before)} → Después: ${formatUSD(ahorro_usd_after)} ${monthIcon}`,
-    saving_goal_usd > 0
-      ? `Meta: ${formatUSD(saving_goal_usd)} (${Math.round((ahorro_usd_after / saving_goal_usd) * 100)}% alcanzado)`
+    `Antes: ${formatSavings(savingsBefore)} → Después: ${formatSavings(savingsAfter)} ${monthIcon}`,
+    savingsGoal > 0
+      ? `Meta: ${formatSavings(savingsGoal)} (${Math.round((savingsAfter / savingsGoal) * 100)}% alcanzado)`
       : "",
   ];
 
