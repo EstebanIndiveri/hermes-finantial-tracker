@@ -894,3 +894,51 @@ un ingreso y gasto sintéticos, `resumen`, exportación y conciliación. No
 activar la flag ni alterar octubre por inferencia; la aprobación de Esteban
 para ese control es la siguiente validación requerida. ACT-06/R-DELIVERY y
 el canary histórico de outbox conservan owner Codex en cortes separados.
+
+### ACT-05k activación controlada ARS/ARS beta — 03/10/2026
+
+**Activación técnica cerrada; aceptación funcional abierta, owners Codex
+(conciliación) y Esteban (prueba).** Esteban autorizó expresamente habilitar
+`ACT05_ARS_MODE_ENABLED=true` solo en Vercel beta y desplegar de nuevo. El
+gate de build de la nueva versión exige `true` exacto: ausente o `false`
+aborta el deployment. Su prueba dirigida y los gates Node 22 pasaron:
+harness 85/85, Jest 98 suites/858 tests, typecheck, build y lint 0 errores/
+67 warnings previos. Una revisión de solo lectura con un subagente GPT-6 Luna
+confirmó el orden de gates y la matriz manual de un mes sin movimientos;
+Codex verificó el resultado y ejecutó el cambio.
+
+Antes de activar, una inspección read-only con la cuenta Turso aislada
+`esteban-indiveri` confirmó el ledger `0090`, la DB beta ID
+`01a0c0bd-0601-7f27-b147-915d105b19f2` y 2 meses/16 movimientos
+`USD_ARS`, cero `ARS_ARS`. Se agregó el binding no secreto **solo al entorno
+Production del proyecto Vercel beta** `prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`.
+El código limpio `62e06877790f79b65f8ceee170f45e807151e967` se desplegó
+por CLI directa, sin push, como `dpl_H7PhfyxS8E68T1WVStoWjsv2Lmad` (READY).
+El build emitió `passed:true`, los seis fingerprints beta coincidentes y diez
+checks, incluido `ars_mode_enabled`; el alias beta apunta a ese ID. El alias
+legacy sigue en `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. Después del deploy,
+la DB beta aún tenía 2 meses/16 movimientos USD/ARS y cero ARS/ARS: la flag
+no reinterpretó datos. El deployment beta anterior
+`dpl_ALk22n7VekTntM9eoWYgVwfUdRcJ`, con flag apagada, es la referencia de
+rollback si se detecta una regresión; una reversión requerirá además verificar
+el estado de la nueva configuración/filas antes de ejecutarla.
+
+Los recibos privados Vercel/runtime se renovaron para el nuevo deployment. El
+runner H04d pasó con `ok:true`, `postActivationRuntimeConsistent:true` e
+`isolationVerified:false` por diseño. Como cambió un binding, la aceptación
+residual permanente del 02/10 **no se extiende automáticamente** al nuevo
+deployment: Esteban es owner de ratificar o rechazar el mismo límite de
+aislamiento para este piloto. Codex no lo declara certificado todavía.
+
+**QA pendiente, owner Esteban; conciliación y cierre, owner Codex.** Crear un
+grupo exclusivo de prueba en beta (o usar otro grupo/mes actual sin ningún
+movimiento), configurar octubre 2026 en ARS/ARS antes de registrar nada,
+crear categoría y límites ARS si se necesitan, registrar un ingreso y un gasto
+sintéticos, comparar dashboard y `resumen` en ARS, descargar CSV/XLSX y
+comprobar importe/moneda contable y USD/tasa vacíos. Confirmar que el grupo
+existente de octubre mantiene USD/ARS y que su modo está bloqueado por sus
+movimientos. No usar el grupo real de QA para la primera prueba ARS. Codex
+conciliará las filas beta después del reporte y abrirá un fix con owner si
+aparece un hallazgo. ACT-06/R-DELIVERY (notificaciones web inline) y el
+canary histórico de outbox siguen bajo owner Codex, en cortes separados; no
+bloquean este QA ni se presentan como resueltos.

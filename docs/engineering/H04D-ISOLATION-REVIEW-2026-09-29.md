@@ -133,3 +133,27 @@ configuration. No HTTP probe or manual financial QA is claimed in this
 addendum. Activating `ACT05_ARS_MODE_ENABLED` would change a beta binding and
 requires a fresh owner decision, a new deployment and reattestation; it is
 not implied by this closure.
+
+## Addendum — beta currency activation 03/10/2026
+
+With Esteban's explicit authorization, the non-secret
+`ACT05_ARS_MODE_ENABLED=true` binding was added only to the beta project's
+Production environment. Direct CLI deployment
+`dpl_H7PhfyxS8E68T1WVStoWjsv2Lmad` from clean local source
+`62e06877790f79b65f8ceee170f45e807151e967` is READY and the beta alias
+points to it. The legacy alias remains on
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. The new build assertion emitted
+`passed:true`, matching six beta-secret fingerprints and ten checks,
+including an explicit `ars_mode_enabled` check. The post-deploy read-only
+Turso inventory still showed only two USD/ARS months and 16 USD/ARS movements;
+no ARS/ARS row had been created by activation.
+
+The private beta Vercel/runtime receipts, timestamps and digests now refer
+to this exact deployment. The seven-receipt runner returned `ok:true`,
+`postActivationRuntimeConsistent:true`, and intentionally
+`isolationVerified:false`. This is **technical consistency, not a fresh
+scoped human certificate**: activation changed a beta binding, which the
+02/10 standing policy reserves for a fresh owner decision. Esteban owns
+ratifying or rejecting the same build-snapshot-versus-running-function and
+retired-URL residual for this deployment. Functional ARS/ARS acceptance is a
+separate manual gate. Nothing here authorizes legacy changes or a release.

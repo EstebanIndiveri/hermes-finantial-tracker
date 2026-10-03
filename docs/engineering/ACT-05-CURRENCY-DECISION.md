@@ -1,6 +1,6 @@
 # ACT-05/06 — decisión de moneda y cotización
 
-Estado 03/10/2026: **decisión de producto aprobada; migración ensayada en copias locales beta; sin migración remota ni cambio funcional**. Esteban confirmó conservar el modo actual USD/ARS y añadir ARS/ARS. Los límites de categoría siguen en ARS en ambos modos; el modo pertenece a un grupo y mes; no se puede cambiar cuando ese grupo/mes ya tiene cualquier movimiento. Codex es owner de la implementación y sus gates. Legacy y sus datos quedan fuera de este corte.
+Estado 03/10/2026: **modo ARS/ARS activado únicamente en beta; aceptación funcional manual pendiente**. La migración `0090` y el código pasaron sus gates y se desplegaron por etapas: primero con flag apagada, luego con `ACT05_ARS_MODE_ENABLED=true` en el proyecto Vercel beta tras autorización expresa de Esteban. Los meses/movimientos existentes siguen en USD/ARS. Esteban confirmó conservar ese modo y añadir ARS/ARS. Los límites de categoría siguen en ARS en ambos modos; el modo pertenece a un grupo y mes; no se puede cambiar cuando ese grupo/mes ya tiene cualquier movimiento. Codex es owner de la implementación y sus gates; Esteban, del QA manual. Legacy y sus datos quedan fuera de este corte.
 
 ## Estado comprobado en octubre
 
