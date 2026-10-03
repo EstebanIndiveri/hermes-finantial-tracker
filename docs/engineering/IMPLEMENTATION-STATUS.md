@@ -855,3 +855,42 @@ Codex:** revisar y desplegar el código solo al proyecto Vercel beta con
 `ACT05_ARS_MODE_ENABLED` apagada, verificar attestation/identidad de runtime,
 sin tocar el proyecto legacy. La aceptación de modo ARS/ARS y QA manual
 continúan pendientes con Esteban como operador.
+
+### ACT-05j despliegue compatible beta — 03/10/2026
+
+**Cerrado para el deployment beta y la reatestación H04d del piloto, owner
+Codex.** El gate de build ahora falla si se intenta habilitar ARS/ARS antes
+del corte de activación: acepta solo `ACT05_ARS_MODE_ENABLED` ausente o `false`.
+Pasaron 85/85 pruebas de harness, 98 suites/858 tests, typecheck, build y
+lint con 0 errores/67 warnings. Un primer typecheck corrido al mismo tiempo
+que el build chocó con archivos generados de `.next/types`; al repetirlo
+secuencialmente terminó verde. No fue un defecto de tipos del código.
+
+La inspección autenticada confirmó el proyecto beta
+`prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`, separado de legacy y sin integración
+Git conectada para auto-deploy; se usó CLI directa, sin push. El código limpio
+`ca82e2f8545a5de8657e6b472f167903a888ee70` llegó exclusivamente al
+target Production **del proyecto beta** como
+`dpl_ALk22n7VekTntM9eoWYgVwfUdRcJ` (READY). Su build remoto emitió
+`passed:true`, los seis fingerprints beta coincidentes y los diez checks,
+incluido `ars_mode_disabled`. `ACT05_ARS_MODE_ENABLED` sigue ausente en los
+bindings beta y, por ello, apagada. El alias beta resuelve al nuevo deployment;
+el alias legacy sigue resolviendo a `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+No se modificó `main`, `hermes-acme`, el bot o webhook legacy, ni hubo
+escritura financiera o cambio de scheduler.
+
+Los recibos privados beta Vercel/runtime se renovaron para este deployment y
+el runner de siete evidencias devolvió `ok:true`,
+`postActivationRuntimeConsistent:true` e `isolationVerified:false` por diseño.
+El residual ya aceptado por Esteban sigue limitado al piloto beta y a esta
+identidad sin cambios; las URL retiradas y una promoción legacy no están
+certificadas. [Revisión H04d](H04D-ISOLATION-REVIEW-2026-09-29.md).
+
+**Siguiente ACT-05k, owners Codex y Esteban:** Codex prepara la activación
+controlada de la flag **solo beta** y repite build/aislamiento; Esteban aprueba
+el cambio de binding y prueba un mes de un grupo beta sin movimientos en
+ARS/ARS, conservando octubre existente USD/ARS. Registrar pantalla de ajustes,
+un ingreso y gasto sintéticos, `resumen`, exportación y conciliación. No
+activar la flag ni alterar octubre por inferencia; la aprobación de Esteban
+para ese control es la siguiente validación requerida. ACT-06/R-DELIVERY y
+el canary histórico de outbox conservan owner Codex en cortes separados.

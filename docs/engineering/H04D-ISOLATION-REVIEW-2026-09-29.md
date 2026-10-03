@@ -109,3 +109,27 @@ acceptance, the scoped H04d gate is closed for this exact deployment. It
 reopens on the next deployment for fresh technical evidence, or immediately
 upon binding/provider drift or a failed/stale check. No legacy release follows
 from this result.
+
+## Addendum — beta deployment 03/10/2026, currency schema compatible
+
+After applying only migration `0090-currency-modes` to `beta-hermes` and
+reconciling unchanged historical financial rows, direct CLI deployment
+`dpl_ALk22n7VekTntM9eoWYgVwfUdRcJ` from clean local source
+`ca82e2f8545a5de8657e6b472f167903a888ee70` became READY in the same
+separate beta project. The beta alias resolves to it; the legacy alias still
+resolves to `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. No Git push or legacy
+deployment occurred. The build emitted one redacted assertion with
+`passed:true`, matching six beta-secret fingerprints and ten checks, including
+the new `ars_mode_disabled` check. The beta Production binding inventory has
+no `ACT05_ARS_MODE_ENABLED` entry, so the new currency option remains off.
+
+Private beta Vercel/runtime receipts and digests were refreshed for this
+exact deployment; the 29/09 provider identity receipts are still inside the
+seven-day contract. The hardened local runner returned `ok:true`,
+`postActivationRuntimeConsistent:true`, and the intentional
+`isolationVerified:false`. Under Esteban's 02/10 bounded beta-pilot policy,
+the scoped H04d technical gate is closed for this unchanged beta provider
+configuration. No HTTP probe or manual financial QA is claimed in this
+addendum. Activating `ACT05_ARS_MODE_ENABLED` would change a beta binding and
+requires a fresh owner decision, a new deployment and reattestation; it is
+not implied by this closure.
