@@ -50,6 +50,7 @@ jest.mock("@/lib/reimbursements/requests", () => ({
 describe("GET /api/transactions", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.ACT05_ARS_MODE_ENABLED;
     (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue(undefined);
     (datesUtil.getActiveMonthArgentina as jest.Mock).mockReturnValue("2025-05");
     const { getGroupMembership } = require("@/lib/groups/permissions");
@@ -141,6 +142,47 @@ describe("GET /api/transactions", () => {
     expect(await response.json()).toMatchObject({ code: "CURRENCY_MODE_UNSUPPORTED" });
   });
 
+  test("returns explicitly tagged ARS rows only when the feature flag is enabled", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS" });
+    const rows = [{ id: "tx-ars", amount_ars: 1000, amount_usd: null, currency_mode: "ARS_ARS", exchange_rate_snapshot: null }];
+    (db.query.transactions.findMany as jest.Mock).mockResolvedValue(rows);
+    const req = new NextRequest("http://localhost:3000/api/transactions");
+    Object.defineProperty(req.headers, "get", {
+      value: jest.fn((key: string) => key === "x-user-id" ? "user-123" : key === "x-group-id" ? "group-123" : null),
+    });
+
+    const response = await GET(req);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(rows);
+  });
+
+  test("rejects mixed-mode or pseudo-USD ARS rows even with the flag enabled", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS" });
+    (db.query.transactions.findMany as jest.Mock).mockResolvedValue([
+      { id: "bad-ars", amount_ars: 1000, amount_usd: 1, currency_mode: "ARS_ARS", exchange_rate_snapshot: null },
+    ]);
+    const req = new NextRequest("http://localhost:3000/api/transactions", {
+      headers: { "x-user-id": "user-123", "x-group-id": "group-123" },
+    });
+    expect((await GET(req)).status).toBe(409);
+  });
+
+  test("fails closed on nullable USD rows when month settings are missing", async () => {
+    (db.query.transactions.findMany as jest.Mock).mockResolvedValue([
+      { id: "tx-ars", amount_ars: 1000, amount_usd: null, currency_mode: "ARS_ARS" },
+    ]);
+    const req = new NextRequest("http://localhost:3000/api/transactions");
+    Object.defineProperty(req.headers, "get", {
+      value: jest.fn((key: string) => key === "x-user-id" ? "user-123" : key === "x-group-id" ? "group-123" : null),
+    });
+
+    const response = await GET(req);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "CURRENCY_MODE_UNSUPPORTED" });
+  });
+
   test("does not return deleted transactions", async () => {
     (db.query.transactions.findMany as jest.Mock).mockResolvedValue([]);
 
@@ -164,6 +206,7 @@ describe("GET /api/transactions", () => {
 describe("POST /api/transactions", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.ACT05_ARS_MODE_ENABLED;
     (datesUtil.getActiveMonthArgentina as jest.Mock).mockReturnValue("2025-05");
     (datesUtil.getArgentinaDate as jest.Mock).mockReturnValue(new Date("2025-05-15T12:00:00Z"));
     const { getGroupMembership } = require("@/lib/groups/permissions");
@@ -233,6 +276,54 @@ describe("POST /api/transactions", () => {
     expect(data.amount_ars).toBe(5000);
     expect(data.amount_usd).toBe(5);
     expect(data.month).toBe("2025-05");
+    expect((db.insert as jest.Mock).mock.results[0].value.values).toHaveBeenCalledWith(expect.objectContaining({
+      amount_usd: 5,
+      exchange_rate_snapshot: 1000,
+      currency_mode: "USD_ARS",
+    }));
+  });
+
+  test("creates an ARS transaction without inventing an FX rate when enabled", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS", exchange_rate: null });
+    (db.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
+    const values = jest.fn().mockResolvedValue(undefined);
+    (db.insert as jest.Mock).mockReturnValue({ values });
+
+    const req = new NextRequest("http://localhost:3000/api/transactions", {
+      method: "POST",
+      body: JSON.stringify({ category_id: "123e4567-e89b-12d3-a456-426614174000", amount_ars: 5000 }),
+    });
+    Object.defineProperty(req.headers, "get", {
+      value: jest.fn((key: string) => key === "x-user-id" ? "user-123" : key === "x-group-id" ? "group-123" : null),
+    });
+
+    const response = await POST(req);
+    const data = await response.json();
+    expect(response.status).toBe(201);
+    expect(data).toMatchObject({ amount_ars: 5000, amount_usd: null, currency_mode: "ARS_ARS" });
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({
+      amount_ars: 5000,
+      amount_usd: null,
+      exchange_rate_snapshot: null,
+      currency_mode: "ARS_ARS",
+    }));
+  });
+
+  test("rejects ARS transactions while the feature flag is disabled", async () => {
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS", exchange_rate: null });
+    const req = new NextRequest("http://localhost:3000/api/transactions", {
+      method: "POST",
+      body: JSON.stringify({ category_id: "123e4567-e89b-12d3-a456-426614174000", amount_ars: 5000 }),
+    });
+    Object.defineProperty(req.headers, "get", {
+      value: jest.fn((key: string) => key === "x-user-id" ? "user-123" : key === "x-group-id" ? "group-123" : null),
+    });
+
+    const response = await POST(req);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "CURRENCY_MODE_UNSUPPORTED" });
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   test("creates reimbursement request when requiresReimbursement is true", async () => {

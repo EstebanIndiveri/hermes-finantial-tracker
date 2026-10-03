@@ -3,6 +3,73 @@ import { transactions, budgets, monthly_settings, categories } from "@/lib/db/sc
 import { eq, and, sum, count } from "drizzle-orm";
 import { calculateMonthStatus, calculateCategoryStatus } from "./rules";
 import { splitIncomeAndExpenses, isIncomeCategory } from "./income";
+import { projectMonth, type MonthProjection } from "./month-projection";
+
+/**
+ * Mode-aware financial projection for a group/month. Unlike the legacy USD
+ * summary, this never converts an ARS-only month or treats missing USD as zero.
+ * Incomplete or cross-mode rows fail closed until corrected explicitly.
+ */
+export async function getAccountingMonthProjection(groupId: string, month: string): Promise<MonthProjection | null> {
+  const settings = await db.query.monthly_settings.findFirst({
+    where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
+  });
+  if (!settings) return null;
+  const mode = settings.currency_mode ?? "USD_ARS";
+  if (mode !== "USD_ARS" && mode !== "ARS_ARS") return null;
+  if (mode === "ARS_ARS" && process.env.ACT05_ARS_MODE_ENABLED !== "true") return null;
+
+  const rows = await db.select({
+    amountArs: transactions.amount_ars,
+    amountUsd: transactions.amount_usd,
+    exchangeRateSnapshot: transactions.exchange_rate_snapshot,
+    transactionMode: transactions.currency_mode,
+    categorySlug: categories.slug,
+    categoryGroupId: categories.group_id,
+  }).from(transactions).leftJoin(categories, eq(transactions.category_id, categories.id)).where(and(
+    eq(transactions.group_id, groupId),
+    eq(transactions.month, month),
+    eq(transactions.status, "active"),
+  ));
+
+  if (rows.some((row) =>
+    row.categoryGroupId !== groupId || row.categorySlug == null || row.transactionMode !== mode ||
+    !Number.isFinite(row.amountArs) || row.amountArs <= 0 ||
+    (mode === "USD_ARS" && (row.amountUsd == null || !Number.isFinite(row.amountUsd))) ||
+    (mode === "ARS_ARS" && (row.amountUsd != null || row.exchangeRateSnapshot != null))
+  )) return null;
+
+  if (mode === "ARS_ARS") {
+    if (settings.income_ars == null || !Number.isFinite(settings.income_ars) ||
+      settings.saving_goal_ars == null || !Number.isFinite(settings.saving_goal_ars)) return null;
+    return projectMonth({
+      mode,
+      configuredIncome: settings.income_ars,
+      savingGoal: settings.saving_goal_ars,
+      transactions: rows.map((row) => ({
+        kind: isIncomeCategory(row.categorySlug) ? "income" as const : "expense" as const,
+        categorySlug: row.categorySlug!,
+        amountArs: row.amountArs,
+      })),
+    });
+  }
+
+  if (settings.income_usd == null || !Number.isFinite(settings.income_usd) ||
+    settings.saving_goal_usd == null || !Number.isFinite(settings.saving_goal_usd) ||
+    settings.exchange_rate == null || !Number.isFinite(settings.exchange_rate) ||
+    settings.exchange_rate <= 0) return null;
+  return projectMonth({
+    mode,
+    configuredIncome: settings.income_usd,
+    savingGoal: settings.saving_goal_usd,
+    transactions: rows.map((row) => ({
+      kind: isIncomeCategory(row.categorySlug) ? "income" as const : "expense" as const,
+      categorySlug: row.categorySlug!,
+      amountArs: row.amountArs,
+      amountUsd: row.amountUsd!,
+    })),
+  });
+}
 
 export async function getMonthSummary(groupId: string, month: string) {
   const settings = await db.query.monthly_settings.findFirst({

@@ -9,6 +9,8 @@ import { calculateCategoryStatus } from "@/lib/finance/rules";
 import { getGroupMembership } from "@/lib/groups/permissions";
 import { createReimbursementWithNotifications } from "@/lib/reimbursements/requests";
 
+const isArsModeEnabled = () => process.env.ACT05_ARS_MODE_ENABLED === "true";
+
 const createSchema = z.object({
   category_id: z.string().uuid(),
   amount_ars: z.number().positive().max(100_000_000),
@@ -46,7 +48,16 @@ export async function GET(req: NextRequest) {
     const settings = await db.query.monthly_settings.findFirst({
       where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
     });
-    if (settings?.currency_mode === "ARS_ARS" || rows.some((row) => row.amount_usd == null)) {
+    const arsMode = settings?.currency_mode === "ARS_ARS";
+    if (
+      (arsMode && !isArsModeEnabled()) ||
+      rows.some((row) =>
+        (row.currency_mode ?? "USD_ARS") !== (settings?.currency_mode ?? "USD_ARS") ||
+        (arsMode
+          ? row.amount_usd != null || row.exchange_rate_snapshot != null
+          : row.amount_usd == null)
+      )
+    ) {
       return NextResponse.json({
         error: "This month uses a currency mode the current transaction reader cannot display yet.",
         code: "CURRENCY_MODE_UNSUPPORTED",
@@ -98,17 +109,18 @@ export async function POST(req: NextRequest) {
     });
     if (!settings) return NextResponse.json({ error: "No hay configuración para el mes activo." }, { status: 400 });
 
-    if (settings.currency_mode === "ARS_ARS") {
+    const arsMode = settings.currency_mode === "ARS_ARS";
+    if (arsMode && !isArsModeEnabled()) {
       return NextResponse.json({
-        error: "This month uses a currency mode the current transaction writer does not support yet.",
+        error: "ARS transactions are not enabled.",
         code: "CURRENCY_MODE_UNSUPPORTED",
       }, { status: 409 });
     }
-    if (
+    if (!arsMode && (
       settings.exchange_rate == null ||
       !Number.isFinite(settings.exchange_rate) ||
       settings.exchange_rate <= 0
-    ) {
+    )) {
       return NextResponse.json({ error: "Invalid exchange rate configuration" }, { status: 500 });
     }
 
@@ -161,7 +173,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const amount_usd = parseFloat((amount_ars / settings.exchange_rate).toFixed(2));
+    const amount_usd = arsMode ? null : parseFloat((amount_ars / settings.exchange_rate!).toFixed(2));
     const today = getArgentinaDate();
     const date = parsed.data.date ?? today.toISOString().slice(0, 10);
 
@@ -175,6 +187,8 @@ export async function POST(req: NextRequest) {
       category_id,
       amount_ars,
       amount_usd,
+      exchange_rate_snapshot: arsMode ? null : settings.exchange_rate,
+      currency_mode: arsMode ? "ARS_ARS" : "USD_ARS",
       merchant: merchant ?? null,
       description: description ?? null,
       date,
@@ -194,13 +208,14 @@ export async function POST(req: NextRequest) {
           id, 
           amount_ars, 
           amount_usd, 
+          currency_mode: arsMode ? "ARS_ARS" : "USD_ARS",
           month,
           warning: reimbResult.error 
         }, { status: 201 });
       }
     }
 
-    return NextResponse.json({ id, amount_ars, amount_usd, month }, { status: 201 });
+    return NextResponse.json({ id, amount_ars, amount_usd, currency_mode: arsMode ? "ARS_ARS" : "USD_ARS", month }, { status: 201 });
   } catch (err) {
     console.error("Error creating transaction:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -553,3 +553,30 @@ de la migración aún no aplicada. El canary anómalo sigue abierto con owner
 Codex para revisión y corrección aislada, nunca una limpieza implícita en
 ACT-05. Esteban es owner de la aceptación funcional cuando se habilite el
 modo en beta. Legacy/main permanece fuera de alcance.
+
+### ACT-05 web writer y proyección contable — 03/10/2026
+
+**Corte local cerrado, owner Codex.** `POST /api/transactions` conserva el
+comportamiento USD/ARS y ahora persiste modo y snapshot de cotización. Para
+ARS/ARS, solo con `ACT05_ARS_MODE_ENABLED=true`, escribe importe ARS y deja
+`amount_usd` y snapshot en `NULL`; con la flag apagada rechaza el modo antes
+de escribir. `GET /api/transactions` solo devuelve filas ARS/ARS correctamente
+etiquetadas con la flag activa y falla cerrado ante filas de modo/importe
+inconsistentes. La proyección contable compartida nueva calcula ingreso,
+gasto y ahorro en la moneda propia del mes, sin convertir ni fabricar USD en
+ARS/ARS; no sustituye todavía el resumen USD legado consumido por dashboard,
+Telegram, alertas y exportación.
+
+Gates de este corte: harness 84/84; Jest 94 suites y 812/812 tests;
+typecheck y build verdes; lint 0 errores y 68 warnings preexistentes.
+
+**Siguiente corte abierto, owner Codex:** adaptar el writer de confirmación
+Telegram en `lib/telegram/personal-callback-handler.ts`, incluyendo rama
+transaccional y rama sin contexto de operación, con pruebas de texto/comando,
+voz y OCR. Todos convergen allí; hoy el callback exige configuración USD,
+convierte siempre a USD y omite modo/snapshot. El helper
+`registerTransaction` en `lib/telegram/handlers.ts` no tiene call sites
+encontrados y debe confirmarse como código muerto o adaptarse antes de activar
+ARS/ARS. Después quedan presentación de dashboard/bot, alertas, exportación,
+reembolsos y UI de selección de modo. Ningún cambio se desplegó a beta ni
+legacy; la migración beta aún no se aplicó y la flag sigue apagada.

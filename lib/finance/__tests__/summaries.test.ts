@@ -9,6 +9,7 @@ import { formatResumen } from "@/lib/telegram/formatters";
 let client: Client;
 let temporaryDirectory: string;
 let getMonthSummary: typeof import("../summaries").getMonthSummary;
+let getAccountingMonthProjection: typeof import("../summaries").getAccountingMonthProjection;
 
 beforeAll(async () => {
   temporaryDirectory = mkdtempSync(join(tmpdir(), "hermes-summary-"));
@@ -32,6 +33,8 @@ beforeAll(async () => {
     CREATE TABLE transactions (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, group_id TEXT NOT NULL,
       category_id TEXT NOT NULL, amount_ars REAL NOT NULL, amount_usd REAL,
+      currency_mode TEXT NOT NULL DEFAULT 'USD_ARS',
+      exchange_rate_snapshot REAL,
       date TEXT NOT NULL, month TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'web',
       status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL DEFAULT 0
     );
@@ -60,7 +63,7 @@ beforeAll(async () => {
 
   jest.resetModules();
   jest.doMock("@/lib/db/client", () => ({ db: drizzle(client, { schema }) }));
-  ({ getMonthSummary } = await import("../summaries"));
+  ({ getMonthSummary, getAccountingMonthProjection } = await import("../summaries"));
 });
 
 afterAll(() => {
@@ -114,4 +117,55 @@ it("does not project an incomplete USD configuration as zero-valued income", asy
     args: ["tx-missing-usd", "u-a", "g-a", "c-a-super", 500, null, "2026-12-01", "2026-12", "active"],
   });
   expect(await getMonthSummary("g-a", "2026-12")).toBeNull();
+});
+
+it("projects each group's USD/ARS month using stored USD without cross-month leakage", async () => {
+  expect(await getAccountingMonthProjection("g-a", "2026-09")).toMatchObject({
+    mode: "USD_ARS", accountingCurrency: "USD", configuredIncome: 1000,
+    extraIncome: 2.5, totalExpenses: 74.23, projectedSavings: 928.27,
+    categoryExpensesArs: { supermercado: 74.23 * 1600 },
+  });
+  expect(await getAccountingMonthProjection("g-b", "2026-09")).toMatchObject({
+    mode: "USD_ARS", configuredIncome: 2000, totalExpenses: 300,
+  });
+  expect(await getAccountingMonthProjection("g-b", "2026-08")).toBeNull();
+});
+
+it("projects ARS-only income and expense without fabricating USD or requiring FX", async () => {
+  await client.batch([
+    { sql: "UPDATE monthly_settings SET saving_goal_ars = ? WHERE id = ?", args: [20000, "s-ars-oct"] },
+    { sql: "INSERT INTO transactions (id,user_id,group_id,category_id,amount_ars,amount_usd,currency_mode,date,month) VALUES (?,?,?,?,?,?,?,?,?)", args: ["ars-expense", "u-a", "g-a", "c-a-super", 2500, null, "ARS_ARS", "2026-10-15", "2026-10"] },
+    { sql: "INSERT INTO transactions (id,user_id,group_id,category_id,amount_ars,amount_usd,currency_mode,date,month) VALUES (?,?,?,?,?,?,?,?,?)", args: ["ars-income", "u-a", "g-a", "c-a-income", 500, null, "ARS_ARS", "2026-10-15", "2026-10"] },
+  ]);
+  const priorFlag = process.env.ACT05_ARS_MODE_ENABLED;
+  try {
+    delete process.env.ACT05_ARS_MODE_ENABLED;
+    expect(await getAccountingMonthProjection("g-a", "2026-10")).toBeNull();
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    expect(await getAccountingMonthProjection("g-a", "2026-10")).toEqual({
+      mode: "ARS_ARS", accountingCurrency: "ARS", configuredIncome: 100000,
+      extraIncome: 500, effectiveIncome: 100500, totalExpenses: 2500,
+      projectedSavings: 98000, savingGoal: 20000,
+      categoryExpensesArs: { supermercado: 2500 },
+    });
+    await client.execute("UPDATE transactions SET exchange_rate_snapshot = 1 WHERE id = 'ars-expense'");
+    expect(await getAccountingMonthProjection("g-a", "2026-10")).toBeNull();
+    await client.execute("UPDATE transactions SET exchange_rate_snapshot = NULL WHERE id = 'ars-expense'");
+  } finally {
+    if (priorFlag === undefined) delete process.env.ACT05_ARS_MODE_ENABLED;
+    else process.env.ACT05_ARS_MODE_ENABLED = priorFlag;
+  }
+});
+
+it("rejects missing USD amounts and mixed-mode movements rather than showing false balances", async () => {
+  expect(await getAccountingMonthProjection("g-a", "2026-12")).toBeNull();
+  await client.execute({
+    sql: "UPDATE transactions SET currency_mode = 'ARS_ARS' WHERE id = 'expense-a'",
+  });
+  expect(await getAccountingMonthProjection("g-a", "2026-09")).toBeNull();
+  await client.execute({
+    sql: "INSERT INTO transactions (id,user_id,group_id,category_id,amount_ars,amount_usd,date,month) VALUES (?,?,?,?,?,?,?,?)",
+    args: ["orphan-category", "u-a", "g-a", "not-a-category", 1500, 1, "2026-08-16", "2026-08"],
+  });
+  expect(await getAccountingMonthProjection("g-a", "2026-08")).toBeNull();
 });
