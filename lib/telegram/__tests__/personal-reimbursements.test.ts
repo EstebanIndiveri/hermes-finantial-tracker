@@ -8,7 +8,7 @@ import {
   getReimbursementsByUser,
   markReimbursementAsPaidWithNotifications,
 } from "@/lib/reimbursements/requests";
-import { getMonthSummary } from "@/lib/finance/summaries";
+import { getAccountingMonthProjection, getMonthSummary } from "@/lib/finance/summaries";
 import { clearConversationState, getConversationState, setConversationState } from "../splits/conversation-state";
 import { createTelegramOperationContext } from "../operation-context";
 import * as telegramFinancialOperation from "../financial-operation";
@@ -29,6 +29,7 @@ jest.mock("@/lib/db/client", () => ({
 }));
 
 jest.mock("@/lib/finance/summaries", () => ({
+  getAccountingMonthProjection: jest.fn(),
   getMonthSummary: jest.fn(),
   getCategoryBreakdown: jest.fn(),
 }));
@@ -67,6 +68,7 @@ const mockGetReimbursementByTransactionId = getReimbursementByTransactionId as j
 const mockMarkPaid = markReimbursementAsPaidWithNotifications as jest.MockedFunction<typeof markReimbursementAsPaidWithNotifications>;
 const mockCreateReimbursement = createReimbursementWithNotifications as jest.MockedFunction<typeof createReimbursementWithNotifications>;
 const mockGetMonthSummary = getMonthSummary as jest.MockedFunction<typeof getMonthSummary>;
+const mockGetAccountingMonthProjection = getAccountingMonthProjection as jest.MockedFunction<typeof getAccountingMonthProjection>;
 const mockGetConversationState = getConversationState as jest.MockedFunction<typeof getConversationState>;
 const mockSetConversationState = setConversationState as jest.MockedFunction<typeof setConversationState>;
 const mockClearConversationState = clearConversationState as jest.MockedFunction<typeof clearConversationState>;
@@ -75,6 +77,7 @@ const { getGroupMembership } = jest.requireMock("@/lib/groups/permissions") as {
 describe("telegram reimbursements", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.ACT05_ARS_MODE_ENABLED;
     mockGetMonthSummary.mockResolvedValue({ ahorro_proyectado_usd: 1200 } as Awaited<ReturnType<typeof getMonthSummary>>);
     mockGetReimbursementByTransactionId.mockResolvedValue(null);
   });
@@ -540,9 +543,12 @@ describe("telegram reimbursements", () => {
     expect(transactionInsertValues[0]).toEqual(expect.objectContaining({
       operation_id: response.deliveryOperationId,
       source: "telegram",
+      currency_mode: "USD_ARS",
+      exchange_rate_snapshot: 1000,
     }));
     expect(outboxInsertValues[0]).toEqual(expect.objectContaining({
       operation_id: response.deliveryOperationId,
+      text: expect.not.stringContaining("Ahorro proyectado"),
     }));
     expect(mockDb.update).not.toHaveBeenCalled();
   });
@@ -700,6 +706,80 @@ describe("telegram reimbursements", () => {
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
+  it("writes ARS_ARS without USD or an FX snapshot and formats the ARS projection", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: { step: "expense_confirm", category_id: "cat-1", category_name: "Comida", category_emoji: "🍝", amount_ars: 5000, group_id: "group-1", user_id: "user-1", is_exception: false },
+    });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS", exchange_rate: null, income_ars: 100000, saving_goal_ars: 20000 });
+    (mockDb.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-1", name: "Comida", emoji: "🍝", slug: "food" });
+    (mockDb.select as jest.Mock).mockReturnValue({ from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([{ total: 5000 }]) })) });
+    const inserted: unknown[] = [];
+    (mockDb.insert as jest.Mock).mockReturnValue({ values: jest.fn((values: unknown) => { inserted.push(values); return Promise.resolve(); }) });
+    mockGetAccountingMonthProjection.mockResolvedValue({
+      mode: "ARS_ARS", accountingCurrency: "ARS", configuredIncome: 100000,
+      extraIncome: 0, effectiveIncome: 100000, totalExpenses: 5000,
+      projectedSavings: 95000, savingGoal: 20000, categoryExpensesArs: { food: 5000 },
+    });
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "group-1", "expense:confirm");
+
+    expect(inserted[0]).toEqual(expect.objectContaining({ amount_usd: null, currency_mode: "ARS_ARS", exchange_rate_snapshot: null }));
+    expect(response.text).toContain("Ahorro proyectado:");
+    expect(response.text).toContain("95.000");
+    expect(mockGetMonthSummary).not.toHaveBeenCalled();
+  });
+
+  it("keeps a committed ARS transaction successful when its projection fails", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: { step: "expense_confirm", category_id: "cat-1", category_name: "Comida", category_emoji: "🍝", amount_ars: 5000, group_id: "group-1", user_id: "user-1", is_exception: false },
+    });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS", income_ars: 100000, saving_goal_ars: 20000 });
+    (mockDb.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-1", name: "Comida", emoji: "🍝", slug: "food" });
+    (mockDb.select as jest.Mock).mockReturnValue({ from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([{ total: 5000 }]) })) });
+    (mockDb.insert as jest.Mock).mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
+    mockGetAccountingMonthProjection.mockRejectedValue(new Error("projection unavailable"));
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "group-1", "expense:confirm");
+
+    expect(response.text).toContain("Registrado:");
+    expect(response.text).not.toContain("Ahorro proyectado");
+    expect(mockDb.insert).toHaveBeenCalled();
+  });
+
+  it("does not write ARS_ARS when the feature flag is off", async () => {
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: { step: "expense_confirm", category_id: "cat-1", category_name: "Comida", category_emoji: "🍝", amount_ars: 5000, group_id: "group-1", user_id: "user-1", is_exception: false },
+    });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS", income_ars: 100000, saving_goal_ars: 20000 });
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "group-1", "expense:confirm");
+
+    expect(response.text).toContain("modo ARS está deshabilitado");
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects incomplete ARS_ARS settings without a USD configuration error", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: { step: "expense_confirm", category_id: "cat-1", category_name: "Comida", category_emoji: "🍝", amount_ars: 5000, group_id: "group-1", user_id: "user-1", is_exception: false },
+    });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS", income_ars: null, saving_goal_ars: null });
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "group-1", "expense:confirm");
+
+    expect(response.text).toContain("configuración ARS válida");
+    expect(response.text).not.toContain("configuración USD/ARS");
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
   it("uses the operation transaction and persists its fallback delivery row when context is supplied", async () => {
     mockGetConversationState.mockResolvedValue({
       step: "expense_confirm",
@@ -790,5 +870,65 @@ describe("telegram reimbursements", () => {
       operation_id: response.deliveryOperationId,
       operation_kind: "personal_transaction:expense",
     }));
+  });
+
+  it("persists ARS_ARS transaction and savings-free outbox in the operation transaction", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: { step: "expense_confirm", category_id: "cat-1", category_name: "Comida", category_emoji: "🍝", amount_ars: 5000, group_id: "group-1", user_id: "user-1", is_exception: false },
+    });
+    mockGetAccountingMonthProjection.mockResolvedValue({
+      mode: "ARS_ARS", accountingCurrency: "ARS", configuredIncome: 100000,
+      extraIncome: 0, effectiveIncome: 100000, totalExpenses: 5000,
+      projectedSavings: 95000, savingGoal: 20000, categoryExpensesArs: { food: 5000 },
+    });
+    const transactionValues: unknown[] = [];
+    const outboxValues: unknown[] = [];
+    const selectResults = [
+      [{ userId: "user-1" }],
+      [{ currency_mode: "ARS_ARS", income_ars: 100000, saving_goal_ars: 20000 }],
+      [{ userId: "user-1" }],
+      [],
+      [{ total: 5000 }],
+      [{ name: "Comida", emoji: "🍝", slug: "food" }],
+    ];
+    let insertNumber = 0;
+    const tx = {
+      insert: jest.fn(() => ({
+        values: jest.fn((values: unknown) => {
+          insertNumber += 1;
+          if (insertNumber === 2) transactionValues.push(values);
+          if (insertNumber === 3) outboxValues.push(values);
+          return { onConflictDoNothing: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([{ operationId: "claimed" }]) })) };
+        }),
+      })),
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => {
+            const rows = selectResults.shift() ?? [];
+            const whereResult = Promise.resolve(rows) as unknown as { limit: jest.Mock };
+            whereResult.limit = jest.fn().mockResolvedValue(rows);
+            return whereResult;
+          }),
+        })),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([{ operationId: "claimed" }]) })),
+        })),
+      })),
+    };
+    (mockDb.transaction as jest.Mock).mockImplementation(async (work: (value: unknown) => Promise<unknown>) => work(tx));
+
+    const response = await handlePersonalCallback(
+      "chat-1", "telegram-1", "user-1", "group-1", "expense:confirm", 77,
+      createTelegramOperationContext({ botId: "bot-1", updateId: "ars-update", chatId: "chat-1", callbackMessageId: 77, action: "callback" }),
+    );
+
+    expect(transactionValues[0]).toEqual(expect.objectContaining({ amount_usd: null, currency_mode: "ARS_ARS", exchange_rate_snapshot: null }));
+    expect(outboxValues[0]).toEqual(expect.objectContaining({ text: expect.not.stringContaining("Ahorro proyectado") }));
+    expect(response.text).toContain("95.000");
+    expect(response.deliveryOperationId).toMatch(/^tgop_v1_/);
   });
 });

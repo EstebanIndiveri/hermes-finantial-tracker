@@ -85,6 +85,54 @@ describe("formatTransactionConfirm", () => {
 
     expect(result).not.toContain("Disponible:");
   });
+
+  it("should format projected savings in ARS for ARS_ARS mode without USD or FX", () => {
+    const result = formatTransactionConfirm({
+      currency_mode: "ARS_ARS",
+      amount_ars: 12000,
+      category: "Supermercado",
+      emoji: "🛒",
+      gastado_ars: 12000,
+      budget_ars: 50000,
+      disponible_ars: 38000,
+      status: "OK",
+      ahorro_proyectado_ars: 250000,
+    });
+
+    expect(result).toContain(`💰 Ahorro proyectado: $${nbsp}250.000`);
+    expect(result).not.toContain("USD");
+    expect(result).not.toContain("ARS/USD");
+  });
+
+  it("should omit projected savings when it is unavailable in USD_ARS mode", () => {
+    const result = formatTransactionConfirm({
+      amount_ars: 12000,
+      category: "Supermercado",
+      emoji: "🛒",
+      gastado_ars: 12000,
+      budget_ars: 50000,
+      disponible_ars: 38000,
+      status: "OK",
+    });
+
+    expect(result).not.toContain("Ahorro proyectado");
+  });
+
+  it("should omit projected savings when it is unavailable in ARS_ARS mode", () => {
+    const result = formatTransactionConfirm({
+      currency_mode: "ARS_ARS",
+      amount_ars: 12000,
+      category: "Supermercado",
+      emoji: "🛒",
+      gastado_ars: 12000,
+      budget_ars: 50000,
+      disponible_ars: 38000,
+      status: "OK",
+    });
+
+    expect(result).not.toContain("Ahorro proyectado");
+    expect(result).not.toContain("USD");
+  });
 });
 
 describe("formatResumen", () => {

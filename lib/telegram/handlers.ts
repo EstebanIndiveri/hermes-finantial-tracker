@@ -4,7 +4,7 @@ import { eq, and, sum, desc, gt } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
 import { calculateCategoryStatus, calculateMonthStatus } from "@/lib/finance/rules";
-import { formatTransactionConfirm, formatResumen, formatDisponible, formatPuedo } from "./formatters";
+import { formatResumen, formatDisponible, formatPuedo } from "./formatters";
 import { ocrTelegramPhoto, ocrTelegramDocument } from "./ocr";
 import { parseReceiptText } from "@/lib/ai/parse-receipt";
 import { randomUUID } from "crypto";
@@ -2507,87 +2507,6 @@ export async function handleTelegramMessage(
     "• <code>/recurrentes</code> — ver gastos fijos",
   ].join("\n");
   return { text: helpMessage };
-}
-
-async function registerTransaction(
-  userId: string,
-  groupId: string,
-  category_id: string,
-  amount_ars: number,
-  merchant: string | undefined,
-  month: string,
-  is_exception: boolean
-): Promise<{ message: string; transactionId: string }> {
-  merchant = merchant ? escapeHtml(merchant) : undefined;
-  const settings = await db.query.monthly_settings.findFirst({
-    where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
-  });
-  if (
-    !settings ||
-    typeof settings.exchange_rate !== "number" || !Number.isFinite(settings.exchange_rate) || settings.exchange_rate <= 0 ||
-    typeof settings.income_usd !== "number" || !Number.isFinite(settings.income_usd) ||
-    typeof settings.saving_goal_usd !== "number" || !Number.isFinite(settings.saving_goal_usd)
-  ) {
-    return { message: `${USD_MONTH_UNAVAILABLE_MESSAGE}`, transactionId: "" };
-  }
-
-  const amount_usd = parseFloat((amount_ars / settings.exchange_rate).toFixed(2));
-  const date = getArgentinaDate().toISOString().slice(0, 10);
-  const txId = randomUUID();
-
-  await db.insert(transactions).values({
-    id: txId,
-    user_id: userId,
-    group_id: groupId,
-    category_id,
-    amount_ars,
-    amount_usd,
-    merchant: merchant ?? null,
-    description: null,
-    date,
-    month,
-    source: "telegram",
-    status: "active",
-    is_exception: is_exception ? 1 : 0,
-  });
-
-  const budget = await db.query.budgets.findFirst({
-    where: and(eq(budgets.group_id, groupId), eq(budgets.month, month), eq(budgets.category_id, category_id)),
-  });
-
-  const spentRows = await db
-    .select({ total: sum(transactions.amount_ars) })
-    .from(transactions)
-    .where(and(
-      eq(transactions.group_id, groupId),
-      eq(transactions.month, month),
-      eq(transactions.category_id, category_id),
-      eq(transactions.status, "active")
-    ));
-  const gastado_ars = Number(spentRows[0]?.total ?? 0);
-  const budget_ars = budget?.budget_ars ?? 0;
-  const disponible_ars = budget_ars > 0 ? Math.max(0, budget_ars - gastado_ars) : null;
-  const status = calculateCategoryStatus({ gastado_ars, budget_ars });
-
-  const cat = await db.query.categories.findFirst({
-    where: eq(categories.id, category_id),
-  });
-
-  const summary = await getMonthSummary(groupId, month);
-
-  return {
-    message: formatTransactionConfirm({
-      amount_ars,
-      category: cat?.name ?? "—",
-      emoji: cat?.emoji ?? "📦",
-      gastado_ars,
-      budget_ars,
-      disponible_ars,
-      status,
-      ahorro_proyectado_usd: summary?.ahorro_proyectado_usd ?? 0,
-    }),
-    transactionId: txId,
-  };
 }
 
 /** Formats the receipt proposal message shown to the user */

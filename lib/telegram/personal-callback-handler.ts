@@ -18,7 +18,7 @@ import {
 import { eq, and, sum, desc, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
-import { getMonthSummary } from "@/lib/finance/summaries";
+import { getAccountingMonthProjection, getMonthSummary } from "@/lib/finance/summaries";
 import { isIncomeCategory } from "@/lib/finance/income";
 import { calculateCategoryStatus } from "@/lib/finance/rules";
 import { formatTransactionConfirm } from "./formatters";
@@ -76,6 +76,44 @@ function hasUsableUsdSettings(settings: {
       typeof settings.income_usd === "number" && Number.isFinite(settings.income_usd) &&
       typeof settings.saving_goal_usd === "number" && Number.isFinite(settings.saving_goal_usd),
   );
+}
+
+type PersonalCurrencySettings = {
+  currency_mode: string | null;
+  exchange_rate: number | null;
+  income_usd: number | null;
+  saving_goal_usd: number | null;
+  income_ars: number | null;
+  saving_goal_ars: number | null;
+};
+
+function preparePersonalTransaction(settings: PersonalCurrencySettings | undefined, amountArs: number) {
+  if (!settings) return null;
+  const mode = settings.currency_mode ?? "USD_ARS";
+  if (mode === "USD_ARS") {
+    if (!hasUsableUsdSettings(settings) || !Number.isFinite(amountArs) || amountArs <= 0) return null;
+    return {
+      currencyMode: "USD_ARS" as const,
+      amountUsd: parseFloat((amountArs / settings.exchange_rate).toFixed(2)),
+      exchangeRateSnapshot: settings.exchange_rate,
+    };
+  }
+  if (mode === "ARS_ARS" && process.env.ACT05_ARS_MODE_ENABLED === "true" &&
+      typeof settings.income_ars === "number" && Number.isFinite(settings.income_ars) &&
+      typeof settings.saving_goal_ars === "number" && Number.isFinite(settings.saving_goal_ars) &&
+      Number.isFinite(amountArs) && amountArs > 0) {
+    return { currencyMode: "ARS_ARS" as const, amountUsd: null, exchangeRateSnapshot: null };
+  }
+  return null;
+}
+
+function unavailableMessage(settings: PersonalCurrencySettings | undefined): string {
+  if (settings?.currency_mode === "ARS_ARS") {
+    return process.env.ACT05_ARS_MODE_ENABLED === "true"
+      ? "❌ Este mes no tiene una configuración ARS válida. No se registró ningún movimiento."
+      : "❌ El modo ARS está deshabilitado. No se registró ningún movimiento.";
+  }
+  return USD_MONTH_UNAVAILABLE_MESSAGE;
 }
 
 const USD_MONTH_UNAVAILABLE_MESSAGE = "❌ Este mes no tiene una configuración USD/ARS válida. No se registró ningún movimiento.";
@@ -265,7 +303,7 @@ interface PersonalTransactionOperationResult {
   text: string;
   transactionId: string;
   month?: string;
-  confirmation?: Omit<TransactionConfirmationInput, "ahorro_proyectado_usd">;
+  confirmation?: Omit<TransactionConfirmationInput, "ahorro_proyectado_usd" | "ahorro_proyectado_ars">;
   pushUserId?: string;
 }
 
@@ -314,22 +352,24 @@ async function registerPersonalTransaction(
         const month = getActiveMonthArgentina();
         const [settings] = await transaction
           .select({
+            currency_mode: monthly_settings.currency_mode,
             exchange_rate: monthly_settings.exchange_rate,
             income_usd: monthly_settings.income_usd,
             saving_goal_usd: monthly_settings.saving_goal_usd,
+            income_ars: monthly_settings.income_ars,
+            saving_goal_ars: monthly_settings.saving_goal_ars,
           })
           .from(monthly_settings)
           .where(and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)))
           .limit(1);
-        if (!hasUsableUsdSettings(settings)) {
+        const prepared = preparePersonalTransaction(settings, amountArs);
+        if (!prepared) {
           return {
             resourceType: null,
             resourceId: null,
-            result: { text: USD_MONTH_UNAVAILABLE_MESSAGE, transactionId: "" },
+            result: { text: unavailableMessage(settings), transactionId: "" },
           };
         }
-
-        const amountUsd = parseFloat((amountArs / settings.exchange_rate).toFixed(2));
         const date = getArgentinaDate().toISOString().slice(0, 10);
         const txId = randomUUID();
 
@@ -402,7 +442,9 @@ async function registerPersonalTransaction(
           group_id: groupId,
           category_id: categoryId,
           amount_ars: amountArs,
-          amount_usd: amountUsd,
+          amount_usd: prepared.amountUsd,
+          currency_mode: prepared.currencyMode,
+          exchange_rate_snapshot: prepared.exchangeRateSnapshot,
           merchant: merchant ?? null,
           description: null,
           date,
@@ -515,7 +557,8 @@ async function registerPersonalTransaction(
           .from(categories)
           .where(eq(categories.id, categoryId))
           .limit(1);
-        const confirmation: Omit<TransactionConfirmationInput, "ahorro_proyectado_usd"> = {
+        const confirmation: Omit<TransactionConfirmationInput, "ahorro_proyectado_usd" | "ahorro_proyectado_ars"> = {
+            currency_mode: prepared.currencyMode,
             amount_ars: amountArs,
             category: cat?.name ?? "—",
             emoji: cat?.emoji ?? "📦",
@@ -526,7 +569,7 @@ async function registerPersonalTransaction(
             is_income: isIncomeCategory(cat?.slug),
         };
         const result: PersonalTransactionOperationResult = {
-          text: `${isException ? "⚠️ Registrado como excepción.\n\n" : ""}${formatTransactionConfirm({ ...confirmation, ahorro_proyectado_usd: 0 })}${reimbursementId ? "\n\n✅ Reintegro solicitado. Ya avisamos al grupo." : ""}`,
+          text: `${isException ? "⚠️ Registrado como excepción.\n\n" : ""}${formatTransactionConfirm(confirmation)}${reimbursementId ? "\n\n✅ Reintegro solicitado. Ya avisamos al grupo." : ""}`,
           transactionId: txId,
           month,
           confirmation,
@@ -569,11 +612,15 @@ async function registerPersonalTransaction(
         console.error("Failed to send reimbursement push notification:", error instanceof Error ? error.message : "unknown");
       });
     }
-    const summary = await getMonthSummary(groupId, operation.result.month);
+    const savings = operation.result.confirmation.currency_mode === "ARS_ARS"
+      ? await getAccountingMonthProjection(groupId, operation.result.month).then((projection) =>
+          projection?.mode === "ARS_ARS" ? { ahorro_proyectado_ars: projection.projectedSavings } : {}, () => ({}))
+      : await getMonthSummary(groupId, operation.result.month).then((summary) =>
+          summary?.ahorro_proyectado_usd === undefined ? {} : { ahorro_proyectado_usd: summary.ahorro_proyectado_usd }, () => ({}));
     return {
       text: `${isException ? "⚠️ Registrado como excepción.\n\n" : ""}${formatTransactionConfirm({
         ...operation.result.confirmation,
-        ahorro_proyectado_usd: summary?.ahorro_proyectado_usd ?? 0,
+        ...savings,
       })}${requiresReimbursement ? "\n\n✅ Reintegro solicitado. Ya avisamos al grupo." : ""}`,
       transactionId: operation.result.transactionId,
       operationId: operation.operationId,
@@ -590,9 +637,8 @@ async function registerPersonalTransaction(
   const settings = await db.query.monthly_settings.findFirst({
     where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
   });
-  if (!hasUsableUsdSettings(settings)) return { text: USD_MONTH_UNAVAILABLE_MESSAGE, transactionId: "" };
-
-  const amountUsd = parseFloat((amountArs / settings.exchange_rate).toFixed(2));
+  const prepared = preparePersonalTransaction(settings, amountArs);
+  if (!prepared) return { text: unavailableMessage(settings), transactionId: "" };
   const date = getArgentinaDate().toISOString().slice(0, 10);
   const txId = randomUUID();
 
@@ -608,7 +654,9 @@ async function registerPersonalTransaction(
     group_id: groupId,
     category_id: categoryId,
     amount_ars: amountArs,
-    amount_usd: amountUsd,
+    amount_usd: prepared.amountUsd,
+    currency_mode: prepared.currencyMode,
+    exchange_rate_snapshot: prepared.exchangeRateSnapshot,
     merchant: merchant ?? null,
     description: null,
     date,
@@ -637,7 +685,11 @@ async function registerPersonalTransaction(
   const status = calculateCategoryStatus({ gastado_ars, budget_ars });
 
   const cat = await db.query.categories.findFirst({ where: eq(categories.id, categoryId) });
-  const summary = await getMonthSummary(groupId, month);
+  const savings = prepared.currencyMode === "ARS_ARS"
+    ? await getAccountingMonthProjection(groupId, month).then((projection) =>
+        projection?.mode === "ARS_ARS" ? { ahorro_proyectado_ars: projection.projectedSavings } : {}, () => ({}))
+    : await getMonthSummary(groupId, month).then((summary) =>
+        summary?.ahorro_proyectado_usd === undefined ? {} : { ahorro_proyectado_usd: summary.ahorro_proyectado_usd }, () => ({}));
 
   return {
     text: formatTransactionConfirm({
@@ -648,7 +700,8 @@ async function registerPersonalTransaction(
       budget_ars,
       disponible_ars,
       status,
-      ahorro_proyectado_usd: summary?.ahorro_proyectado_usd ?? 0,
+      currency_mode: prepared.currencyMode,
+      ...savings,
       is_income: isIncomeCategory(cat?.slug),
     }),
     transactionId: txId,

@@ -570,7 +570,7 @@ Telegram, alertas y exportación.
 Gates de este corte: harness 84/84; Jest 94 suites y 812/812 tests;
 typecheck y build verdes; lint 0 errores y 68 warnings preexistentes.
 
-**Siguiente corte abierto, owner Codex:** adaptar el writer de confirmación
+**Checkpoint histórico del siguiente corte (cerrado abajo), owner Codex:** adaptar el writer de confirmación
 Telegram en `lib/telegram/personal-callback-handler.ts`, incluyendo rama
 transaccional y rama sin contexto de operación, con pruebas de texto/comando,
 voz y OCR. Todos convergen allí; hoy el callback exige configuración USD,
@@ -580,3 +580,34 @@ encontrados y debe confirmarse como código muerto o adaptarse antes de activar
 ARS/ARS. Después quedan presentación de dashboard/bot, alertas, exportación,
 reembolsos y UI de selección de modo. Ningún cambio se desplegó a beta ni
 legacy; la migración beta aún no se aplicó y la flag sigue apagada.
+
+### ACT-05 Telegram confirmation writer — 03/10/2026
+
+**Corte local cerrado, owner Codex.** El callback financiero compartido por
+comando, texto, voz y OCR valida el modo del grupo/mes en ambas ramas de
+escritura. En `USD_ARS` conserva la conversión y ahora persiste el snapshot de
+la tasa positiva; en `ARS_ARS`, solo con `ACT05_ARS_MODE_ENABLED=true`, deja
+`amount_usd` y `exchange_rate_snapshot` en `NULL`. Si faltan configuración o
+flag, no escribe. El texto durable del outbox omite el ahorro hasta poder
+calcularlo después del commit, en vez de afirmar falsamente USD 0; el mensaje
+en línea presenta el ahorro en la moneda contable y una falla de proyección
+posterior al commit no convierte una operación exitosa en error/reintento. Se
+eliminó `registerTransaction` de `handlers.ts` tras comprobar que no tenía
+call sites, evitando un tercer writer de Telegram con supuestos USD.
+
+Gates locales Node 22: harness 84/84; Jest 94 suites, 820/820 tests;
+typecheck y build verdes; lint 0 errores, 67 warnings preexistentes.
+Pruebas enfocadas cubren la rama transaccional con outbox y la rama directa,
+modos USD/ARS y ARS/ARS, flag apagada, ajustes incompletos y fallo de
+proyección. No hubo migración, deploy, webhook ni cambio en beta o legacy.
+
+**Siguiente corte abierto, owner Codex:** adaptar el armado de propuestas y
+las consultas Telegram (`resumen`, `disponible`) que aún dependen del resumen
+USD, con pruebas de comando, texto natural, voz y OCR; una escritura correcta
+en el callback no equivale todavía a un flujo ARS/ARS de extremo a extremo.
+Los consumidores web/dashboard, alertas, XLSX, reembolsos y la UI para elegir
+modo/fuente Ripio permanecen abiertos con owner Codex. La anomalía canary de
+`telegram_operations` sigue a cargo de Codex y no se limpia implícitamente.
+Después de esos cortes locales, Codex debe rehacer backup, conciliación y
+aislamiento para migrar únicamente la DB beta con autorización separada;
+Esteban será owner del QA funcional y de cualquier decisión de release.

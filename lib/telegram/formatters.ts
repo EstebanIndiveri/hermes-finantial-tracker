@@ -1,6 +1,6 @@
 import { formatARS, formatUSD } from "@/lib/finance/formatters";
 
-export function formatTransactionConfirm(params: {
+type TransactionConfirmBase = {
   amount_ars: number;
   category: string;
   emoji: string;
@@ -8,17 +8,30 @@ export function formatTransactionConfirm(params: {
   budget_ars: number;
   disponible_ars: number | null;
   status: string;
-  ahorro_proyectado_usd: number;
   is_income?: boolean;
-}): string {
+};
+
+type TransactionConfirmSavings =
+  | { currency_mode?: "USD_ARS"; ahorro_proyectado_usd?: number }
+  | { currency_mode: "ARS_ARS"; ahorro_proyectado_ars?: number };
+
+export function formatTransactionConfirm(params: TransactionConfirmBase & TransactionConfirmSavings): string {
+  const savingsLine = params.currency_mode === "ARS_ARS"
+    ? params.ahorro_proyectado_ars === undefined
+      ? null
+      : `💰 Ahorro proyectado: ${formatARS(params.ahorro_proyectado_ars)}`
+    : params.ahorro_proyectado_usd === undefined
+      ? null
+      : `💰 Ahorro proyectado: ${formatUSD(params.ahorro_proyectado_usd)}`;
+
   if (params.is_income) {
-    return [
+    const lines = [
       `✅ Ingreso registrado: +${formatARS(params.amount_ars)} en ${params.emoji} ${params.category}.`,
       ``,
       `Este ingreso suma a tu balance del mes.`,
-      ``,
-      `💰 Ahorro proyectado: ${formatUSD(params.ahorro_proyectado_usd)}`,
-    ].join("\n");
+      ...(savingsLine ? [``, savingsLine] : []),
+    ];
+    return lines.filter((line): line is string => line !== null).join("\n");
   }
   const statusIcon = params.status === "OK" ? "🟢 OK" : params.status === "WARNING" ? "🟡 WARNING" : "🔴 CLOSED";
   const lines = [
@@ -29,8 +42,7 @@ export function formatTransactionConfirm(params: {
     `Gastado: ${formatARS(params.gastado_ars)}`,
     params.disponible_ars !== null ? `Disponible: ${formatARS(params.disponible_ars)}` : null,
     `Estado: ${statusIcon}`,
-    ``,
-    `💰 Ahorro proyectado: ${formatUSD(params.ahorro_proyectado_usd)}`,
+    ...(savingsLine ? [``, savingsLine] : []),
   ];
   return lines.filter((l): l is string => l !== null).join("\n");
 }
