@@ -518,3 +518,38 @@ TypeScript schema now selects the new columns, this branch must **not** be
 deployed before the beta schema is migrated and verified. Esteban owns manual
 acceptance only after the beta activation gate; production legacy is out of
 scope.
+
+### ACT-05 writers y guardas de modo — 03/10/2026
+
+**Corte local cerrado, owner Codex.** El writer de configuración mensual,
+las transacciones recurrentes, el cron de cotización y las guardas SQL ya
+respetan el modo del grupo/mes. `ARS_ARS` permanece detrás de
+`ACT05_ARS_MODE_ENABLED`, apagada por defecto. La base impide cambiar o borrar
+el modo de un mes con movimientos (también anulados) y rechaza nuevas
+transacciones sin configuración o con un modo distinto. Recurrentes ya no
+usan la tasa fija 1200; solo escriben cuando el mes/grupo/categoría y, en
+modo mixto, la cotización son válidos. Ripio solo actualiza meses mixtos
+marcados previamente como gestionados por Ripio, no meses ARS ni tasas
+manuales.
+
+Gates locales: harness 84/84; Jest 94 suites, 804/804 tests; typecheck y
+build verdes; lint 0 errores, 68 warnings preexistentes. Dos copias nuevas
+del export beta migraron al fingerprint
+`db35d5ebe653dcbc135ca236b9ae83671ef00f2b63bcb57a5ca5b9b30f133de1`;
+inventario y agregados financieros preservados, reejecución no-op. La
+conciliación estricta sigue roja solo por la misma operación canary
+preexistente; la excepción firmada y de un único registro pasó nuevamente.
+No hubo escritura remota ni deploy. Ver
+[ACT-05-CURRENCY-DECISION.md](ACT-05-CURRENCY-DECISION.md).
+
+**Abierto, owner Codex:** adaptar y probar los demás writers/consumidores
+(web, Telegram, consultas, alertas, XLSX y reembolsos), evitar cualquier
+lectura de campos USD nulos como cero contable, y ofrecer en UI la selección
+del modo y la fuente Ripio. Luego generar un backup beta fresco, repetir
+identidad/aislamiento y conciliación, aplicar la migración solo a beta y
+verificar flags apagadas antes de cualquier activación/QA manual. No se debe
+desplegar este código contra el esquema beta actual: ya consulta columnas
+de la migración aún no aplicada. El canary anómalo sigue abierto con owner
+Codex para revisión y corrección aislada, nunca una limpieza implícita en
+ACT-05. Esteban es owner de la aceptación funcional cuando se habilite el
+modo en beta. Legacy/main permanece fuera de alcance.

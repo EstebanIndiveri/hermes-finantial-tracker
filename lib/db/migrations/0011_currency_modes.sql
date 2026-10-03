@@ -96,3 +96,52 @@ WHEN NOT (
 BEGIN
   SELECT RAISE(ABORT, 'transactions currency mode and amounts are inconsistent');
 END;
+
+-- The database, not a UI preflight, owns the group/month mode lock. A deleted
+-- movement still counts: otherwise old money could be reinterpreted later.
+CREATE TRIGGER monthly_settings_currency_mode_locked
+BEFORE UPDATE OF currency_mode, group_id, month ON monthly_settings
+WHEN (NEW.currency_mode IS NOT OLD.currency_mode
+  OR NEW.group_id IS NOT OLD.group_id OR NEW.month IS NOT OLD.month)
+  AND EXISTS (
+    SELECT 1 FROM transactions
+    WHERE group_id IS OLD.group_id AND month = OLD.month
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'monthly currency mode is locked by existing movements');
+END;
+
+CREATE TRIGGER monthly_settings_with_movements_delete
+BEFORE DELETE ON monthly_settings
+WHEN EXISTS (
+  SELECT 1 FROM transactions
+  WHERE group_id IS OLD.group_id AND month = OLD.month
+)
+BEGIN
+  SELECT RAISE(ABORT, 'monthly settings cannot be deleted after movements');
+END;
+
+-- Concurrent writers that read the old setting cannot insert a stale-mode
+-- movement after the setting changes. This also fails closed on missing month
+-- settings or missing group identity for any new movement.
+CREATE TRIGGER transactions_currency_month_insert
+BEFORE INSERT ON transactions
+WHEN NEW.group_id IS NULL OR NOT EXISTS (
+  SELECT 1 FROM monthly_settings
+  WHERE group_id = NEW.group_id AND month = NEW.month
+    AND currency_mode = NEW.currency_mode
+)
+BEGIN
+  SELECT RAISE(ABORT, 'transaction currency mode does not match group month');
+END;
+
+CREATE TRIGGER transactions_currency_month_update
+BEFORE UPDATE OF currency_mode, group_id, month ON transactions
+WHEN NEW.group_id IS NULL OR NOT EXISTS (
+  SELECT 1 FROM monthly_settings
+  WHERE group_id = NEW.group_id AND month = NEW.month
+    AND currency_mode = NEW.currency_mode
+)
+BEGIN
+  SELECT RAISE(ABORT, 'transaction currency mode does not match group month');
+END;

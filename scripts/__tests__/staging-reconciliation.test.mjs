@@ -288,12 +288,14 @@ test("a canonical no-op migration preserves synthetic staging evidence", async (
     await client.execute("PRAGMA foreign_keys = ON");
     await client.batch([
       { sql: "INSERT INTO users (id, name, username) VALUES (?, ?, ?)", args: ["synthetic-user", "Synthetic", "synthetic"] },
-      { sql: "INSERT INTO categories (id, slug, name) VALUES (?, ?, ?)", args: ["synthetic-category", "synthetic", "Synthetic"] },
+      { sql: "INSERT INTO groups (id, name, owner_id) VALUES (?, ?, ?)", args: ["synthetic-group", "Synthetic", "synthetic-user"] },
+      { sql: "INSERT INTO categories (id, group_id, slug, name) VALUES (?, ?, ?, ?)", args: ["synthetic-category", "synthetic-group", "synthetic", "Synthetic"] },
+      { sql: "INSERT INTO monthly_settings (id, user_id, group_id, month, income_usd, exchange_rate, saving_goal_usd, saving_goal_yellow) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", args: ["synthetic-settings", "synthetic-user", "synthetic-group", "2026-09", 100, 1000, 0, 0] },
       {
         sql: `INSERT INTO transactions
-          (id, user_id, category_id, amount_ars, amount_usd, date, month)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        args: ["synthetic-transaction", "synthetic-user", "synthetic-category", 100, 0.1, "2026-09-20", "2026-09"],
+          (id, user_id, group_id, category_id, amount_ars, amount_usd, date, month)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: ["synthetic-transaction", "synthetic-user", "synthetic-group", "synthetic-category", 100, 0.1, "2026-09-20", "2026-09"],
       },
     ]);
   });

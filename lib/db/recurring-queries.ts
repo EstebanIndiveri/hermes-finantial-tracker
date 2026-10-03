@@ -10,6 +10,7 @@ import {
   recurringExecutions,
   transactions,
   categories,
+  monthly_settings,
   users,
   telegram_delivery_outbox,
 } from "./schema";
@@ -398,36 +399,43 @@ export async function createMonthlyExecutions(
     const executionId = nanoid();
 
     if (recurring.autoConfirm) {
-      const inserted = await db.transaction(async (tx) => {
-        const now = Date.now();
-        const claimed = await tx.insert(recurringExecutions).values({
-          id: executionId,
-          recurringExpenseId: recurring.id,
-          transactionId: null,
-          scheduledDate,
-          executedAt: null,
-          status: "pending",
-          amountArs: recurring.amountArs,
-          createdAt: now,
-        }).onConflictDoNothing({
-          target: [recurringExecutions.recurringExpenseId, recurringExecutions.scheduledDate],
-        }).returning({ id: recurringExecutions.id });
-        if (claimed.length === 0) return false;
+      let inserted: boolean;
+      try {
+        inserted = await db.transaction(async (tx) => {
+          const now = Date.now();
+          const claimed = await tx.insert(recurringExecutions).values({
+            id: executionId,
+            recurringExpenseId: recurring.id,
+            transactionId: null,
+            scheduledDate,
+            executedAt: null,
+            status: "pending",
+            amountArs: recurring.amountArs,
+            createdAt: now,
+          }).onConflictDoNothing({
+            target: [recurringExecutions.recurringExpenseId, recurringExecutions.scheduledDate],
+          }).returning({ id: recurringExecutions.id });
+          if (claimed.length === 0) return false;
 
-        const transactionId = await createTransactionFromRecurring(
-          recurring,
-          scheduledDate,
-          undefined,
-          tx,
-          `recurring_execution:${executionId}`,
-        );
-        await tx.update(recurringExecutions).set({
-          transactionId,
-          executedAt: now,
-          status: "auto_executed",
-        }).where(eq(recurringExecutions.id, executionId));
-        return true;
-      });
+          const transactionId = await createTransactionFromRecurring(
+            recurring,
+            scheduledDate,
+            undefined,
+            tx,
+            `recurring_execution:${executionId}`,
+          );
+          await tx.update(recurringExecutions).set({
+            transactionId,
+            executedAt: now,
+            status: "auto_executed",
+          }).where(eq(recurringExecutions.id, executionId));
+          return true;
+        });
+      } catch {
+        // Bad legacy settings/category/group data should skip this item, not the cron batch.
+        console.warn("Recurring auto-confirm skipped because its financial write failed");
+        continue;
+      }
       if (inserted) created += 1;
     } else {
       const inserted = await db.insert(recurringExecutions).values({
@@ -830,19 +838,54 @@ async function createTransactionFromRecurring(
   const finalAmount = amount ?? recurring.amountArs;
   const month = date.substring(0, 7);
 
-  // Get exchange rate for USD conversion
-  const exchangeRate = 1200; // Default, should be fetched from settings
-
-  // Get category ID - fallback to "imprevistos" category if not set
-  let categoryId = recurring.categoryId;
-  if (!categoryId) {
-    const fallbackCategory = await executor
-      .select({ id: categories.id })
-      .from(categories)
-      .where(eq(categories.slug, "imprevistos"))
-      .limit(1);
-    categoryId = fallbackCategory[0]?.id ?? null;
+  if (!Number.isFinite(finalAmount) || finalAmount <= 0) {
+    throw new Error("El importe de la transacción recurrente no es válido");
   }
+
+  if (!recurring.groupId) {
+    throw new Error("No se pueden crear transacciones recurrentes sin grupo");
+  }
+
+  const settings = (await executor
+    .select({ currency_mode: monthly_settings.currency_mode, exchange_rate: monthly_settings.exchange_rate })
+    .from(monthly_settings)
+    .where(and(
+      eq(monthly_settings.group_id, recurring.groupId),
+      eq(monthly_settings.month, month),
+    ))
+    .limit(1))[0];
+
+  if (!settings || (settings.currency_mode !== "USD_ARS" && settings.currency_mode !== "ARS_ARS")) {
+    throw new Error("No se encontraron ajustes de moneda válidos para el mes");
+  }
+
+  let amountUsd: number | null = null;
+  let exchangeRateSnapshot: number | null = null;
+  if (settings.currency_mode === "USD_ARS") {
+    if (
+      settings.exchange_rate == null ||
+      !Number.isFinite(settings.exchange_rate) ||
+      settings.exchange_rate <= 0
+    ) {
+      throw new Error("El tipo de cambio del mes no es válido");
+    }
+    amountUsd = Number((finalAmount / settings.exchange_rate).toFixed(2));
+    exchangeRateSnapshot = settings.exchange_rate;
+  }
+
+  // Validate explicit categories against the recurring group's category set;
+  // use the group's imprevistos category only when no category was configured.
+  const category = (await executor
+    .select({ id: categories.id })
+    .from(categories)
+    .where(and(
+      recurring.categoryId
+        ? eq(categories.id, recurring.categoryId)
+        : eq(categories.slug, "imprevistos"),
+      eq(categories.group_id, recurring.groupId),
+    ))
+    .limit(1))[0];
+  const categoryId = category?.id ?? null;
 
   if (!categoryId) {
     throw new Error("No se encontró categoría para la transacción");
@@ -855,7 +898,9 @@ async function createTransactionFromRecurring(
     group_id: recurring.groupId,
     category_id: categoryId,
     amount_ars: finalAmount,
-    amount_usd: finalAmount / exchangeRate,
+    amount_usd: amountUsd,
+    exchange_rate_snapshot: exchangeRateSnapshot,
+    currency_mode: settings.currency_mode,
     merchant: recurring.merchant ?? recurring.name,
     description: `Gasto recurrente: ${recurring.name}`,
     date,

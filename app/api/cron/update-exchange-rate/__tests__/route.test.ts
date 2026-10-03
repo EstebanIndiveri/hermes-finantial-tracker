@@ -2,6 +2,7 @@ import { GET } from "../route";
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db/client";
 import { fetchRipioRate, RipioFetchError } from "@/lib/exchange/ripio";
+import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -111,10 +112,11 @@ describe("GET /api/cron/update-exchange-rate", () => {
     expect(data.message).toBe("Unknown error");
   });
 
-  test("updates all existing groups' settings when Ripio succeeds", async () => {
+  test("updates only Ripio-managed USD/ARS settings when Ripio succeeds", async () => {
+    const selectWhere = jest.fn().mockResolvedValue([{ id: "s1" }, { id: "s2" }]);
     (db.select as jest.Mock).mockReturnValue({
       from: jest.fn(() => ({
-        where: jest.fn().mockResolvedValue([{ id: "s1" }, { id: "s2" }]),
+        where: selectWhere,
       })),
     });
     (fetchRipioRate as jest.Mock).mockResolvedValue(1250.75);
@@ -133,6 +135,10 @@ describe("GET /api/cron/update-exchange-rate", () => {
     expect(data.month).toBe("2025-05");
     expect(data.updated).toBe(2);
     expect(db.update).toHaveBeenCalled();
+    const condition = new SQLiteSyncDialect().sqlToQuery(selectWhere.mock.calls[0][0]);
+    expect(condition.sql).toContain('"monthly_settings"."currency_mode" = ?');
+    expect(condition.sql).toContain('"monthly_settings"."exchange_rate_source" = ?');
+    expect(condition.params).toEqual(["2025-05", "USD_ARS", "ripio"]);
   });
 
   test("returns ok with updated:0 when no settings exist", async () => {

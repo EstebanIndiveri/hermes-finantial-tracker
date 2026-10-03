@@ -191,6 +191,21 @@ test("currency migration preserves existing records, incoming FKs, indexes and p
       income_ars, saving_goal_ars, saving_goal_yellow_ars, income_usd)
     VALUES ('m3', 'u1', 'g1', '2026-12', 'ARS_ARS', 2000000, 500000, 300000, 1)
   `));
+  await query(database.url, `
+    INSERT INTO monthly_settings (id, user_id, group_id, month, income_usd,
+      saving_goal_usd, saving_goal_yellow, exchange_rate)
+    VALUES ('m4', 'u1', 'g1', '2027-01', 1000, 200, 100, 1600)
+  `);
+  await query(database.url, `
+    UPDATE monthly_settings SET currency_mode = 'ARS_ARS', income_usd = NULL,
+      saving_goal_usd = NULL, saving_goal_yellow = NULL, exchange_rate = NULL,
+      income_ars = 1600000, saving_goal_ars = 320000, saving_goal_yellow_ars = 160000
+    WHERE id = 'm4'
+  `);
+  const switched = await query(database.url, "SELECT currency_mode, income_usd, income_ars FROM monthly_settings WHERE id = 'm4'");
+  assert.equal(switched.rows[0].currency_mode, "ARS_ARS");
+  assert.equal(switched.rows[0].income_usd, null);
+  assert.equal(Number(switched.rows[0].income_ars), 1600000);
   const childCounts = await query(database.url, `
     SELECT
       (SELECT COUNT(*) FROM reimbursement_requests WHERE transaction_id = 't1') AS reimbursements,
@@ -213,22 +228,47 @@ test("currency migration preserves existing records, incoming FKs, indexes and p
   await executeMultiple(database.url, `
     INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,
       exchange_rate_snapshot, currency_mode, date, month)
-    VALUES ('t2', 'u1', 'g1', 'c1', 2500, NULL, NULL, 'ARS_ARS', '2026-10-03', '2026-10')
+    VALUES ('t2', 'u1', 'g1', 'c1', 2500, NULL, NULL, 'ARS_ARS', '2026-11-03', '2026-11')
   `);
   await assert.rejects(query(database.url, `
+    UPDATE monthly_settings SET currency_mode = 'ARS_ARS',
+      income_usd = NULL, saving_goal_usd = NULL, saving_goal_yellow = NULL,
+      income_ars = 100000, saving_goal_ars = 20000, saving_goal_yellow_ars = 10000
+    WHERE id = 'm1'
+  `), /monthly currency mode is locked/);
+  await query(database.url, "UPDATE transactions SET status = 'deleted' WHERE id = 't2'");
+  await assert.rejects(query(database.url, `
+    UPDATE monthly_settings SET currency_mode = 'USD_ARS',
+      income_ars = NULL, saving_goal_ars = NULL, saving_goal_yellow_ars = NULL,
+      income_usd = 100, saving_goal_usd = 20, saving_goal_yellow = 10,
+      exchange_rate = 1600
+    WHERE id = 'm2'
+  `), /monthly currency mode is locked/);
+  await assert.rejects(query(database.url, "DELETE FROM monthly_settings WHERE id = 'm1'"), /monthly settings cannot be deleted/);
+  await assert.rejects(query(database.url, `
     INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,
-      exchange_rate_snapshot, currency_mode, date, month)
-    VALUES ('t3', 'u1', 'g1', 'c1', 2500, 1.56, NULL, 'ARS_ARS', '2026-10-03', '2026-10')
+      currency_mode, date, month)
+    VALUES ('stale', 'u1', 'g1', 'c1', 2500, 1.56, 'USD_ARS', '2026-11-03', '2026-11')
+  `));
+  await assert.rejects(query(database.url, `
+    INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,
+      currency_mode, date, month)
+    VALUES ('missing-month', 'u1', 'g1', 'c1', 2500, 1.56, 'USD_ARS', '2026-12-03', '2026-12')
   `));
   await assert.rejects(query(database.url, `
     INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,
       exchange_rate_snapshot, currency_mode, date, month)
-    VALUES ('t6', 'u1', 'g1', 'c1', 2500, NULL, 1600, 'ARS_ARS', '2026-10-03', '2026-10')
+    VALUES ('t3', 'u1', 'g1', 'c1', 2500, 1.56, NULL, 'ARS_ARS', '2026-11-03', '2026-11')
+  `));
+  await assert.rejects(query(database.url, `
+    INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,
+      exchange_rate_snapshot, currency_mode, date, month)
+    VALUES ('t6', 'u1', 'g1', 'c1', 2500, NULL, 1600, 'ARS_ARS', '2026-11-03', '2026-11')
   `));
   await assert.rejects(query(database.url, `
     INSERT INTO transactions (id, operation_id, user_id, group_id, category_id, amount_ars,
       amount_usd, currency_mode, date, month)
-    VALUES ('t4', 'op1', 'u1', 'g1', 'c1', 2500, NULL, 'ARS_ARS', '2026-10-03', '2026-10')
+    VALUES ('t4', 'op1', 'u1', 'g1', 'c1', 2500, NULL, 'ARS_ARS', '2026-11-03', '2026-11')
   `));
   await assert.rejects(query(database.url, `
     INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,

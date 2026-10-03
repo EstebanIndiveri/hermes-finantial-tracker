@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { monthly_settings } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { fetchRipioRate, RipioFetchError } from "@/lib/exchange/ripio";
 import { getActiveMonthArgentina } from "@/lib/utils/dates";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 
 /**
  * Cron job endpoint to update exchange rate from Ripio API.
- * Updates ALL groups' monthly_settings for the current month.
+ * Updates only Ripio-managed USD/ARS settings for the current month.
  * @param req - NextRequest with Authorization: Bearer <CRON_SECRET> header
  * @returns JSON response with rate and month, or error details
  */
@@ -31,12 +31,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const existing = await db.select({ id: monthly_settings.id }).from(monthly_settings).where(eq(monthly_settings.month, month));
+    const managedMonth = and(
+      eq(monthly_settings.month, month),
+      eq(monthly_settings.currency_mode, "USD_ARS"),
+      eq(monthly_settings.exchange_rate_source, "ripio"),
+    );
+    const existing = await db.select({ id: monthly_settings.id }).from(monthly_settings).where(managedMonth);
 
     if (existing.length > 0) {
       await db.update(monthly_settings)
         .set({ exchange_rate: rate, exchange_rate_source: "ripio", exchange_rate_updated_at: Date.now() })
-        .where(eq(monthly_settings.month, month));
+        .where(managedMonth);
     }
 
     return NextResponse.json({ ok: true, rate, month, updated: existing.length });

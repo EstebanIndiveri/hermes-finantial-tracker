@@ -6,7 +6,7 @@ import { createClient } from "@libsql/client";
 
 export const RUNNER_VERSION = "1";
 const PRE_CURRENCY_SCHEMA_FINGERPRINT = "309646a60fcdfc1566e6110cc4e5ec8eb32cbfdb1ffa4ee03a3d838d54014701";
-export const CANONICAL_SCHEMA_FINGERPRINT = "fb830cf40e951abd3c4072e8c0b011d4040782d44c1dc8325d150973260a6046";
+export const CANONICAL_SCHEMA_FINGERPRINT = "db35d5ebe653dcbc135ca236b9ae83671ef00f2b63bcb57a5ca5b9b30f133de1";
 export const DEFAULT_MANIFEST_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../lib/db/migrations/manifest.json",

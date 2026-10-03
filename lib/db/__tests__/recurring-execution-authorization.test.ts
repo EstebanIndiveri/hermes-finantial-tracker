@@ -1,5 +1,5 @@
 import { db } from "../client";
-import { recurringExecutions, recurringExpenses } from "../schema";
+import { recurringExecutions, recurringExpenses, monthly_settings, categories } from "../schema";
 import { confirmExecution, skipExecution } from "../recurring-queries";
 import { and, eq } from "drizzle-orm";
 import { createTelegramOperationContext, createTelegramOperationIdentity } from "@/lib/telegram/operation-context";
@@ -173,7 +173,9 @@ describe("recurring execution authorization", () => {
   ])("confirms the actor's own execution with amount %p", async (amount, expectedAmount) => {
     mockLimit
       .mockResolvedValueOnce([authorizedExecution])
-      .mockResolvedValueOnce([authorizedRecurring]);
+      .mockResolvedValueOnce([authorizedRecurring])
+      .mockResolvedValueOnce([{ currency_mode: "USD_ARS", exchange_rate: 1000 }])
+      .mockResolvedValueOnce([{ id: "cat-a" }]);
 
     const result = await confirmExecution("exec-a", "user-a", amount);
 
@@ -182,6 +184,9 @@ describe("recurring execution authorization", () => {
       user_id: "user-a",
       group_id: "group-a",
       amount_ars: expectedAmount,
+      amount_usd: Number((expectedAmount / 1000).toFixed(2)),
+      exchange_rate_snapshot: 1000,
+      currency_mode: "USD_ARS",
     }));
     expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
       transactionId: result.transactionId,
@@ -192,10 +197,48 @@ describe("recurring execution authorization", () => {
     expect(mockEq).toHaveBeenCalledWith(recurringExecutions.status, "pending");
   });
 
-  it("rejects a legacy confirmation when the pending execution claim loses", async () => {
+  it("uses group settings when the member is not the settings owner", async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ ...authorizedExecution, ownerUserId: "member-a" }])
+      .mockResolvedValueOnce([{ ...authorizedRecurring, userId: "member-a" }])
+      .mockResolvedValueOnce([{ currency_mode: "USD_ARS", exchange_rate: 1250 }])
+      .mockResolvedValueOnce([{ id: "cat-a" }]);
+
+    const result = await confirmExecution("exec-a", "member-a");
+
+    expect(result.success).toBe(true);
+    expect(mockEq).toHaveBeenCalledWith(monthly_settings.group_id, "group-a");
+    expect(mockEq).toHaveBeenCalledWith(monthly_settings.month, "2026-09");
+    expect(mockEq).not.toHaveBeenCalledWith(monthly_settings.user_id, "member-a");
+    expect(mockEq).toHaveBeenCalledWith(categories.group_id, "group-a");
+  });
+
+  it("rejects a recurring confirmation without a group", async () => {
+    mockLimit
+      .mockResolvedValueOnce([authorizedExecution])
+      .mockResolvedValueOnce([{ ...authorizedRecurring, groupId: null }]);
+
+    await expect(confirmExecution("exec-a", "user-a")).rejects.toThrow("sin grupo");
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid amount before writing a transaction", async () => {
     mockLimit
       .mockResolvedValueOnce([authorizedExecution])
       .mockResolvedValueOnce([authorizedRecurring]);
+
+    await expect(confirmExecution("exec-a", "user-a", Number.NaN)).rejects.toThrow("importe");
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+  });
+
+  it("rejects a legacy confirmation when the pending execution claim loses", async () => {
+    mockLimit
+      .mockResolvedValueOnce([authorizedExecution])
+      .mockResolvedValueOnce([authorizedRecurring])
+      .mockResolvedValueOnce([{ currency_mode: "USD_ARS", exchange_rate: 1000 }])
+      .mockResolvedValueOnce([{ id: "cat-a" }]);
     mockUpdateReturning.mockResolvedValueOnce([]);
 
     await expect(confirmExecution("exec-a", "user-a")).resolves.toEqual({
@@ -218,7 +261,9 @@ describe("recurring execution authorization", () => {
       where: jest.fn(() => txSelectBuilder),
       limit: jest.fn()
         .mockResolvedValueOnce([authorizedExecution])
-        .mockResolvedValueOnce([authorizedRecurring]),
+        .mockResolvedValueOnce([authorizedRecurring])
+        .mockResolvedValueOnce([{ currency_mode: "USD_ARS", exchange_rate: 1000 }])
+        .mockResolvedValueOnce([{ id: "cat-a" }]),
     };
     const tx = {
       select: jest.fn(() => txSelectBuilder),
