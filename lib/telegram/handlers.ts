@@ -59,6 +59,27 @@ interface RecurringExecutionStatusDescriptor {
   dueLabel: string;
 }
 
+function hasUsableUsdMonthSummary(
+  summary: Awaited<ReturnType<typeof getMonthSummary>>,
+): summary is NonNullable<Awaited<ReturnType<typeof getMonthSummary>>> & {
+  exchange_rate: number;
+  income_usd: number;
+  total_spent_usd: number;
+  ahorro_proyectado_usd: number;
+  saving_goal_usd: number;
+} {
+  return Boolean(
+    summary &&
+      typeof summary.exchange_rate === "number" && Number.isFinite(summary.exchange_rate) && summary.exchange_rate > 0 &&
+      typeof summary.income_usd === "number" && Number.isFinite(summary.income_usd) &&
+      typeof summary.total_spent_usd === "number" && Number.isFinite(summary.total_spent_usd) &&
+      typeof summary.ahorro_proyectado_usd === "number" && Number.isFinite(summary.ahorro_proyectado_usd) &&
+      typeof summary.saving_goal_usd === "number" && Number.isFinite(summary.saving_goal_usd),
+  );
+}
+
+const USD_MONTH_UNAVAILABLE_MESSAGE = "Este mes no tiene una configuración USD/ARS válida para Telegram. No se registró ningún movimiento.";
+
 /**
  * Parses a number from text, supporting:
  * - Standard numbers: "1500", "1.500", "1,500"
@@ -681,6 +702,7 @@ export async function handleTelegramMessage(
   if (text === "/resumen") {
     const summary = await getMonthSummary(groupId, month);
     if (!summary) return { text: "No hay configuración para este mes. Configurá desde la web." };
+    if (!hasUsableUsdMonthSummary(summary)) return { text: USD_MONTH_UNAVAILABLE_MESSAGE };
     return { text: formatResumen({ month, ...summary }) };
   }
 
@@ -1383,8 +1405,9 @@ export async function handleTelegramMessage(
     ]);
 
     if (!summary) return { text: "Sin configuración mensual. Configurá desde la web." };
+    if (!hasUsableUsdMonthSummary(summary)) return { text: USD_MONTH_UNAVAILABLE_MESSAGE };
 
-    const exchangeRate = summary.exchange_rate || 1;
+    const exchangeRate = summary.exchange_rate;
     const ahorro_usd_before = summary.ahorro_proyectado_usd;
     const total_spent_usd_after = summary.total_spent_usd + (amount_ars / exchangeRate);
     const ahorro_usd_after = summary.income_usd - total_spent_usd_after;
@@ -1944,6 +1967,7 @@ export async function handleTelegramMessage(
   if (parsed.intent === "query_summary") {
     const summary = await getMonthSummary(groupId, month);
     if (!summary) return { text: "No hay configuración para este mes. Configurá desde la web." };
+    if (!hasUsableUsdMonthSummary(summary)) return { text: USD_MONTH_UNAVAILABLE_MESSAGE };
     return { text: formatResumen({ month, ...summary }) };
   }
 
@@ -2027,7 +2051,8 @@ export async function handleTelegramMessage(
       getCategoryBreakdown(groupId, month),
     ]);
     if (!summary) return { text: "Sin configuración mensual. Configurá desde la web." };
-    const exchangeRate = summary.exchange_rate || 1;
+    if (!hasUsableUsdMonthSummary(summary)) return { text: USD_MONTH_UNAVAILABLE_MESSAGE };
+    const exchangeRate = summary.exchange_rate;
     const ahorro_usd_before = summary.ahorro_proyectado_usd;
     const total_spent_usd_after = summary.total_spent_usd + (amount_ars / exchangeRate);
     const ahorro_usd_after = summary.income_usd - total_spent_usd_after;
@@ -2497,7 +2522,14 @@ async function registerTransaction(
   const settings = await db.query.monthly_settings.findFirst({
     where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
   });
-  if (!settings) return { message: "Sin configuración mensual.", transactionId: "" };
+  if (
+    !settings ||
+    typeof settings.exchange_rate !== "number" || !Number.isFinite(settings.exchange_rate) || settings.exchange_rate <= 0 ||
+    typeof settings.income_usd !== "number" || !Number.isFinite(settings.income_usd) ||
+    typeof settings.saving_goal_usd !== "number" || !Number.isFinite(settings.saving_goal_usd)
+  ) {
+    return { message: `${USD_MONTH_UNAVAILABLE_MESSAGE}`, transactionId: "" };
+  }
 
   const amount_usd = parseFloat((amount_ars / settings.exchange_rate).toFixed(2));
   const date = getArgentinaDate().toISOString().slice(0, 10);

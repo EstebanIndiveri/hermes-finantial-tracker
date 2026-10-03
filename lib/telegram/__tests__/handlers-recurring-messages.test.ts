@@ -148,7 +148,7 @@ describe("telegram recurring messages", () => {
       slug: "supermercado",
     });
     (mockDb.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
-    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ exchange_rate: 1000 });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ exchange_rate: 1000, income_usd: 1000, saving_goal_usd: 0 });
   });
 
   afterAll(() => {

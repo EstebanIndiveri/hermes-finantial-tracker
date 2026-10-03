@@ -159,7 +159,7 @@ describe("telegram reimbursements", () => {
         requires_reimbursement: true,
       },
     });
-    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ exchange_rate: 1000 });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ exchange_rate: 1000, income_usd: 1000, saving_goal_usd: 0 });
     (mockDb.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
     (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({ id: "cat-1", name: "Comida", emoji: "🍝" });
     (mockDb.select as jest.Mock).mockReturnValue({
@@ -258,7 +258,7 @@ describe("telegram reimbursements", () => {
 
     const selectResults: unknown[][] = [
       [{ userId: "user-1" }],
-      [{ exchange_rate: 1000 }],
+      [{ exchange_rate: 1000, income_usd: 1000, saving_goal_usd: 0 }],
       [{ userId: "user-1" }],
       [{ partnerId: "user-2" }],
       [{ slug: "supermercado" }],
@@ -472,7 +472,7 @@ describe("telegram reimbursements", () => {
     const updateSets: unknown[] = [];
     const selectResults = [
       [{ userId: "user-1" }],
-      [{ exchange_rate: 1000 }],
+      [{ exchange_rate: 1000, income_usd: 1000, saving_goal_usd: 0 }],
       [{ userId: "user-1" }],
       [],
       [{ total: 5000 }],
@@ -606,6 +606,32 @@ describe("telegram reimbursements", () => {
     expect(getGroupMembership).not.toHaveBeenCalled();
   });
 
+  it("fails closed when legacy USD settings have a null exchange rate", async () => {
+    mockGetConversationState.mockResolvedValue({
+      step: "expense_confirm",
+      data: {
+        step: "expense_confirm",
+        category_id: "cat-1",
+        category_name: "Comida",
+        category_emoji: "🍝",
+        amount_ars: 5000,
+        group_id: "group-1",
+        user_id: "user-1",
+        is_exception: false,
+      },
+    });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({
+      exchange_rate: null,
+      income_usd: null,
+      saving_goal_usd: null,
+    });
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "group-1", "expense:confirm");
+
+    expect(response.text).toContain("configuración USD/ARS válida");
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
   it("invalidates an exception confirmation from a different user before any financial write", async () => {
     mockGetConversationState.mockResolvedValue({
       step: "expense_confirm",
@@ -663,7 +689,7 @@ describe("telegram reimbursements", () => {
         is_exception: false,
       },
     });
-    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ exchange_rate: 1000 });
+    (mockDb.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ exchange_rate: 1000, income_usd: 1000, saving_goal_usd: 0 });
     getGroupMembership
       .mockResolvedValueOnce({ group_id: "group-1", user_id: "user-1", role: "member" })
       .mockResolvedValueOnce(null);
@@ -696,7 +722,7 @@ describe("telegram reimbursements", () => {
     const outboxInsertValues: unknown[] = [];
     const selectResults = [
       [{ userId: "user-1" }],
-      [{ exchange_rate: 1000 }],
+      [{ exchange_rate: 1000, income_usd: 1000, saving_goal_usd: 0 }],
       [{ userId: "user-1" }],
       [],
       [{ total: 5000 }],

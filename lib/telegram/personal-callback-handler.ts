@@ -61,6 +61,25 @@ export interface PersonalCallbackResponse {
   deliveryKey?: string;
 }
 
+function hasUsableUsdSettings(settings: {
+  exchange_rate: number | null | undefined;
+  income_usd: number | null | undefined;
+  saving_goal_usd: number | null | undefined;
+} | undefined): settings is {
+  exchange_rate: number;
+  income_usd: number;
+  saving_goal_usd: number;
+} {
+  return Boolean(
+    settings &&
+      typeof settings.exchange_rate === "number" && Number.isFinite(settings.exchange_rate) && settings.exchange_rate > 0 &&
+      typeof settings.income_usd === "number" && Number.isFinite(settings.income_usd) &&
+      typeof settings.saving_goal_usd === "number" && Number.isFinite(settings.saving_goal_usd),
+  );
+}
+
+const USD_MONTH_UNAVAILABLE_MESSAGE = "❌ Este mes no tiene una configuración USD/ARS válida. No se registró ningún movimiento.";
+
 // ── Pending expense state (for /gasto confirmation and NL register_expense) ──
 interface PendingExpenseState {
   step: "expense_confirm";
@@ -294,15 +313,19 @@ async function registerPersonalTransaction(
 
         const month = getActiveMonthArgentina();
         const [settings] = await transaction
-          .select({ exchange_rate: monthly_settings.exchange_rate })
+          .select({
+            exchange_rate: monthly_settings.exchange_rate,
+            income_usd: monthly_settings.income_usd,
+            saving_goal_usd: monthly_settings.saving_goal_usd,
+          })
           .from(monthly_settings)
           .where(and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)))
           .limit(1);
-        if (!settings || settings.exchange_rate <= 0) {
+        if (!hasUsableUsdSettings(settings)) {
           return {
             resourceType: null,
             resourceId: null,
-            result: { text: "❌ Sin configuración mensual válida.", transactionId: "" },
+            result: { text: USD_MONTH_UNAVAILABLE_MESSAGE, transactionId: "" },
           };
         }
 
@@ -567,7 +590,7 @@ async function registerPersonalTransaction(
   const settings = await db.query.monthly_settings.findFirst({
     where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
   });
-  if (!settings || settings.exchange_rate <= 0) return { text: "❌ Sin configuración mensual válida.", transactionId: "" };
+  if (!hasUsableUsdSettings(settings)) return { text: USD_MONTH_UNAVAILABLE_MESSAGE, transactionId: "" };
 
   const amountUsd = parseFloat((amountArs / settings.exchange_rate).toFixed(2));
   const date = getArgentinaDate().toISOString().slice(0, 10);

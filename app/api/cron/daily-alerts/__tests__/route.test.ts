@@ -183,6 +183,21 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(sendTelegramMessage).not.toHaveBeenCalled();
   });
 
+  it("does not build or send a USD alert when the monthly USD summary is unavailable", async () => {
+    setupDailyProcessing([{ id: "u1", telegram_user_id: "tg-u1", active_telegram_group_id: "g1" }]);
+    (getMonthSummary as jest.Mock).mockResolvedValue(null);
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(await response.json()).toMatchObject({
+      results: [{ userId: "u1", sent: false, reason: "summary_unavailable" }],
+    });
+    expect(buildDailyAlert).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
+  });
+
   it("does not send to a stale group chat when the user has no linked private Telegram ID", async () => {
     setupDailyProcessing([{ id: "u1", telegram_user_id: null, active_telegram_group_id: "g1" }]);
     (db.query.bot_messages.findFirst as jest.Mock).mockResolvedValue({ telegram_chat_id: "stale-group-chat" });

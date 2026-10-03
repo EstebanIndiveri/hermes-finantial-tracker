@@ -1,6 +1,6 @@
 import { db } from "@/lib/db/client";
 import { transactions, budgets, monthly_settings, categories } from "@/lib/db/schema";
-import { eq, and, sum } from "drizzle-orm";
+import { eq, and, sum, count } from "drizzle-orm";
 import { calculateMonthStatus, calculateCategoryStatus } from "./rules";
 import { splitIncomeAndExpenses, isIncomeCategory } from "./income";
 
@@ -10,10 +10,26 @@ export async function getMonthSummary(groupId: string, month: string) {
   });
   if (!settings) return null;
 
+  // This projection is explicitly USD-based. Until its callers understand both
+  // modes, never run it for ARS-only settings or incomplete USD configuration.
+  if (
+    settings.currency_mode === "ARS_ARS" ||
+    settings.income_usd == null ||
+    settings.exchange_rate == null ||
+    settings.exchange_rate <= 0 ||
+    settings.saving_goal_usd == null ||
+    settings.saving_goal_yellow == null
+  ) return null;
+
   // Aggregate spend per category slug so income transactions can be separated
   // from real expenses (income must ADD to savings, not be subtracted).
   const rows = await db
-    .select({ slug: categories.slug, total: sum(transactions.amount_usd) })
+    .select({
+      slug: categories.slug,
+      total: sum(transactions.amount_usd),
+      transactionCount: count(transactions.id),
+      usdAmountCount: count(transactions.amount_usd),
+    })
     .from(transactions)
     .innerJoin(categories, eq(transactions.category_id, categories.id))
     .where(and(
@@ -23,8 +39,16 @@ export async function getMonthSummary(groupId: string, month: string) {
     ))
     .groupBy(categories.slug);
 
+  // A NULL aggregate means at least one USD amount is missing. Do not silently
+  // turn that into zero and publish a misleading balance.
+  if (rows.some((row) =>
+    row.total == null ||
+    !Number.isFinite(Number(row.total)) ||
+    row.transactionCount !== row.usdAmountCount
+  )) return null;
+
   const { expense: total_spent_usd, income: extra_income_usd } = splitIncomeAndExpenses(
-    rows.map((r) => ({ slug: r.slug, amount: Number(r.total ?? 0) })),
+    rows.map((r) => ({ slug: r.slug, amount: Number(r.total) })),
   );
 
   // Effective income = configured monthly income + income registered as transactions.

@@ -43,6 +43,16 @@ export async function GET(req: NextRequest) {
       with: { category: true },
     });
 
+    const settings = await db.query.monthly_settings.findFirst({
+      where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
+    });
+    if (settings?.currency_mode === "ARS_ARS" || rows.some((row) => row.amount_usd == null)) {
+      return NextResponse.json({
+        error: "This month uses a currency mode the current transaction reader cannot display yet.",
+        code: "CURRENCY_MODE_UNSUPPORTED",
+      }, { status: 409 });
+    }
+
     return NextResponse.json(rows);
   } catch (err) {
     console.error("Error fetching transactions:", err);
@@ -88,7 +98,17 @@ export async function POST(req: NextRequest) {
     });
     if (!settings) return NextResponse.json({ error: "No hay configuración para el mes activo." }, { status: 400 });
 
-    if (settings.exchange_rate <= 0) {
+    if (settings.currency_mode === "ARS_ARS") {
+      return NextResponse.json({
+        error: "This month uses a currency mode the current transaction writer does not support yet.",
+        code: "CURRENCY_MODE_UNSUPPORTED",
+      }, { status: 409 });
+    }
+    if (
+      settings.exchange_rate == null ||
+      !Number.isFinite(settings.exchange_rate) ||
+      settings.exchange_rate <= 0
+    ) {
       return NextResponse.json({ error: "Invalid exchange rate configuration" }, { status: 500 });
     }
 

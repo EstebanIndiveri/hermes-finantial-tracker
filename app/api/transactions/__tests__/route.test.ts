@@ -50,6 +50,7 @@ jest.mock("@/lib/reimbursements/requests", () => ({
 describe("GET /api/transactions", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue(undefined);
     (datesUtil.getActiveMonthArgentina as jest.Mock).mockReturnValue("2025-05");
     const { getGroupMembership } = require("@/lib/groups/permissions");
     getGroupMembership.mockResolvedValue({ group_id: "group-123", user_id: "user-123", role: "member" });
@@ -103,6 +104,7 @@ describe("GET /api/transactions", () => {
       {
         id: "tx-1",
         user_id: "user-123",
+        amount_usd: 10,
         month: "2025-04",
         status: "active",
       },
@@ -121,6 +123,22 @@ describe("GET /api/transactions", () => {
 
     const response = await GET(req);
     expect(response.status).toBe(200);
+  });
+
+  test("does not return nullable USD amounts from an ARS-only month", async () => {
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS" });
+    (db.query.transactions.findMany as jest.Mock).mockResolvedValue([
+      { id: "tx-ars", amount_ars: 1000, amount_usd: null, month: "2025-05", status: "active" },
+    ]);
+
+    const req = new NextRequest("http://localhost:3000/api/transactions");
+    Object.defineProperty(req.headers, "get", {
+      value: jest.fn((key: string) => key === "x-user-id" ? "user-123" : key === "x-group-id" ? "group-123" : null),
+    });
+
+    const response = await GET(req);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "CURRENCY_MODE_UNSUPPORTED" });
   });
 
   test("does not return deleted transactions", async () => {
@@ -922,6 +940,29 @@ describe("POST /api/transactions", () => {
 
     expect(response.status).toBe(500);
     expect(data.error).toContain("exchange");
+  });
+
+  test("rejects ARS-only settings before writing through the USD-only path", async () => {
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({
+      currency_mode: "ARS_ARS",
+      exchange_rate: null,
+    });
+
+    const req = new NextRequest("http://localhost:3000/api/transactions", {
+      method: "POST",
+      body: JSON.stringify({
+        category_id: "123e4567-e89b-12d3-a456-426614174000",
+        amount_ars: 5000,
+      }),
+    });
+    Object.defineProperty(req.headers, "get", {
+      value: jest.fn((key: string) => key === "x-user-id" ? "user-123" : key === "x-group-id" ? "group-123" : null),
+    });
+
+    const response = await POST(req);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "CURRENCY_MODE_UNSUPPORTED" });
+    expect(db.insert).not.toHaveBeenCalled();
   });
 });
 

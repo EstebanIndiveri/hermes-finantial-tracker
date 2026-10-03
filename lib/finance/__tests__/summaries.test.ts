@@ -17,11 +17,11 @@ beforeAll(async () => {
     CREATE TABLE monthly_settings (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, group_id TEXT NOT NULL,
       month TEXT NOT NULL, currency_mode TEXT NOT NULL DEFAULT 'USD_ARS',
-      income_usd REAL NOT NULL, income_ars REAL, exchange_rate REAL NOT NULL,
+      income_usd REAL, income_ars REAL, exchange_rate REAL,
       exchange_rate_source TEXT NOT NULL DEFAULT 'manual',
-      exchange_rate_updated_at INTEGER, saving_goal_usd REAL NOT NULL DEFAULT 0,
+      exchange_rate_updated_at INTEGER, saving_goal_usd REAL DEFAULT 0,
       saving_goal_ars REAL, saving_goal_yellow_ars REAL,
-      saving_goal_yellow REAL NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0
+      saving_goal_yellow REAL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE categories (
       id TEXT PRIMARY KEY, group_id TEXT NOT NULL, slug TEXT NOT NULL,
@@ -31,7 +31,7 @@ beforeAll(async () => {
     );
     CREATE TABLE transactions (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, group_id TEXT NOT NULL,
-      category_id TEXT NOT NULL, amount_ars REAL NOT NULL, amount_usd REAL NOT NULL,
+      category_id TEXT NOT NULL, amount_ars REAL NOT NULL, amount_usd REAL,
       date TEXT NOT NULL, month TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'web',
       status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL DEFAULT 0
     );
@@ -40,6 +40,7 @@ beforeAll(async () => {
     { sql: "INSERT INTO monthly_settings (id,user_id,group_id,month,income_usd,exchange_rate) VALUES (?,?,?,?,?,?)", args: ["s-a-sep", "u-a", "g-a", "2026-09", 1000, 1600] },
     { sql: "INSERT INTO monthly_settings (id,user_id,group_id,month,income_usd,exchange_rate) VALUES (?,?,?,?,?,?)", args: ["s-a-aug", "u-a", "g-a", "2026-08", 900, 1500] },
     { sql: "INSERT INTO monthly_settings (id,user_id,group_id,month,income_usd,exchange_rate) VALUES (?,?,?,?,?,?)", args: ["s-b-sep", "u-b", "g-b", "2026-09", 2000, 1700] },
+    { sql: "INSERT INTO monthly_settings (id,user_id,group_id,month,currency_mode,income_ars) VALUES (?,?,?,?,?,?)", args: ["s-ars-oct", "u-a", "g-a", "2026-10", "ARS_ARS", 100000] },
     { sql: "INSERT INTO categories (id,group_id,slug,name) VALUES (?,?,?,?)", args: ["c-a-income", "g-a", "ingresos", "Ingresos"] },
     { sql: "INSERT INTO categories (id,group_id,slug,name) VALUES (?,?,?,?)", args: ["c-a-super", "g-a", "supermercado", "Supermercado"] },
     { sql: "INSERT INTO categories (id,group_id,slug,name) VALUES (?,?,?,?)", args: ["c-b-super", "g-b", "supermercado", "Supermercado"] },
@@ -94,4 +95,23 @@ it("reconciles the displayed USD totals for only the requested group and month",
     ahorro_proyectado_usd: 1700,
   });
   expect(await getMonthSummary("g-b", "2026-08")).toBeNull();
+  expect(await getMonthSummary("g-a", "2026-10")).toBeNull();
+});
+
+it("does not project an incomplete USD configuration as zero-valued income", async () => {
+  await client.execute({
+    sql: "INSERT INTO monthly_settings (id,user_id,group_id,month,currency_mode,income_usd,exchange_rate,saving_goal_usd,saving_goal_yellow) VALUES (?,?,?,?,?,?,?,?,?)",
+    args: ["s-incomplete", "u-a", "g-a", "2026-11", "USD_ARS", null, 1600, 0, 0],
+  });
+  expect(await getMonthSummary("g-a", "2026-11")).toBeNull();
+
+  await client.execute({
+    sql: "INSERT INTO monthly_settings (id,user_id,group_id,month,currency_mode,income_usd,exchange_rate,saving_goal_usd,saving_goal_yellow) VALUES (?,?,?,?,?,?,?,?,?)",
+    args: ["s-usd-dec", "u-a", "g-a", "2026-12", "USD_ARS", 1000, 1600, 0, 0],
+  });
+  await client.execute({
+    sql: "INSERT INTO transactions (id,user_id,group_id,category_id,amount_ars,amount_usd,date,month,status) VALUES (?,?,?,?,?,?,?,?,?)",
+    args: ["tx-missing-usd", "u-a", "g-a", "c-a-super", 500, null, "2026-12-01", "2026-12", "active"],
+  });
+  expect(await getMonthSummary("g-a", "2026-12")).toBeNull();
 });

@@ -84,7 +84,9 @@ export async function GET(req: NextRequest) {
       ]);
 
       if (!summary) {
-        results.push({ userId: user.id, sent: false, reason: "no_settings" });
+        // No USD summary also covers a month whose currency mode or required
+        // USD values are not supported by this legacy alert projection.
+        results.push({ userId: user.id, sent: false, reason: "summary_unavailable" });
         continue;
       }
 
