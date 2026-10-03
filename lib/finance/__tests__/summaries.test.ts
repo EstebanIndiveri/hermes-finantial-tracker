@@ -16,9 +16,11 @@ beforeAll(async () => {
   await client.executeMultiple(`
     CREATE TABLE monthly_settings (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, group_id TEXT NOT NULL,
-      month TEXT NOT NULL, income_usd REAL NOT NULL, exchange_rate REAL NOT NULL,
+      month TEXT NOT NULL, currency_mode TEXT NOT NULL DEFAULT 'USD_ARS',
+      income_usd REAL NOT NULL, income_ars REAL, exchange_rate REAL NOT NULL,
       exchange_rate_source TEXT NOT NULL DEFAULT 'manual',
       exchange_rate_updated_at INTEGER, saving_goal_usd REAL NOT NULL DEFAULT 0,
+      saving_goal_ars REAL, saving_goal_yellow_ars REAL,
       saving_goal_yellow REAL NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE categories (

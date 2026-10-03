@@ -5,7 +5,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createClient } from "@libsql/client";
 
 export const RUNNER_VERSION = "1";
-export const CANONICAL_SCHEMA_FINGERPRINT = "309646a60fcdfc1566e6110cc4e5ec8eb32cbfdb1ffa4ee03a3d838d54014701";
+const PRE_CURRENCY_SCHEMA_FINGERPRINT = "309646a60fcdfc1566e6110cc4e5ec8eb32cbfdb1ffa4ee03a3d838d54014701";
+export const CANONICAL_SCHEMA_FINGERPRINT = "303c87dd206a35f97200560a7974b6cd729763890daff27947f8371e3f9c6227";
 export const DEFAULT_MANIFEST_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../lib/db/migrations/manifest.json",
@@ -91,6 +92,15 @@ const SCHEMA_REQUIREMENTS = {
     ],
     operationNamespaceForeignKey: true,
   },
+  "0090-currency-modes": {
+    columns: {
+      monthly_settings: ["currency_mode", "income_ars", "saving_goal_ars", "saving_goal_yellow_ars"],
+      transactions: ["currency_mode", "exchange_rate_snapshot"],
+    },
+    nullableColumns: {
+      transactions: ["amount_usd"],
+    },
+  },
 };
 
 const ALLOWED_PREFLIGHTS = new Set(["recurring-duplicates"]);
@@ -163,6 +173,18 @@ export async function loadMigrationManifest(manifestPath = DEFAULT_MANIFEST_PATH
         "The Telegram operations/outbox migration requires the recurring-duplicates preflight.",
       );
     }
+    const foreignKeys = migration.foreignKeys ?? "enabled";
+    if (foreignKeys !== "enabled" && foreignKeys !== "disabled-during-rebuild") {
+      throw migrationError("INVALID_MANIFEST", `Migration ${migration.id} has an unsupported foreign-key mode.`);
+    }
+    if (
+      foreignKeys === "disabled-during-rebuild" &&
+      (migration.id !== "0090-currency-modes" ||
+        loadedFiles.length !== 1 ||
+        loadedFiles[0].file !== "0011_currency_modes.sql")
+    ) {
+      throw migrationError("INVALID_MANIFEST", "Foreign-key suspension is restricted to the currency table rebuild.");
+    }
 
     const checksumMaterial = loadedFiles
       .map(({ file, contents }) => `${file}\0${sha256(contents)}`)
@@ -172,6 +194,7 @@ export async function loadMigrationManifest(manifestPath = DEFAULT_MANIFEST_PATH
       files: loadedFiles,
       checksum: sha256(checksumMaterial),
       preflight,
+      foreignKeys,
     });
   }
 
@@ -316,6 +339,18 @@ async function canonicalSchemaDrift(client, tables, appliedMigrationIds) {
       if (!columns.has(column)) drift.push(`missing-column:${table}.${column}`);
     }
   }
+  for (const requirement of requirements) {
+    for (const [table, nullableColumns] of Object.entries(requirement.nullableColumns ?? {})) {
+      if (!tableSet.has(table)) continue;
+      const result = await client.execute(`PRAGMA table_info(${table})`);
+      const byName = new Map(result.rows.map((row) => [String(row.name), row]));
+      for (const column of nullableColumns) {
+        if (byName.has(column) && Number(byName.get(column).notnull) !== 0) {
+          drift.push(`invalid-nullability:${table}.${column}`);
+        }
+      }
+    }
+  }
   const indexes = new Set(await indexNames(client));
   for (const index of requiredIndexes) {
     if (!indexes.has(index)) drift.push(`missing-index:${index}`);
@@ -338,6 +373,11 @@ async function canonicalSchemaDrift(client, tables, appliedMigrationIds) {
     if (fingerprint !== CANONICAL_SCHEMA_FINGERPRINT) {
       drift.push("schema-fingerprint-mismatch");
     }
+  } else if (canonicalIds.slice(0, -1).every((migrationId) => appliedMigrationIds.has(migrationId))) {
+    const fingerprint = await computeSchemaFingerprint(client);
+    if (fingerprint !== PRE_CURRENCY_SCHEMA_FINGERPRINT) {
+      drift.push("pre-currency-schema-fingerprint-mismatch");
+    }
   }
   return drift;
 }
@@ -359,6 +399,13 @@ async function recurringDuplicateCount(client) {
 async function foreignKeyViolationCount(client) {
   const result = await client.execute("PRAGMA foreign_key_check");
   return result.rows.length;
+}
+
+async function assertDatabaseIntegrity(client) {
+  const result = await client.execute("PRAGMA integrity_check");
+  if (result.rows.length !== 1 || String(result.rows[0]?.integrity_check) !== "ok") {
+    throw migrationError("INTEGRITY_CHECK_FAILED", "SQLite integrity_check did not return ok.");
+  }
 }
 
 async function inspectWithClient(client, loadedManifest) {
@@ -446,9 +493,28 @@ async function applyMigration(client, migration) {
     await assertOutboxPreflight(client);
   }
 
-  const transaction = await client.transaction("write");
+  if (migration.foreignKeys === "disabled-during-rebuild") {
+    try {
+      await client.execute("PRAGMA foreign_keys = OFF");
+      const setting = await client.execute("PRAGMA foreign_keys");
+      if (Number(setting.rows[0]?.foreign_keys ?? 1) !== 0) {
+        throw migrationError("FOREIGN_KEY_MODE_FAILED", `Could not disable foreign keys for ${migration.id}.`);
+      }
+    } catch (error) {
+      try {
+        await client.execute("PRAGMA foreign_keys = ON");
+      } catch (restoreError) {
+        throw new AggregateError([error, restoreError], `Could not prepare or restore foreign keys for ${migration.id}.`);
+      }
+      throw error;
+    }
+  }
+
+  let migrationFailure;
+  let transaction;
   let finished = false;
   try {
+    transaction = await client.transaction("write");
     await transaction.execute(LEDGER_DDL);
     for (const file of migration.files) {
       await transaction.executeMultiple(file.contents);
@@ -469,14 +535,43 @@ async function applyMigration(client, migration) {
     await transaction.commit();
     finished = true;
   } catch (error) {
-    if (!finished) {
-      await transaction.rollback();
-      finished = true;
+    migrationFailure = error;
+    if (transaction && !finished) {
+      try {
+        await transaction.rollback();
+        finished = true;
+      } catch (rollbackError) {
+        migrationFailure = new AggregateError([error, rollbackError], `Migration ${migration.id} and rollback both failed.`);
+      }
     }
-    throw error;
   } finally {
-    transaction.close();
+    try {
+      transaction?.close();
+    } catch (closeError) {
+      migrationFailure = migrationFailure
+        ? new AggregateError([migrationFailure, closeError], `Migration ${migration.id} and transaction close both failed.`)
+        : closeError;
+    }
   }
+
+  if (migration.foreignKeys === "disabled-during-rebuild") {
+    try {
+      await client.execute("PRAGMA foreign_keys = ON");
+      const setting = await client.execute("PRAGMA foreign_keys");
+      if (Number(setting.rows[0]?.foreign_keys ?? 0) !== 1) {
+        throw migrationError("FOREIGN_KEY_RESTORE_FAILED", `Could not restore foreign keys after ${migration.id}.`);
+      }
+      const violations = await foreignKeyViolationCount(client);
+      if (violations > 0) {
+        throw migrationError("FOREIGN_KEY_VIOLATION", `${migration.id} left ${violations} foreign key violation(s).`);
+      }
+    } catch (restoreError) {
+      migrationFailure = migrationFailure
+        ? new AggregateError([migrationFailure, restoreError], `Migration ${migration.id} failed and FK restoration/check failed.`)
+        : restoreError;
+    }
+  }
+  if (migrationFailure) throw migrationFailure;
 }
 
 export async function migrateDatabase({ url, manifestPath = DEFAULT_MANIFEST_PATH }) {
@@ -522,8 +617,12 @@ export async function migrateDatabase({ url, manifestPath = DEFAULT_MANIFEST_PAT
     }
 
     const finalInspection = await inspectWithClient(client, loadedManifest);
+    await assertDatabaseIntegrity(client);
     if (finalInspection.state !== "canonical" || finalInspection.preflight.foreignKeyViolationCount !== 0) {
-      throw migrationError("POST_MIGRATION_VERIFICATION_FAILED", "Canonical post-migration verification failed.");
+      throw migrationError(
+        "POST_MIGRATION_VERIFICATION_FAILED",
+        `Canonical post-migration verification failed: state=${finalInspection.state}; drift=${finalInspection.schemaDrift.join(",") || "none"}; fkViolations=${finalInspection.preflight.foreignKeyViolationCount}.`,
+      );
     }
     return { appliedMigrationIds: applied, inspection: finalInspection };
   } finally {

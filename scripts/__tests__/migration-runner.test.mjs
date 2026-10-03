@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -31,18 +31,27 @@ async function query(url, sql) {
   }
 }
 
+async function executeMultiple(url, sql) {
+  const client = createClient({ url });
+  try {
+    return await client.executeMultiple(sql);
+  } finally {
+    client.close();
+  }
+}
+
 test("canonical manifest classifies every SQL file exactly once", async () => {
   const manifest = await loadMigrationManifest();
-  assert.equal(manifest.migrations.length, 9);
+  assert.equal(manifest.migrations.length, 10);
   assert.equal(manifest.excluded.length, 5);
-  assert.equal(new Set(manifest.migrations.map(({ id }) => id)).size, 9);
+  assert.equal(new Set(manifest.migrations.map(({ id }) => id)).size, 10);
 });
 
 test("fresh migration reaches the H04b schema and a second run is a no-op", async (t) => {
   const database = await temporaryDatabase(t);
 
   const first = await migrateDatabase({ url: database.url });
-  assert.equal(first.appliedMigrationIds.length, 9);
+  assert.equal(first.appliedMigrationIds.length, 10);
   assert.equal(first.inspection.state, "canonical");
   assert.equal(first.inspection.preflight.foreignKeysEnabled, true);
   assert.equal(first.inspection.preflight.foreignKeyViolationCount, 0);
@@ -68,6 +77,8 @@ test("fresh migration reaches the H04b schema and a second run is a no-op", asyn
   assert.equal(transactionColumnNames.has("group_id"), true);
   assert.equal(transactionColumnNames.has("requires_reimbursement"), true);
   assert.equal(transactionColumnNames.has("operation_id"), true);
+  assert.equal(transactionColumnNames.has("exchange_rate_snapshot"), true);
+  assert.equal(transactionColumns.rows.find((row) => row.name === "amount_usd")?.notnull, 0);
 
   const groupColumns = await query(database.url, "PRAGMA table_info(groups)");
   assert.equal(groupColumns.rows.some((row) => row.name === "partner_id"), true);
@@ -85,7 +96,137 @@ test("fresh migration reaches the H04b schema and a second run is a no-op", asyn
 
   const second = await migrateDatabase({ url: database.url });
   assert.deepEqual(second.appliedMigrationIds, []);
-  assert.equal(second.inspection.appliedMigrationIds.length, 9);
+  assert.equal(second.inspection.appliedMigrationIds.length, 10);
+});
+
+async function writeManifestSnapshot(directory, manifest, migrationCount, { failCurrencyMigration = false } = {}) {
+  const sourceDirectory = manifest.migrationDirectory;
+  const migrations = manifest.migrations.slice(0, migrationCount).map((migration) => ({
+    id: migration.id,
+    files: migration.files.map(({ file }) => file),
+    ...(migration.preflight.length ? { preflight: migration.preflight } : {}),
+    ...(migration.foreignKeys !== "enabled" ? { foreignKeys: migration.foreignKeys } : {}),
+  }));
+  const excluded = manifest.excluded.map(({ file, reason }) => ({ file, reason }));
+  for (const migration of manifest.migrations.slice(migrationCount)) {
+    for (const { file } of migration.files) {
+      excluded.push({ file, reason: "Excluded by this isolated migration test snapshot." });
+    }
+  }
+  const files = new Set([
+    ...migrations.flatMap((migration) => migration.files),
+    ...excluded.map(({ file }) => file),
+  ]);
+  for (const file of files) {
+    let contents = await readFile(join(sourceDirectory, file), "utf8");
+    if (failCurrencyMigration && file === "0011_currency_modes.sql") {
+      contents += "\nSELECT * FROM table_that_does_not_exist;\n";
+    }
+    await writeFile(join(directory, file), contents, "utf8");
+  }
+  const manifestPath = join(directory, "manifest.json");
+  await writeFile(manifestPath, JSON.stringify({ version: 1, ledgerTable: "hermes_schema_migrations", migrations, excluded }), "utf8");
+  return manifestPath;
+}
+
+test("currency migration preserves existing records, incoming FKs, indexes and permits ARS-only rows", async (t) => {
+  const database = await temporaryDatabase(t);
+  const canonical = await loadMigrationManifest();
+  const prefixManifest = await writeManifestSnapshot(database.directory, canonical, 9);
+  await migrateDatabase({ url: database.url, manifestPath: prefixManifest });
+  await executeMultiple(database.url, `
+    INSERT INTO users (id, name, username) VALUES ('u1', 'User', 'user');
+    INSERT INTO groups (id, name, owner_id) VALUES ('g1', 'Group', 'u1');
+    INSERT INTO categories (id, group_id, slug, name) VALUES ('c1', 'g1', 'food', 'Food');
+    INSERT INTO monthly_settings (id, user_id, group_id, month, income_usd, exchange_rate, saving_goal_usd, saving_goal_yellow)
+      VALUES ('m1', 'u1', 'g1', '2026-10', 2500, 1600, 500, 300);
+    INSERT INTO transactions (id, operation_id, user_id, group_id, category_id, amount_ars, amount_usd, date, month)
+      VALUES ('t1', 'op1', 'u1', 'g1', 'c1', 1600, 1, '2026-10-03', '2026-10');
+    INSERT INTO reimbursement_requests (id, transaction_id, requester_id, amount)
+      VALUES ('r1', 't1', 'u1', 800);
+    INSERT INTO recurring_expenses (id, user_id, group_id, name, amount_ars, category_id)
+      VALUES ('re1', 'u1', 'g1', 'Rent', 1600, 'c1');
+    INSERT INTO recurring_executions (id, recurring_expense_id, transaction_id, scheduled_date)
+      VALUES ('rx1', 're1', 't1', '2026-10-03');
+  `);
+
+  const result = await migrateDatabase({ url: database.url });
+  assert.deepEqual(result.appliedMigrationIds, ["0090-currency-modes"]);
+  assert.equal(result.inspection.preflight.foreignKeysEnabled, true);
+  assert.equal(result.inspection.preflight.foreignKeyViolationCount, 0);
+
+  const transaction = await query(database.url, "SELECT * FROM transactions WHERE id = 't1'");
+  assert.equal(transaction.rows.length, 1);
+  assert.equal(Number(transaction.rows[0].amount_ars), 1600);
+  assert.equal(Number(transaction.rows[0].amount_usd), 1);
+  assert.equal(transaction.rows[0].operation_id, "op1");
+  assert.equal(transaction.rows[0].currency_mode, "USD_ARS");
+  assert.equal(transaction.rows[0].exchange_rate_snapshot, null);
+  const settings = await query(database.url, "SELECT * FROM monthly_settings WHERE id = 'm1'");
+  assert.equal(Number(settings.rows[0].income_usd), 2500);
+  assert.equal(settings.rows[0].currency_mode, "USD_ARS");
+  assert.equal(settings.rows[0].income_ars, null);
+  assert.equal(settings.rows[0].saving_goal_ars, null);
+  assert.equal(settings.rows[0].saving_goal_yellow_ars, null);
+  const childCounts = await query(database.url, `
+    SELECT
+      (SELECT COUNT(*) FROM reimbursement_requests WHERE transaction_id = 't1') AS reimbursements,
+      (SELECT COUNT(*) FROM recurring_executions WHERE transaction_id = 't1') AS executions
+  `);
+  assert.equal(Number(childCounts.rows[0].reimbursements), 1);
+  assert.equal(Number(childCounts.rows[0].executions), 1);
+  const incomingForeignKeys = await query(database.url, `
+    SELECT m.name AS child_table, f."from" AS child_column
+    FROM sqlite_schema m, pragma_foreign_key_list(m.name) f
+    WHERE m.type = 'table' AND f."table" = 'transactions'
+  `);
+  assert.deepEqual(new Set(incomingForeignKeys.rows.map((row) => String(row.child_table))), new Set(["reimbursement_requests", "recurring_executions"]));
+  const indexes = await query(database.url, "SELECT name FROM sqlite_schema WHERE type = 'index'");
+  const names = new Set(indexes.rows.map((row) => String(row.name)));
+  for (const name of ["tx_user_month_idx", "tx_category_idx", "tx_group_id_idx", "transactions_operation_id_idx"]) {
+    assert.equal(names.has(name), true, `missing index ${name}`);
+  }
+
+  await executeMultiple(database.url, `
+    INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,
+      exchange_rate_snapshot, currency_mode, date, month)
+    VALUES ('t2', 'u1', 'g1', 'c1', 2500, NULL, NULL, 'ARS_ARS', '2026-10-03', '2026-10')
+  `);
+  await assert.rejects(query(database.url, `
+    INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,
+      exchange_rate_snapshot, currency_mode, date, month)
+    VALUES ('t3', 'u1', 'g1', 'c1', 2500, 1.56, 1600, 'ARS_ARS', '2026-10-03', '2026-10')
+  `));
+  await assert.rejects(query(database.url, `
+    INSERT INTO transactions (id, operation_id, user_id, group_id, category_id, amount_ars,
+      amount_usd, currency_mode, date, month)
+    VALUES ('t4', 'op1', 'u1', 'g1', 'c1', 2500, NULL, 'ARS_ARS', '2026-10-03', '2026-10')
+  `));
+  const second = await migrateDatabase({ url: database.url });
+  assert.deepEqual(second.appliedMigrationIds, []);
+});
+
+test("currency table rebuild rolls back atomically and restores FK enforcement", async (t) => {
+  const database = await temporaryDatabase(t);
+  const canonical = await loadMigrationManifest();
+  const prefixManifest = await writeManifestSnapshot(database.directory, canonical, 9);
+  await migrateDatabase({ url: database.url, manifestPath: prefixManifest });
+  await executeMultiple(database.url, `
+    INSERT INTO users (id, name, username) VALUES ('u1', 'User', 'user');
+    INSERT INTO categories (id, slug, name) VALUES ('c1', 'food', 'Food');
+    INSERT INTO transactions (id, user_id, category_id, amount_ars, amount_usd, date, month)
+      VALUES ('t1', 'u1', 'c1', 1600, 1, '2026-10-03', '2026-10');
+  `);
+  const brokenManifest = await writeManifestSnapshot(database.directory, canonical, 10, { failCurrencyMigration: true });
+  await assert.rejects(migrateDatabase({ url: database.url, manifestPath: brokenManifest }));
+  const foreignKeys = await query(database.url, "PRAGMA foreign_keys");
+  assert.equal(Number(foreignKeys.rows[0].foreign_keys), 1);
+  const oldTable = await query(database.url, "PRAGMA table_info(transactions)");
+  assert.equal(oldTable.rows.find((row) => row.name === "amount_usd")?.notnull, 1);
+  const data = await query(database.url, "SELECT amount_usd FROM transactions WHERE id = 't1'");
+  assert.equal(Number(data.rows[0].amount_usd), 1);
+  const ledger = await query(database.url, "SELECT migration_id FROM hermes_schema_migrations ORDER BY migration_id");
+  assert.equal(ledger.rows.length, 9);
 });
 
 test("unmanaged non-empty databases are inspected but never adopted or mutated", async (t) => {

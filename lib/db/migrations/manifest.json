@@ -38,6 +38,11 @@
       "id": "0080-telegram-operations-outbox",
       "files": ["0010_telegram_operations_outbox.sql"],
       "preflight": ["recurring-duplicates"]
+    },
+    {
+      "id": "0090-currency-modes",
+      "files": ["0011_currency_modes.sql"],
+      "foreignKeys": "disabled-during-rebuild"
     }
   ],
   "excluded": [

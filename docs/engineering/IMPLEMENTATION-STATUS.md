@@ -459,12 +459,38 @@ without FX must never fabricate a USD amount. Activation requires a
 rehearsed, compatible nullable/typed-amount migration on isolated beta copies
 with backup and reconciliation, not just a UI flag.
 
-ACT-05 next gate, owner **Codex**: extend the canonical migration runner to
+ACT-05 entry gate (historical checkpoint, now closed locally), owner **Codex**: extend the canonical migration runner to
 rebuild `transactions` safely with its incoming reimbursement/recurring FKs,
 preserve all rows and partial operation index, add group/month mode and ARS
 settings, then prove rollback/reconciliation on local copies. The runner
 currently wraps each SQL migration in a transaction, so `PRAGMA foreign_keys`
-cannot simply be toggled inside a SQL file. No beta or legacy migration is
-authorized by this local contract cut. Subsequent owner Codex gates are
+cannot simply be toggled inside a SQL file. No beta or legacy migration was
+performed by this local contract cut. Subsequent owner Codex gates are
 mode-aware writers/readers, a corrected or disabled recurrent writer, full
 regression, then a separately gated beta rehearsal/activation and operator QA.
+
+### ACT-05 local migration foundation — 03/10/2026
+
+The canonical `0090-currency-modes` migration and a narrowly scoped FK-aware
+rebuild path are implemented **locally only** on `codex/act05-currency-modes`.
+Historical USD/ARS settings and transaction values remain unchanged; new
+transactions can explicitly represent ARS/ARS with `amount_usd=NULL`. Tests
+cover incoming reimbursement/recurring references, indexes, duplicate
+operation identity, all preserved historical columns, invalid pseudo-USD,
+idempotent rerun, induced rollback and FK restoration. The runner now checks
+SQLite integrity and both the pre-currency and new canonical fingerprints.
+Node 22 gates: 93/93 Jest suites and 787/787 tests; migration runner 14/14;
+typecheck, lint with zero errors and build passed. Typecheck and build must run
+sequentially because `next build` regenerates `.next/types` while TypeScript
+reads it; a parallel attempt produced transient missing-file errors, then the
+sequential rerun passed. No remote DB, beta, webhook or legacy resource changed.
+
+This closes **only the local schema/rehearsal foundation**. Owner **Codex**
+still must validate the migration against a fresh isolated beta backup/restore
+and the target's FK behavior before any beta write; update all writers,
+projections and surfaces behind a disabled beta flag; remove the recurrent
+1200-rate path; and run cross-channel money/permission tests. Because the
+TypeScript schema now selects the new columns, this branch must **not** be
+deployed before the beta schema is migrated and verified. Esteban owns manual
+acceptance only after the beta activation gate; production legacy is out of
+scope.

@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { text, real, integer, sqliteTable, uniqueIndex, index, primaryKey, foreignKey } from "drizzle-orm/sqlite-core";
+import { text, real, integer, sqliteTable, uniqueIndex, index, primaryKey, foreignKey, check } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -17,15 +17,20 @@ export const monthly_settings = sqliteTable("monthly_settings", {
   user_id: text("user_id").notNull().references(() => users.id),
   group_id: text("group_id").references(() => groups.id),
   month: text("month").notNull(),
+  currency_mode: text("currency_mode").notNull().default("USD_ARS"),
   income_usd: real("income_usd").notNull().default(0),
+  income_ars: real("income_ars"),
   exchange_rate: real("exchange_rate").notNull().default(1),
   exchange_rate_source: text("exchange_rate_source").notNull().default("manual"),
   exchange_rate_updated_at: integer("exchange_rate_updated_at"),
   saving_goal_usd: real("saving_goal_usd").notNull().default(0),
+  saving_goal_ars: real("saving_goal_ars"),
+  saving_goal_yellow_ars: real("saving_goal_yellow_ars"),
   saving_goal_yellow: real("saving_goal_yellow").notNull().default(0),
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 }, (t) => ({
   uniqGroupMonth: uniqueIndex("ms_group_month_idx").on(t.group_id, t.month),
+  currencyModeCheck: check("monthly_settings_currency_mode_check", sql`${t.currency_mode} IN ('USD_ARS', 'ARS_ARS')`),
 }));
 
 export const categories = sqliteTable("categories", {
@@ -62,7 +67,9 @@ export const transactions = sqliteTable("transactions", {
   group_id: text("group_id").references(() => groups.id),
   category_id: text("category_id").notNull().references(() => categories.id),
   amount_ars: real("amount_ars").notNull(),
-  amount_usd: real("amount_usd").notNull(),
+  amount_usd: real("amount_usd"),
+  exchange_rate_snapshot: real("exchange_rate_snapshot"),
+  currency_mode: text("currency_mode").notNull().default("USD_ARS"),
   merchant: text("merchant"),
   description: text("description"),
   date: text("date").notNull(),
@@ -78,6 +85,10 @@ export const transactions = sqliteTable("transactions", {
   categoryIdx: index("tx_category_idx").on(t.category_id),
   groupIdx: index("tx_group_id_idx").on(t.group_id),
   operationIdx: uniqueIndex("transactions_operation_id_idx").on(t.operation_id).where(sql`${t.operation_id} IS NOT NULL`),
+  currencyModeAmountCheck: check(
+    "transactions_currency_mode_amount_check",
+    sql`(${t.currency_mode} = 'USD_ARS' AND ${t.amount_usd} IS NOT NULL) OR (${t.currency_mode} = 'ARS_ARS' AND ${t.amount_usd} IS NULL AND ${t.exchange_rate_snapshot} IS NULL)`,
+  ),
 }));
 
 export const bot_messages = sqliteTable("bot_messages", {

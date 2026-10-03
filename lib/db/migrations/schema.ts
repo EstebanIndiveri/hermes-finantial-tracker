@@ -16,6 +16,7 @@ export const botMessages = sqliteTable("bot_messages", {
 	uniqueIndex("bot_messages_telegram_update_id_unique").on(table.telegramUpdateId),
 	check("group_members_check_1", sql`role IN ('owner', 'admin', 'member'`),
 	check("group_invitations_check_2", sql`role IN ('admin', 'member'`),
+	check("monthly_settings_currency_mode_check", sql`currency_mode IN ('USD_ARS', 'ARS_ARS')`),
 ]);
 
 export const budgets = sqliteTable("budgets", {
@@ -54,11 +55,15 @@ export const monthlySettings = sqliteTable("monthly_settings", {
 	id: text().primaryKey().notNull(),
 	userId: text("user_id").notNull().references(() => users.id),
 	month: text().notNull(),
+	currencyMode: text("currency_mode").notNull().default("USD_ARS"),
 	incomeUsd: real("income_usd").notNull(),
+	incomeArs: real("income_ars"),
 	exchangeRate: real("exchange_rate").default(1).notNull(),
 	exchangeRateSource: text("exchange_rate_source").default("manual").notNull(),
 	exchangeRateUpdatedAt: integer("exchange_rate_updated_at"),
 	savingGoalUsd: real("saving_goal_usd").notNull(),
+	savingGoalArs: real("saving_goal_ars"),
+	savingGoalYellowArs: real("saving_goal_yellow_ars"),
 	savingGoalYellow: real("saving_goal_yellow").notNull(),
 	createdAt: integer("created_at").default(sql`(unixepoch() * 1000)`).notNull(),
 	groupId: text("group_id").references(() => groups.id),
@@ -74,7 +79,9 @@ export const transactions = sqliteTable("transactions", {
 	userId: text("user_id").notNull().references(() => users.id),
 	categoryId: text("category_id").notNull().references(() => categories.id),
 	amountArs: real("amount_ars").notNull(),
-	amountUsd: real("amount_usd").notNull(),
+	amountUsd: real("amount_usd"),
+	exchangeRateSnapshot: real("exchange_rate_snapshot"),
+	currencyMode: text("currency_mode").notNull().default("USD_ARS"),
 	merchant: text(),
 	description: text(),
 	date: text().notNull(),
@@ -89,6 +96,7 @@ export const transactions = sqliteTable("transactions", {
 (table) => [
 	index("tx_category_idx").on(table.categoryId),
 	index("tx_user_month_idx").on(table.userId, table.month),
+	check("transactions_currency_mode_amount_check", sql`(currency_mode = 'USD_ARS' AND amount_usd IS NOT NULL) OR (currency_mode = 'ARS_ARS' AND amount_usd IS NULL AND exchange_rate_snapshot IS NULL)`),
 	check("group_members_check_1", sql`role IN ('owner', 'admin', 'member'`),
 	check("group_invitations_check_2", sql`role IN ('admin', 'member'`),
 ]);
@@ -176,4 +184,3 @@ export const telegramLinkCodes = sqliteTable("telegram_link_codes", {
 	check("telegram_link_codes_check_1", sql`role IN ('owner', 'admin', 'member')`),
 	check("telegram_link_codes_check_2", sql`role IN ('admin', 'member')`),
 ]);
-
