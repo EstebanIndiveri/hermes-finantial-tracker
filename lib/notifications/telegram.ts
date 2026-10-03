@@ -25,10 +25,10 @@ export function buildReimbursementRequestNotification(input: {
     : "No configurado";
 
   return {
-    text: `💸 <b>Solicitud de Reintegro</b>\n\n👤 ${input.requesterName ?? "Usuario"} gastó <b>$${input.amount.toLocaleString("es-AR")}</b>\n📁 Categoría: ${input.categoryName}\n📝 ${input.description || "Sin descripción"}\n\n💳 Datos de pago: ${paymentText}`,
+    text: `💸 <b>Solicitud de Reintegro</b>\n\n👤 ${input.requesterName ?? "Usuario"} gastó <b>ARS $${input.amount.toLocaleString("es-AR")}</b>\n📁 Categoría: ${input.categoryName}\n📝 ${input.description || "Sin descripción"}\n\n💳 Datos de pago: ${paymentText}`,
     replyMarkup: {
       inline_keyboard: [[
-        { text: `✅ Pagar $${input.amount.toLocaleString("es-AR")}`, callback_data: `pay_reimbursement:${input.reimbursementId}` },
+        { text: `✅ Pagar ARS $${input.amount.toLocaleString("es-AR")}`, callback_data: `pay_reimbursement:${input.reimbursementId}` },
       ]],
     },
   };
@@ -36,13 +36,13 @@ export function buildReimbursementRequestNotification(input: {
 
 export function buildReimbursementPaidNotification(payerName: string, amount: number): TelegramNotificationMessage {
   return {
-    text: `✅ <b>Reintegro Pagado</b>\n\n${payerName} te ha pagado <b>$${amount.toLocaleString("es-AR")}</b>\n\n¡Ya está todo saldado! 🎉`,
+    text: `✅ <b>Reintegro Pagado</b>\n\n${payerName} te ha pagado <b>ARS $${amount.toLocaleString("es-AR")}</b>\n\n¡Ya está todo saldado! 🎉`,
   };
 }
 
 export function buildReimbursementCancelledNotification(requesterName: string, amount: number): TelegramNotificationMessage {
   return {
-    text: `❌ <b>Reintegro Cancelado</b>\n\n${requesterName} canceló su solicitud de reintegro de <b>$${amount.toLocaleString("es-AR")}</b>\n\nNo es necesario realizar el pago.`,
+    text: `❌ <b>Reintegro Cancelado</b>\n\n${requesterName} canceló su solicitud de reintegro de <b>ARS $${amount.toLocaleString("es-AR")}</b>\n\nNo es necesario realizar el pago.`,
   };
 }
 
@@ -173,7 +173,7 @@ export async function notifyReimbursementReminder(
 
   const message = `⏰ <b>Recordatorio de Reintegro</b>
 
-${requesterName} te solicitó un reintegro de <b>$${amount.toLocaleString("es-AR")}</b> hace ${daysPending} días.
+${requesterName} te solicitó un reintegro de <b>ARS $${amount.toLocaleString("es-AR")}</b> hace ${daysPending} días.
 
 Usa /reintegros para ver y pagar pendientes.`;
 

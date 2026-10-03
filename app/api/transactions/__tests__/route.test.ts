@@ -283,16 +283,17 @@ describe("POST /api/transactions", () => {
     }));
   });
 
-  test("creates an ARS transaction without inventing an FX rate when enabled", async () => {
+  test("creates an ARS transaction and reimbursement in ARS without inventing FX", async () => {
     process.env.ACT05_ARS_MODE_ENABLED = "true";
     (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS", exchange_rate: null });
     (db.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
     const values = jest.fn().mockResolvedValue(undefined);
     (db.insert as jest.Mock).mockReturnValue({ values });
+    (createReimbursementWithNotifications as jest.Mock).mockResolvedValue({ id: "reimbursement-ars" });
 
     const req = new NextRequest("http://localhost:3000/api/transactions", {
       method: "POST",
-      body: JSON.stringify({ category_id: "123e4567-e89b-12d3-a456-426614174000", amount_ars: 5000 }),
+      body: JSON.stringify({ category_id: "123e4567-e89b-12d3-a456-426614174000", amount_ars: 5000, requiresReimbursement: true }),
     });
     Object.defineProperty(req.headers, "get", {
       value: jest.fn((key: string) => key === "x-user-id" ? "user-123" : key === "x-group-id" ? "group-123" : null),
@@ -308,6 +309,9 @@ describe("POST /api/transactions", () => {
       exchange_rate_snapshot: null,
       currency_mode: "ARS_ARS",
     }));
+    expect(createReimbursementWithNotifications).toHaveBeenCalledWith(
+      expect.any(String), "user-123", 5000, undefined,
+    );
   });
 
   test("rejects ARS transactions while the feature flag is disabled", async () => {

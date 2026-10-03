@@ -717,7 +717,31 @@ typecheck y build verdes; lint 0 errores y 67 warnings preexistentes. Las
 pruebas de alertas y cron usaron proveedores simulados; no hubo envíos reales,
 cambio de cron, DB, flag o deploy.
 
-**Próximo corte abierto ACT-05f, owner Codex:** verificar y adaptar reintegros
-para que no conviertan ni etiqueten ARS/ARS como USD. Después, la UI para
-seleccionar el modo mensual conserva owner Codex y requiere QA de Esteban en
-beta. El canary `telegram_operations` se atenderá antes de migrar beta.
+**Checkpoint histórico:** ACT-05f se cerró localmente el 03/10 (ver abajo).
+La UI para seleccionar el modo mensual conserva owner Codex y requiere QA de
+Esteban en beta. El canary `telegram_operations` se atenderá antes de migrar.
+
+### ACT-05f denominación de reintegros — 03/10/2026
+
+**Corte de moneda local cerrado, owner Codex.** El esquema de solicitudes
+conserva `amount` en ARS en ambos modos; los callers web y Telegram pasan
+`amount_ars`, nunca `amount_usd` ni una división por cotización. Una regresión
+de web prueba explícitamente que ARS/ARS crea gasto con USD/tasa `NULL` y
+solicita reintegro por el monto ARS exacto. Los textos de solicitud, pago,
+cancelación y recordatorio Telegram explicitan ARS para no presentar el monto
+como USD. No se modificaron valores históricos ni el esquema de reintegros.
+
+Gates locales Node 22: harness 84/84; Jest 97 suites y 850/850 tests;
+typecheck y build verdes; lint 0 errores y 67 warnings preexistentes. No hubo
+envíos reales, DB remota, flags ni deploy.
+
+**Hallazgo separado ACT-06/R-POST, owner Codex, prioridad antes de activar
+ARS/ARS beta:** `POST /api/reimbursements` recibe un monto arbitrario del
+cliente; requiere validar gasto, autor, grupo, importe ARS y repetición antes
+de crear la solicitud. Este corte de denominación no certifica esa frontera.
+
+**Próximo corte abierto ACT-05g, owner Codex:** UI de ajustes para seleccionar
+el modo por grupo/mes, con campos ARS o USD coherentes, sin cambiar meses con
+movimientos y con flag apagada. Después se resolverá ACT-06/R-POST y el canary
+beta antes de cualquier migración o activación remota. Esteban conserva QA
+funcional y decisión de release.

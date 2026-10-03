@@ -153,7 +153,7 @@ describe("notifications telegram", () => {
     expect(global.fetch).toHaveBeenCalledTimes(2);
     const firstBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body as string);
     expect(firstBody.chat_id).toBe("tg-2");
-    expect(firstBody.text).toContain("Ana gastó <b>$12.000</b>");
+    expect(firstBody.text).toContain("Ana gastó <b>ARS $12.000</b>");
     expect(firstBody.text).toContain("📁 Categoría: Comida");
     expect(firstBody.text).toContain("📝 Cena del viernes");
     expect(firstBody.text).toContain("💳 Datos de pago: ALIAS: ANA.PAGO");
@@ -172,6 +172,6 @@ describe("notifications telegram", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body as string);
     expect(body.chat_id).toBe("tg-1");
-    expect(body.text).toContain("Beto te ha pagado <b>$4.000</b>");
+    expect(body.text).toContain("Beto te ha pagado <b>ARS $4.000</b>");
   });
 });
