@@ -485,7 +485,7 @@ sequential rerun passed. No remote DB, beta, webhook or legacy resource changed.
 
 The 03/10 fresh beta export was restored to independent local copies. Both
 copies reached the new canonical fingerprint
-`fb830cf40e951abd3c4072e8c0b011d4040782d44c1dc8325d150973260a6046`;
+`db35d5ebe653dcbc135ca236b9ae83671ef00f2b63bcb57a5ca5b9b30f133de1`;
 inventory and financial aggregates were identical before/after, repeat apply
 was a no-op, and the beta SQLite version 3.47.0 exceeds the 3.35 requirement.
 The isolated CLI session authenticated `esteban-indiveri` and verified
@@ -786,8 +786,40 @@ solicitud persistida sin aviso. La separación durable de notificaciones web
 requiere un corte posterior con outbox y conciliación; antes de activarlo se
 hará un canary específico. No se presenta la entrega web como garantizada.
 
-**Siguiente gate ACT-05h, owner Codex:** comprobar y corregir el canary
-`telegram_operations` en la copia beta, reconciliar el snapshot remoto de
-`beta-hermes` y ejecutar backup/restore antes de solicitar aplicar la
-migración monetaria. Esteban conserva QA funcional solo después de tener una
-beta aislada y verificable.
+**Checkpoint histórico:** ACT-05h quedó cerrado como revisión del canary,
+export nuevo, restauración y ensayo local (abajo). Esteban conserva QA
+funcional solo después de tener una beta aislada y verificable.
+
+### ACT-05h preflight beta de migración — 03/10/2026
+
+**Preflight de solo lectura y ensayo local cerrado, owner Codex.** Se verificó
+con `turso -c` aislado que la identidad activa es `esteban-indiveri` y el
+target `beta-hermes` conserva el DB ID esperado
+`01a0c0bd-0601-7f27-b147-915d105b19f2b`; el login Turso predeterminado
+`eindiveri` no se utilizó. El ledger remoto llega hasta
+`0080-telegram-operations-outbox`, sin `0090`. El export nuevo quedó en un
+directorio privado (archivos modo 600); el DB base y metadata conservan los
+SHA-256 anteriores, el WAL nuevo tiene SHA-256
+`7887c6c2b0a771e2426bea1463ac3f2cad416d6f404a569ff99fc0f756acd3c8`.
+La restauración local pasó `integrity_check`, FK, inventario, agregados,
+integridad y hash de operaciones iguales al export. La copia migrada aplicó
+solo `0090-currency-modes`, llegó al fingerprint canónico
+`db35d5ebe653dcbc135ca236b9ae83671ef00f2b63bcb57a5ca5b9b30f133de1`
+y concilió sin diferencias bajo la excepción de exactamente un canary
+preexistente. La conciliación estricta sigue reportando esa anomalía.
+
+**Decisión de tratamiento del canary, owner Codex:** no se borra ni se fabrica
+un `result_json`: la operación está enlazada a una fila de outbox `sent` con
+acuse de proveedor. Borrarla perdería auditoría de entrega; completarla con
+un resultado inventado falsificaría historial. Se conserva la excepción
+firmada y acotada que exige fila y contenido inalterados. Si cambia el número
+o hash de operaciones, el gate vuelve a bloquear. Esto cierra la revisión de
+limpieza, no convierte la conciliación estricta en verde.
+
+**Gate remoto abierto ACT-05i, owner Codex; autorización de cambio de esquema
+beta pendiente de Esteban:** repetir identidad/export/backup/restore en el
+momento de ejecución, aplicar únicamente `0090` a `beta-hermes`, comparar
+inventario y sumas, mantener `ACT05_ARS_MODE_ENABLED=false`, y solo después
+desplegar beta con attestation de aislamiento. No hay permiso implícito para
+`hermes-acme`, `main`, bot productivo o deploy legacy. Si el backup o el canary
+derivan, detener sin migrar y volver a investigar.
