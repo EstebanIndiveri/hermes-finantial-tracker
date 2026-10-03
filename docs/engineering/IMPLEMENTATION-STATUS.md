@@ -393,7 +393,7 @@ the changes below are **local only** on `codex/act16-export-usability`.
 | ACT-07 individual projection/export visual check | **Closed for the beta individual flow.** Esteban's October `resumen` screenshot labels income/spending/savings in USD and ARS/USD rate. The October XLSX shows one ARS 10.000 expense and one ARS 20.000 income in Movimientos; only the expense is in category spending. Bounded-budget behavior remains covered by local tests, not this unlimited-budget specimen. Proactive notifications remain off. | Codex maintains regression. ACT-17 owns any future alert activation; no additional manual ACT-07 check is pending. |
 | ACT-16 XLSX readability | **Local cut complete**, not deployed: filters, fixed headers, widths, wrapping, ARS formatting and native category-spend data bars. It preserves financial rows and CSV. Node 22 gates passed: 92 suites/783 tests, typecheck, lint 0 errors/68 existing warnings and build. [Contract](ACT-16-XLSX-USABILITY.md). | Codex owns gated beta deployment after the runtime dependency cut below, plus H04d reattestation. Esteban reviews a newly downloaded XLSX. No legacy change. |
 | ACT-16-CHARTS | **Local cut complete, not deployed.** Native editable budget-vs-spend chart references category summary cells; unlimited budgets are blank in the budget series. A synthetic workbook reopened with an independent parser showing one `BarChart` and unchanged financial values. 92 suites/784 tests, typecheck, build and runtime audit passed; lint has 0 errors/68 existing warnings. [Contract and limits](ACT-16-XLSX-USABILITY.md). | Codex owns gated beta deploy and monitoring for export size/memory; Esteban accepts the layout in a newly downloaded XLSX. No legacy change. |
-| ACT-05/06 currency semantics | **Product decision open; no migration started.** Current budgets and transaction input are ARS; USD projection depends on monthly FX. There is no source currency or per-operation FX snapshot, so general multicurrency is not supported. [Two-stage recommendation and gates](ACT-05-CURRENCY-DECISION.md). | Esteban chooses ARS-first with optional FX or full mixed-currency scope. Codex then turns the selected option into a money/rounding/backfill contract and staged beta migration; legacy rows must not be reinterpreted. |
+| ACT-05/06 currency semantics | **Historical checkpoint, superseded by the 03/10 decision below.** Current budgets and transaction input are ARS; USD projection depends on monthly FX. There is no source currency or per-operation FX snapshot, so general multicurrency is not supported. [Two-stage recommendation and gates](ACT-05-CURRENCY-DECISION.md). | Product choice was made on 03/10; Codex owns staged implementation. Legacy rows must not be reinterpreted. |
 | H04d isolation renewal | **Closed for the active 30/09 beta pilot deployment** by Esteban's 02/10 acceptance of a bounded beta-only residual policy. Technical gate passed for `dpl_5jxNMY8Z3iMDToef7N57QKdjTTyV`; `isolationVerified:false` intentionally remains. [Decision and re-entry conditions](H04D-ISOLATION-REVIEW-2026-09-29.md#owner-decision--02102026-bounded-beta-pilot-policy). | Codex reruns build/runtime/provider evidence for each exact beta deployment; if identity, binding, fingerprint or control changes/fails, Esteban makes a fresh decision. Retired URLs and legacy release remain outside scope. |
 | Dashboard percentage precision | **Local implementation complete, not deployed.** The dashboard now shows one decimal and caps a sub-100% rounded result at `99,9%`; regression covers October-like figures. The underlying USD projection, ARS transactions and DB are unchanged. [Contract](ACT-16-DASHBOARD-PRECISION.md). | Codex repeats gates and includes the change in a gated beta deployment; Esteban checks the resulting percentage. |
 | ACT-03 Drizzle toolchain / payment wording | Historical accepted residual and ACT-16 payment wording decision remain as recorded in the 29/09 table. | Esteban owns the accepted dependency risk and manual-payment wording decision; Codex owns recheck/implementation after triggers or decision. |
@@ -424,7 +424,7 @@ made by this release.
 | ACT-16 month rollover UX | **Open product/UX follow-up.** The bot previously answered “no configuration for this month” until October settings existed; this is the current prerequisite, not evidence of a missing transaction. | Codex owns a bounded design/test cut for explicit new-month setup or “copy prior month” without duplicating transactions. Esteban decides whether prior budgets/goals should be proposed or carried automatically; no silent rollover or schema change in this deployment. |
 | ACT-03 runtime dependency security | **Deployed in beta.** Clean local audit of production dependencies found zero advisories. Full audit still has four moderate dev-only Drizzle/esbuild findings under the previously accepted temporary risk. | Codex rechecks on the next dependency/schema-generation cut; Esteban remains residual-risk owner. No forced breaking downgrade. |
 | H04d per-deployment reattestation | **Closed for this exact beta-pilot deployment under Esteban's 02/10 standing residual acceptance.** Build fingerprint/identity assertion, Vercel project/alias distinction, beta basic probes and unchanged legacy alias passed. Private beta Vercel/runtime receipts were refreshed for `dpl_BeEyrGrvnJb8yMrZSb2QWk7LrPxk`; 29/09 beta/legacy Turso and Telegram identity receipts remain within the seven-day contract window. The post-activation runner returned `ok:true`, `postActivationRuntimeConsistent:true`, `providerMetadataComparison:"distinct-identities-declared"`, `isolationVerified:false`. | Codex retains evidence/expiry watch and repeats the entire gate on each beta deploy. If identity, binding, fingerprint or control changes/fails, Esteban decides anew. This scoped pilot status does not certify retired URLs or authorize a legacy release. |
-| ACT-05/06 optional FX | **Product decision open; no schema or financial behavior changed.** [ARS-first proposal](ACT-05-CURRENCY-DECISION.md). | Esteban chooses ARS base with optional USD projection or mixed-currency scope; Codex then writes money/rounding/backfill tests and additive migration plan. |
+| ACT-05/06 optional FX | **Historical checkpoint, superseded by the 03/10 decision below; no schema or financial behavior changed.** [ARS-first proposal](ACT-05-CURRENCY-DECISION.md). | Product choice was made on 03/10; Codex owns contract, migration rehearsal and implementation. |
 
 All open gates have explicit owners. The next beta actions are spreadsheet and
 dashboard visual QA plus H04d receipt refresh; no additional synthetic expense
@@ -445,9 +445,10 @@ percentage visual acceptance is still Esteban-owned and open.
 Esteban clarified that ACT-05 must preserve the existing mixed ARS/USD mode
 and add a single-currency **ARS/ARS** option for monthly income, saving goal,
 projected saving and spending, without mandatory FX. Codex owns contract,
-tests and staged implementation after the remaining product choices are
-resolved: whether category limits stay ARS in mixed mode, mode scope, and
-whether an already populated month can switch modes. See the [currency
+tests and staged implementation. On 03/10 Esteban approved the remaining
+choices: category limits stay ARS in mixed mode, mode is per group/month, and
+any movement freezes the mode. The pure mode contract and regression tests
+are local; no schema, writer or UI is active for ARS/ARS yet. See the [currency
 decision record](ACT-05-CURRENCY-DECISION.md). Existing rows and legacy
 production must not be reinterpreted. The recurring transaction writer's
 hard-coded ARS/USD rate of 1200 is a correctness blocker for a mode-aware
@@ -457,3 +458,13 @@ Codex: `transactions.amount_usd` is currently `NOT NULL`; an ARS-only write
 without FX must never fabricate a USD amount. Activation requires a
 rehearsed, compatible nullable/typed-amount migration on isolated beta copies
 with backup and reconciliation, not just a UI flag.
+
+ACT-05 next gate, owner **Codex**: extend the canonical migration runner to
+rebuild `transactions` safely with its incoming reimbursement/recurring FKs,
+preserve all rows and partial operation index, add group/month mode and ARS
+settings, then prove rollback/reconciliation on local copies. The runner
+currently wraps each SQL migration in a transaction, so `PRAGMA foreign_keys`
+cannot simply be toggled inside a SQL file. No beta or legacy migration is
+authorized by this local contract cut. Subsequent owner Codex gates are
+mode-aware writers/readers, a corrected or disabled recurrent writer, full
+regression, then a separately gated beta rehearsal/activation and operator QA.
