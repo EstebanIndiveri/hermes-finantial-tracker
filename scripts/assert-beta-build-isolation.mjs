@@ -46,7 +46,7 @@ const CHECK_NAMES = Object.freeze([
   "beta_feature_flags",
   "beta_runtime_modes",
   "beta_notifications_disabled",
-  "ars_mode_disabled",
+  "ars_mode_enabled",
   "required_secrets_present",
   "beta_secret_fingerprints_match",
 ]);
@@ -110,8 +110,7 @@ export function evaluateBetaBuildIsolation(environment) {
     beta_feature_flags: Object.entries(EXPECTED.flags).every(([key, value]) => environment[key] === value),
     beta_runtime_modes: environment.AI_MODE === EXPECTED.aiMode && environment.OCR_MODE === EXPECTED.ocrMode,
     beta_notifications_disabled: environment.NOTIFICATIONS_ENABLED === EXPECTED.notificationsEnabled,
-    ars_mode_disabled: environment.ACT05_ARS_MODE_ENABLED === undefined ||
-      environment.ACT05_ARS_MODE_ENABLED === "false",
+    ars_mode_enabled: environment.ACT05_ARS_MODE_ENABLED === "true",
     required_secrets_present: REQUIRED_SECRETS.every((key) => nonempty(environment, key)),
     beta_secret_fingerprints_match: betaSecretFingerprintsMatch(environment),
   };

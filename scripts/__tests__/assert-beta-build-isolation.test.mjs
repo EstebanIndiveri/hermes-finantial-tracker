@@ -29,6 +29,7 @@ const validEnvironment = {
   TELEGRAM_OUTBOX_ENABLED: "true",
   TELEGRAM_OUTBOX_WORKER_ENABLED: "true",
   NOTIFICATIONS_ENABLED: "false",
+  ACT05_ARS_MODE_ENABLED: "true",
   AI_MODE: "live",
   OCR_MODE: "live",
   CRON_SECRET: "synthetic-cron-secret",
@@ -64,7 +65,7 @@ test("fails closed on legacy or mismatched identities and runtime settings", () 
     ["TELEGRAM_OUTBOX_ENABLED", "false"],
     ["TELEGRAM_OUTBOX_WORKER_ENABLED", "false"],
     ["NOTIFICATIONS_ENABLED", "true"],
-    ["ACT05_ARS_MODE_ENABLED", "true"],
+    ["ACT05_ARS_MODE_ENABLED", "false"],
     ["AI_MODE", "stub"],
     ["OCR_MODE", "stub"],
     ["GROQ_API_KEY", ""],
@@ -83,11 +84,12 @@ test("fails closed on legacy or mismatched identities and runtime settings", () 
   }
 });
 
-test("currency pilot remains off until separately activated", () => {
+test("currency pilot requires an explicit beta activation binding", () => {
   assert.equal(evaluateBetaBuildIsolation(validEnvironment).passed, true);
-  assert.equal(evaluateBetaBuildIsolation({ ...validEnvironment, ACT05_ARS_MODE_ENABLED: "false" }).passed, true);
-  const enabled = evaluateBetaBuildIsolation({ ...validEnvironment, ACT05_ARS_MODE_ENABLED: "true" });
-  assert.deepEqual(enabled.failedChecks, ["ars_mode_disabled"]);
+  const missing = { ...validEnvironment };
+  delete missing.ACT05_ARS_MODE_ENABLED;
+  assert.deepEqual(evaluateBetaBuildIsolation(missing).failedChecks, ["ars_mode_enabled"]);
+  assert.deepEqual(evaluateBetaBuildIsolation({ ...validEnvironment, ACT05_ARS_MODE_ENABLED: "false" }).failedChecks, ["ars_mode_enabled"]);
 });
 
 test("requires exact, distinct fingerprints for the six beta secrets", () => {
