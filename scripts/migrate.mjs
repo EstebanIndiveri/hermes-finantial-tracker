@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createClient } from "@libsql/client";
 
 export const RUNNER_VERSION = "1";
-const PRE_CURRENCY_SCHEMA_FINGERPRINT = "309646a60fcdfc1566e6110cc4e5ec8eb32cbfdb1ffa4ee03a3d838d54014701";
+export const PRE_CURRENCY_SCHEMA_FINGERPRINT = "309646a60fcdfc1566e6110cc4e5ec8eb32cbfdb1ffa4ee03a3d838d54014701";
 export const CANONICAL_SCHEMA_FINGERPRINT = "db35d5ebe653dcbc135ca236b9ae83671ef00f2b63bcb57a5ca5b9b30f133de1";
 export const DEFAULT_MANIFEST_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -505,7 +505,7 @@ async function assertMinimumSqliteVersion(client, migration) {
   }
 }
 
-async function applyMigration(client, migration) {
+export async function applyMigration(client, migration) {
   await assertMinimumSqliteVersion(client, migration);
   if (migration.preflight.includes("recurring-duplicates")) {
     await assertOutboxPreflight(client);

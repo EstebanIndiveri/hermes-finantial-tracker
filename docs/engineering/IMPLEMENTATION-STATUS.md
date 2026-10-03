@@ -489,7 +489,7 @@ copies reached the new canonical fingerprint
 inventory and financial aggregates were identical before/after, repeat apply
 was a no-op, and the beta SQLite version 3.47.0 exceeds the 3.35 requirement.
 The isolated CLI session authenticated `esteban-indiveri` and verified
-`beta-hermes` (DB ID `01a0c0bd-0601-7f27-b147-915d105b19f2b`);
+`beta-hermes` (DB ID `01a0c0bd-0601-7f27-b147-915d105b19f2`);
 the production CLI login was not changed. The untouched export bundle SHA-256
 values were DB `69d2cb13a4184d62c820f888228e4c2ab4e2c44599c895e6bc57263fc2b6b733`,
 WAL `abcf56b42fd3cabe4515388808a0e6a0481d76daa1e119719c951d847e11f1b9`,
@@ -795,7 +795,7 @@ funcional solo después de tener una beta aislada y verificable.
 **Preflight de solo lectura y ensayo local cerrado, owner Codex.** Se verificó
 con `turso -c` aislado que la identidad activa es `esteban-indiveri` y el
 target `beta-hermes` conserva el DB ID esperado
-`01a0c0bd-0601-7f27-b147-915d105b19f2b`; el login Turso predeterminado
+`01a0c0bd-0601-7f27-b147-915d105b19f2`; el login Turso predeterminado
 `eindiveri` no se utilizó. El ledger remoto llega hasta
 `0080-telegram-operations-outbox`, sin `0090`. El export nuevo quedó en un
 directorio privado (archivos modo 600); el DB base y metadata conservan los
@@ -816,10 +816,42 @@ firmada y acotada que exige fila y contenido inalterados. Si cambia el número
 o hash de operaciones, el gate vuelve a bloquear. Esto cierra la revisión de
 limpieza, no convierte la conciliación estricta en verde.
 
-**Gate remoto abierto ACT-05i, owner Codex; autorización de cambio de esquema
-beta pendiente de Esteban:** repetir identidad/export/backup/restore en el
+**Checkpoint histórico:** ACT-05i recibió autorización explícita de Esteban y
+se cerró el 03/10 con los controles descritos abajo: repetir identidad/export/backup/restore en el
 momento de ejecución, aplicar únicamente `0090` a `beta-hermes`, comparar
 inventario y sumas, mantener `ACT05_ARS_MODE_ENABLED=false`, y solo después
 desplegar beta con attestation de aislamiento. No hay permiso implícito para
 `hermes-acme`, `main`, bot productivo o deploy legacy. Si el backup o el canary
 derivan, detener sin migrar y volver a investigar.
+
+### ACT-05i migración monetaria beta — 03/10/2026
+
+**Cerrado para esquema e integridad beta, owner Codex, autorizado por Esteban.**
+El script dedicado exige por código cuenta `esteban-indiveri`, URL e ID exactos
+de `beta-hermes`, ledger 0000–0080 y fingerprint anterior; crea un token beta
+de duración 1 día sin imprimirlo. Compara todas las filas históricas del
+backup restaurado con la DB remota antes de escribir, aplica exclusivamente
+`0090-currency-modes` en transacción y repite integridad, FK, fingerprint,
+ledger y hashes de filas después. Una primera ejecución se bloqueó **antes
+de token o escritura** por un carácter extra en el ID transcrito en este
+registro; CLI y manifiestos anteriores confirmaron el ID correcto
+`01a0c0bd-0601-7f27-b147-915d105b19f2`. La constante y el documento
+se corrigieron, y un query read-only confirmó que `0090` seguía ausente.
+
+El export fresco se restauró y ensayó localmente: excepción firmada del único
+canary estable, sin diferencias financieras. La ejecución remota respondió
+`verified:true` con 27 tablas históricas preservadas. Una lectura CLI
+independiente confirmó `0090` en el ledger, cero meses/movimientos ARS/ARS y
+ninguna violación FK. Un segundo export posterior verificó `integrity_check`,
+fingerprint canónico, agregados financieros y hash de operaciones iguales al
+pre-export; el único blocker de conciliación estricta sigue siendo el mismo
+canary. El backup previo, el restore y el export posterior permanecen fuera
+del repositorio en un directorio local privado, no como fixtures públicos.
+No se cambió `hermes-acme`, legacy, webhook, flags ni deployment.
+
+Gates del código de migración: harness 85/85, Jest 98 suites/858 tests,
+typecheck, build y lint 0 errores/67 warnings. **Siguiente ACT-05j, owner
+Codex:** revisar y desplegar el código solo al proyecto Vercel beta con
+`ACT05_ARS_MODE_ENABLED` apagada, verificar attestation/identidad de runtime,
+sin tocar el proyecto legacy. La aceptación de modo ARS/ARS y QA manual
+continúan pendientes con Esteban como operador.
