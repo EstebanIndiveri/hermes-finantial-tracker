@@ -10,6 +10,10 @@ const sampleTxs: ExportTransaction[] = [
     categoryName: "Supermercado",
     categoryEmoji: "🛒",
     amount_ars: 15000,
+    kind: "Gasto",
+    accountingAmount: 12.5,
+    accountingCurrency: "USD",
+    exchangeRateSnapshot: 1200,
     description: "compras semana",
   },
   {
@@ -18,6 +22,10 @@ const sampleTxs: ExportTransaction[] = [
     categoryName: "Salidas",
     categoryEmoji: "🍽️",
     amount_ars: 8500,
+    kind: "Gasto",
+    accountingAmount: 7.08,
+    accountingCurrency: "USD",
+    exchangeRateSnapshot: null,
     description: null,
   },
 ];
@@ -165,10 +173,22 @@ function rawWorksheetXml(buffer: Buffer, expectedName: string): string {
 }
 
 describe("generateCSV", () => {
+  it("exports type, accounting units and only the recorded FX snapshot", () => {
+    const csv = stripBom(generateCSV(sampleTxs));
+    expect(csv.split("\n")[0]).toBe("Fecha,Comercio,Categoría,Monto (ARS),Descripción,Tipo,Monto contable,Moneda contable,Cotización registrada (ARS/USD)");
+    expect(csv.split("\n")[1]).toBe("10/05/2026,Disco,🛒 Supermercado,15000,compras semana,Gasto,12.5,USD,1200");
+    expect(csv.split("\n")[2]).toBe("15/05/2026,,🍽️ Salidas,8500,,Gasto,7.08,USD,");
+  });
+
+  it("keeps ARS-only accounting in ARS without a fabricated USD value", () => {
+    const csv = generateCSV([{ ...sampleTxs[0], kind: "Ingreso", accountingAmount: 2000, accountingCurrency: "ARS", amount_ars: 2000, exchangeRateSnapshot: null }]);
+    expect(csv).toContain(",Ingreso,2000,ARS,");
+    expect(csv).not.toContain("USD,1");
+  });
   it("includes the correct header row", () => {
     const csv = generateCSV(sampleTxs);
     const firstLine = stripBom(csv).split("\n")[0];
-    expect(firstLine).toBe("Fecha,Comercio,Categoría,Monto (ARS),Descripción");
+    expect(firstLine).toBe("Fecha,Comercio,Categoría,Monto (ARS),Descripción,Tipo,Monto contable,Moneda contable,Cotización registrada (ARS/USD)");
   });
 
   it("generates one data row per transaction", () => {
@@ -283,6 +303,19 @@ describe("generateCSV", () => {
 });
 
 describe("generateXLSX", () => {
+  it("keeps accounting amounts numeric and distinguishes an ARS income", async () => {
+    const transactions = (await readWorkbook(await generateXLSX([
+      { ...sampleTxs[0], kind: "Ingreso", amount_ars: 2000, accountingAmount: 2000, accountingCurrency: "ARS", exchangeRateSnapshot: null },
+    ], sampleCats))).getWorksheet("Movimientos")!;
+    expect(transactions.getRow(1).values.slice(1)).toEqual([
+      "Fecha", "Comercio", "Categoría", "Monto (ARS)", "Descripción", "Tipo", "Monto contable", "Moneda contable", "Cotización registrada (ARS/USD)",
+    ]);
+    expect(transactions.getCell("F2").value).toBe("Ingreso");
+    expect(transactions.getCell("G2").value).toBe(2000);
+    expect(transactions.getCell("G2").type).toBe(ExcelJS.ValueType.Number);
+    expect(transactions.getCell("H2").value).toBe("ARS");
+    expect(transactions.getCell("I2").value).toBeNull();
+  });
   it("returns a Buffer", async () => {
     const buf = await generateXLSX(sampleTxs, sampleCats);
     expect(Buffer.isBuffer(buf)).toBe(true);
@@ -315,7 +348,7 @@ describe("generateXLSX", () => {
   it("Movimientos sheet has correct header", async () => {
     const buf = await generateXLSX(sampleTxs, sampleCats);
     const sheet = (await readWorkbook(buf)).getWorksheet("Movimientos")!;
-    expect(sheet.getRow(1).values.slice(1)).toEqual(["Fecha", "Comercio", "Categoría", "Monto (ARS)", "Descripción"]);
+    expect(sheet.getRow(1).values.slice(1)).toEqual(["Fecha", "Comercio", "Categoría", "Monto (ARS)", "Descripción", "Tipo", "Monto contable", "Moneda contable", "Cotización registrada (ARS/USD)"]);
   });
 
   it("Resumen por categoría sheet has correct header", async () => {
@@ -334,8 +367,8 @@ describe("generateXLSX", () => {
     const buf = await generateXLSX(sampleTxs, sampleCats);
     const rows = readRows(await readWorkbook(buf), "Movimientos");
     expect(rows).toHaveLength(sampleTxs.length + 1);
-    expect(rows[1]).toEqual(["10/05/2026", "Disco", "🛒 Supermercado", 15000, "compras semana"]);
-    expect(rows[2]).toEqual(["15/05/2026", "", "🍽️ Salidas", 8500, ""]);
+    expect(rows[1]).toEqual(["10/05/2026", "Disco", "🛒 Supermercado", 15000, "compras semana", "Gasto", 12.5, "USD", 1200]);
+    expect(rows[2].slice(0, 8)).toEqual(["15/05/2026", "", "🍽️ Salidas", 8500, "", "Gasto", 7.08, "USD"]);
   });
 
   it("Resumen por categoría sheet has data rows matching input", async () => {
@@ -384,7 +417,7 @@ describe("generateXLSX", () => {
 
   it("keeps headers visible and exposes usable filters and column widths on every sheet", async () => {
     const workbook = await readWorkbook(await generateXLSX(sampleTxs, sampleCats));
-    const expectedLastColumns = ["E", "E", "C"];
+    const expectedLastColumns = ["I", "E", "C"];
 
     workbook.worksheets.forEach((sheet, index) => {
       expect(sheet.views).toEqual(expect.arrayContaining([expect.objectContaining({ state: "frozen", ySplit: 1 })]));
@@ -441,7 +474,7 @@ describe("generateXLSX", () => {
     const buffer = await generateXLSX([], []);
     const workbook = await readWorkbook(buffer);
     const movements = workbook.getWorksheet("Movimientos")!;
-    expect(movements.autoFilter).toBe("A1:E1");
+    expect(movements.autoFilter).toBe("A1:I1");
     expect(movements.getColumn(5).width).toBeGreaterThanOrEqual(35);
     expect(movements.rowCount).toBe(1);
     expect(() => unzipEntry(buffer, "xl/charts/chart1.xml")).toThrow("ZIP entry not found");

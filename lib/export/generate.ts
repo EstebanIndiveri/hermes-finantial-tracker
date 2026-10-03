@@ -8,6 +8,10 @@ export interface ExportTransaction {
   categoryEmoji: string;
   amount_ars: number;
   description: string | null;
+  kind: "Ingreso" | "Gasto";
+  accountingAmount: number;
+  accountingCurrency: "USD" | "ARS";
+  exchangeRateSnapshot: number | null;
 }
 
 export interface ExportCategory {
@@ -183,7 +187,7 @@ function styleExportSheet(
 }
 
 export function generateCSV(txs: ExportTransaction[]): string {
-  const header = "Fecha,Comercio,Categoría,Monto (ARS),Descripción";
+  const header = "Fecha,Comercio,Categoría,Monto (ARS),Descripción,Tipo,Monto contable,Moneda contable,Cotización registrada (ARS/USD)";
   const rows = txs.map((tx) => {
     const date = formatDate(tx.date);
     const merchant = tx.merchant ?? "";
@@ -197,6 +201,10 @@ export function generateCSV(txs: ExportTransaction[]): string {
       escapeCSVValue(category),
       amount,
       escapeCSVValue(description),
+      tx.kind,
+      tx.accountingAmount.toString(),
+      tx.accountingCurrency,
+      tx.exchangeRateSnapshot?.toString() ?? "",
     ].join(",");
   });
 
@@ -210,18 +218,22 @@ export function generateXLSX(
   const workbook = new ExcelJS.Workbook();
 
   const transactionRows = [
-    ["Fecha", "Comercio", "Categoría", "Monto (ARS)", "Descripción"],
+    ["Fecha", "Comercio", "Categoría", "Monto (ARS)", "Descripción", "Tipo", "Monto contable", "Moneda contable", "Cotización registrada (ARS/USD)"],
     ...txs.map((tx) => [
       formatDate(tx.date),
       tx.merchant ?? "",
       `${tx.categoryEmoji} ${tx.categoryName}`,
       tx.amount_ars,
       tx.description ?? "",
+      tx.kind,
+      tx.accountingAmount,
+      tx.accountingCurrency,
+      tx.exchangeRateSnapshot,
     ]),
   ];
   const transactionsSheet = workbook.addWorksheet("Movimientos");
   transactionsSheet.addRows(transactionRows);
-  styleExportSheet(transactionsSheet, [16, 26, 29, 19, 52], [4]);
+  styleExportSheet(transactionsSheet, [16, 26, 29, 19, 52, 15, 20, 18, 30], [4, 7, 9]);
 
   const summaryRows = [
     ["Categoría", "Presupuesto (ARS)", "Gastado (ARS)", "Saldo (ARS)", "% Usado"],

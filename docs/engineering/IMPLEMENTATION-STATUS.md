@@ -667,8 +667,37 @@ typecheck y build verdes; lint 0 errores y 67 warnings preexistentes. Typecheck
 y build se ejecutaron secuencialmente porque ambos comparten `.next/types`.
 Ninguna DB, flag o implementación remota cambió en este corte.
 
-**Próximo corte abierto ACT-05d, owner Codex:** revisar y adaptar la exportación
-XLSX/CSV al contrato de moneda mensual sin reinterpretar movimientos históricos;
-seguir con alertas y reintegros en cortes separados. La anomalía canary beta
+**Checkpoint histórico:** ACT-05d se cerró localmente el 03/10 (ver abajo).
+Seguir con alertas y reintegros en cortes separados. La anomalía canary beta
 en `telegram_operations` conserva owner Codex antes de cualquier migración
 remota. Esteban conserva la aceptación funcional beta y cualquier release.
+
+### ACT-05d exportación por modo contable — 03/10/2026
+
+**Corte local cerrado, owner Codex.** CSV y XLSX conservan las columnas
+históricas iniciales e incorporan tipo (`Ingreso`/`Gasto`), importe y moneda
+contables persistidos y la cotización registrada por movimiento. En el modo
+mixto el importe contable es el `amount_usd` guardado; en ARS/ARS coincide con
+el ARS guardado, sin fabricar USD ni tasa. Los registros legacy sin snapshot
+de cotización quedan con la celda vacía; nunca se usa la tasa mensual actual
+para inferir una tasa histórica. El resumen por categoría y su gráfico siguen
+excluyendo ingresos y midiendo límites/gastos en ARS. No se cambian nombres de
+archivo ni el orden de las tres hojas XLSX existentes.
+
+La ruta verifica membresía, grupo de la categoría, modo del mes y de cada
+movimiento, montos finitos y flag ARS antes de exportar. Ante ausencia de
+configuración o filas contables inconsistentes devuelve 409 sin producir un
+archivo con cero ficticio. La documentación legacy de exportación es histórica;
+este contrato es el vigente para los nuevos artefactos.
+
+Gates locales Node 22: harness 84/84; Jest 97 suites y 847/847 tests;
+typecheck y build verdes; lint 0 errores, 67 warnings preexistentes. Las
+pruebas leen el XLSX generado como ZIP/ExcelJS y comprueban cabeceras, tipos
+numéricos, filtros y gráfico; no se realizó QA visual en Excel ni descarga
+desde beta. No hubo cambio en DB, flags, despliegue o producción legacy.
+
+**Próximo corte abierto ACT-05e, owner Codex:** adaptar alertas y sus cálculos
+al modo mensual, con flag apagada y sin llamadas externas; después abordar
+reintegros y la UI para elegir el modo en cortes separados. La anomalía canary
+beta en `telegram_operations` mantiene owner Codex antes de migrar beta;
+Esteban conserva la aceptación funcional y decisión de release.

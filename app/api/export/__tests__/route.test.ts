@@ -20,6 +20,9 @@ jest.mock("@/lib/db/client", () => ({
       budgets: {
         findMany: jest.fn(),
       },
+      monthly_settings: {
+        findFirst: jest.fn(),
+      },
     },
   },
 }));
@@ -51,6 +54,50 @@ describe("GET /api/export", () => {
     (db.query.transactions.findMany as jest.Mock).mockResolvedValue([]);
     (db.query.categories.findMany as jest.Mock).mockResolvedValue([]);
     (db.query.budgets.findMany as jest.Mock).mockResolvedValue([]);
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "USD_ARS" });
+  });
+
+  test("rejects an ARS-only month while the feature flag is off", async () => {
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS" });
+    const response = await GET(new NextRequest("http://localhost:3000/api/export?month=2026-10&format=csv"));
+    expect(response.status).toBe(409);
+    expect(generateCSV).not.toHaveBeenCalled();
+  });
+
+  test("does not export an unconfigured month", async () => {
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue(null);
+    const response = await GET(new NextRequest("http://localhost:3000/api/export?month=2026-10&format=csv"));
+    expect(response.status).toBe(409);
+    expect(db.query.transactions.findMany).not.toHaveBeenCalled();
+  });
+
+  test("rejects a movement whose category belongs to another group", async () => {
+    (db.query.transactions.findMany as jest.Mock).mockResolvedValue([{ date: "2026-10-02", category_id: "foreign", category: { group_id: "other-group", slug: "supermercado", name: "Supermercado", emoji: "🛒" }, amount_ars: 100, amount_usd: 0.08, currency_mode: "USD_ARS", exchange_rate_snapshot: null }]);
+    const response = await GET(new NextRequest("http://localhost:3000/api/export?month=2026-10&format=xlsx"));
+    expect(response.status).toBe(409);
+    expect(generateXLSX).not.toHaveBeenCalled();
+  });
+
+  test("exports ARS-only income without manufacturing USD or exchange rate", async () => {
+    const previous = process.env.ACT05_ARS_MODE_ENABLED;
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    try {
+      (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS" });
+      (db.query.transactions.findMany as jest.Mock).mockResolvedValue([{ date: "2026-10-02", merchant: "Sueldo", category_id: "income", category: { group_id: "group-123", slug: "ingresos", name: "Ingresos", emoji: "💵" }, amount_ars: 2000, amount_usd: null, currency_mode: "ARS_ARS", exchange_rate_snapshot: null, description: null }]);
+      const response = await GET(new NextRequest("http://localhost:3000/api/export?month=2026-10&format=csv"));
+      expect(response.status).toBe(200);
+      expect(generateCSV).toHaveBeenCalledWith([expect.objectContaining({ kind: "Ingreso", accountingAmount: 2000, accountingCurrency: "ARS", exchangeRateSnapshot: null })]);
+    } finally {
+      if (previous === undefined) delete process.env.ACT05_ARS_MODE_ENABLED;
+      else process.env.ACT05_ARS_MODE_ENABLED = previous;
+    }
+  });
+
+  test("fails closed on an incomplete USD accounting row", async () => {
+    (db.query.transactions.findMany as jest.Mock).mockResolvedValue([{ date: "2026-10-02", category_id: "expense", category: { group_id: "group-123", slug: "supermercado", name: "Supermercado", emoji: "🛒" }, amount_ars: 100, amount_usd: null, currency_mode: "USD_ARS", exchange_rate_snapshot: null }]);
+    const response = await GET(new NextRequest("http://localhost:3000/api/export?month=2026-10&format=xlsx"));
+    expect(response.status).toBe(409);
+    expect(generateXLSX).not.toHaveBeenCalled();
   });
 
   test.each(["2025-00", "2025-13"])("returns 400 when month %s is outside 01-12", async (month) => {
@@ -65,14 +112,16 @@ describe("GET /api/export", () => {
     expect(db.query.transactions.findMany).not.toHaveBeenCalled();
   });
 
-  test("defaults null amount_ars to 0 before generating CSV", async () => {
+  test("rejects null ARS amounts instead of exporting a fabricated zero", async () => {
     (db.query.transactions.findMany as jest.Mock).mockResolvedValue([
       {
         date: "2025-05-10",
         merchant: "Disco",
         category_id: "cat-1",
-        category: { name: "Supermercado", emoji: "🛒" },
+        category: { group_id: "group-123", slug: "supermercado", name: "Supermercado", emoji: "🛒" },
         amount_ars: null,
+        amount_usd: 1,
+        currency_mode: "USD_ARS",
         description: null,
       },
     ]);
@@ -81,17 +130,8 @@ describe("GET /api/export", () => {
 
     const response = await GET(req);
 
-    expect(response.status).toBe(200);
-    expect(generateCSV).toHaveBeenCalledWith([
-      {
-        date: "2025-05-10",
-        merchant: "Disco",
-        categoryName: "Supermercado",
-        categoryEmoji: "🛒",
-        amount_ars: 0,
-        description: null,
-      },
-    ]);
+    expect(response.status).toBe(409);
+    expect(generateCSV).not.toHaveBeenCalled();
   });
 
   test("preserves XLSX response format, filename, and generated bytes", async () => {
@@ -110,8 +150,8 @@ describe("GET /api/export", () => {
 
   test("keeps income in movements but excludes it from expense and budget summaries", async () => {
     (db.query.transactions.findMany as jest.Mock).mockResolvedValue([
-      { date: "2026-09-10", merchant: "Disco", category_id: "expense", category: { slug: "supermercado", name: "Supermercado", emoji: "🛒" }, amount_ars: 137, description: null },
-      { date: "2026-09-11", merchant: null, category_id: "income", category: { slug: "ingresos", name: "Ingresos", emoji: "💵" }, amount_ars: 2000, description: "sueldo" },
+      { date: "2026-09-10", merchant: "Disco", category_id: "expense", category: { group_id: "group-123", slug: "supermercado", name: "Supermercado", emoji: "🛒" }, amount_ars: 137, amount_usd: 0.11, currency_mode: "USD_ARS", exchange_rate_snapshot: 1245.45, description: null },
+      { date: "2026-09-11", merchant: null, category_id: "income", category: { group_id: "group-123", slug: "ingresos", name: "Ingresos", emoji: "💵" }, amount_ars: 2000, amount_usd: 1.61, currency_mode: "USD_ARS", exchange_rate_snapshot: null, description: "sueldo" },
     ]);
     (db.query.categories.findMany as jest.Mock).mockResolvedValue([
       { id: "expense", slug: "supermercado", name: "Supermercado", emoji: "🛒" },

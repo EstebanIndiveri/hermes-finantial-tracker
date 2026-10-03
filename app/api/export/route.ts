@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { db } from "@/lib/db/client";
-import { transactions, budgets, categories } from "@/lib/db/schema";
+import { transactions, budgets, categories, monthly_settings } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { generateCSV, generateXLSX } from "@/lib/export/generate";
 import type { ExportTransaction, ExportCategory } from "@/lib/export/generate";
@@ -43,6 +43,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
+    const settings = await db.query.monthly_settings.findFirst({
+      where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
+    });
+    const mode = settings?.currency_mode;
+    if (!settings || (mode !== "USD_ARS" && mode !== "ARS_ARS") ||
+      (mode === "ARS_ARS" && process.env.ACT05_ARS_MODE_ENABLED !== "true")) {
+      return NextResponse.json({ error: "Configuración monetaria del mes no disponible." }, { status: 409 });
+    }
+
     const txRows = await db.query.transactions.findMany({
       where: and(
         eq(transactions.group_id, groupId),
@@ -53,13 +62,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       with: { category: true },
     });
 
+    // The export must reconcile with the persisted accounting view. A missing
+    // USD value is not ARS converted at today's rate, and NULL is not zero.
+    if (txRows.some((tx) =>
+      tx.category?.group_id !== groupId || !tx.category?.slug ||
+      tx.currency_mode !== mode ||
+      !Number.isFinite(tx.amount_ars) || tx.amount_ars <= 0 ||
+      (mode === "USD_ARS" && (tx.amount_usd == null || !Number.isFinite(tx.amount_usd))) ||
+      (mode === "ARS_ARS" && (tx.amount_usd != null || tx.exchange_rate_snapshot != null)) ||
+      (tx.exchange_rate_snapshot != null && (!Number.isFinite(tx.exchange_rate_snapshot) || tx.exchange_rate_snapshot <= 0))
+    )) {
+      return NextResponse.json({ error: "Hay movimientos con datos contables inconsistentes. No se generó el archivo." }, { status: 409 });
+    }
+
     const exportTxs: ExportTransaction[] = txRows.map((tx) => ({
       date: tx.date,
       merchant: tx.merchant,
       categoryName: tx.category?.name ?? "Sin categoría",
       categoryEmoji: tx.category?.emoji ?? "📦",
-      amount_ars: tx.amount_ars ?? 0,
+      amount_ars: tx.amount_ars,
       description: tx.description,
+      kind: isIncomeCategory(tx.category!.slug) ? "Ingreso" : "Gasto",
+      accountingAmount: mode === "ARS_ARS" ? tx.amount_ars : tx.amount_usd!,
+      accountingCurrency: mode === "ARS_ARS" ? "ARS" : "USD",
+      exchangeRateSnapshot: tx.exchange_rate_snapshot,
     }));
 
     const allCats = await db.query.categories.findMany({
@@ -75,7 +101,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const spentMap: Record<string, number> = {};
     for (const tx of txRows) {
       if (isIncomeCategory(tx.category?.slug)) continue;
-      spentMap[tx.category_id] = (spentMap[tx.category_id] ?? 0) + (tx.amount_ars ?? 0);
+      spentMap[tx.category_id] = (spentMap[tx.category_id] ?? 0) + tx.amount_ars;
     }
 
     const exportCats: ExportCategory[] = allCats.filter((cat) => !isIncomeCategory(cat.slug)).map((cat) => ({
