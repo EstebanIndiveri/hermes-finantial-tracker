@@ -64,6 +64,7 @@ test("fails closed on legacy or mismatched identities and runtime settings", () 
     ["TELEGRAM_OUTBOX_ENABLED", "false"],
     ["TELEGRAM_OUTBOX_WORKER_ENABLED", "false"],
     ["NOTIFICATIONS_ENABLED", "true"],
+    ["ACT05_ARS_MODE_ENABLED", "true"],
     ["AI_MODE", "stub"],
     ["OCR_MODE", "stub"],
     ["GROQ_API_KEY", ""],
@@ -80,6 +81,13 @@ test("fails closed on legacy or mismatched identities and runtime settings", () 
     const result = evaluateBetaBuildIsolation({ ...validEnvironment, [key]: value });
     assert.equal(result.passed, false, `${key} mismatch must fail`);
   }
+});
+
+test("currency pilot remains off until separately activated", () => {
+  assert.equal(evaluateBetaBuildIsolation(validEnvironment).passed, true);
+  assert.equal(evaluateBetaBuildIsolation({ ...validEnvironment, ACT05_ARS_MODE_ENABLED: "false" }).passed, true);
+  const enabled = evaluateBetaBuildIsolation({ ...validEnvironment, ACT05_ARS_MODE_ENABLED: "true" });
+  assert.deepEqual(enabled.failedChecks, ["ars_mode_disabled"]);
 });
 
 test("requires exact, distinct fingerprints for the six beta secrets", () => {
