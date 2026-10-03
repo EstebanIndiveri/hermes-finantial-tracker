@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
-import { getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
+import { getAccountingMonthProjection, getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
 import { db } from "@/lib/db/client";
-import { transactions } from "@/lib/db/schema";
+import { monthly_settings, transactions } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getActiveMonthArgentina } from "@/lib/utils/dates";
 import { HermesExpenseForm } from "@/components/forms/HermesExpenseForm";
@@ -10,11 +10,19 @@ import { CategoryDonut } from "@/components/dashboard/CategoryDonut";
 import { MonthSelector } from "@/components/dashboard/MonthSelector";
 import { TransactionList } from "@/components/dashboard/TransactionList";
 import { ExportPanel } from "@/components/dashboard/ExportPanel";
-import { calculateSavingsPercent } from "@/lib/finance/rules";
+import { calculateMonthStatus, calculateSavingsPercent, type MonthStatus } from "@/lib/finance/rules";
 
 export const dynamic = "force-dynamic";
 
 const MONTH_REGEX = /^\d{4}-\d{2}$/;
+
+type DashboardFinancials = {
+  currency: "USD" | "ARS";
+  income: number;
+  savings: number;
+  goal: number;
+  status: MonthStatus;
+};
 
 export default async function DashboardPage({
   searchParams,
@@ -31,41 +39,70 @@ export default async function DashboardPage({
       ? params.month
       : currentMonth;
 
-  const [summary, categoryBreakdown] = await Promise.all([
-    getMonthSummary(groupId, month),
+  const [settings, categoryBreakdown, recentTx] = await Promise.all([
+    db.query.monthly_settings.findFirst({
+      where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
+    }),
     getCategoryBreakdown(groupId, month),
+    db.query.transactions.findMany({
+      where: and(
+        eq(transactions.group_id, groupId),
+        eq(transactions.month, month),
+        eq(transactions.status, "active"),
+      ),
+      orderBy: (t, { desc }) => desc(t.created_at),
+      with: { category: true },
+    }),
   ]);
 
-  const recentTx = await db.query.transactions.findMany({
-    where: and(
-      eq(transactions.group_id, groupId),
-      eq(transactions.month, month),
-      eq(transactions.status, "active"),
-    ),
-    orderBy: (t, { desc }) => desc(t.created_at),
-    with: { category: true },
-  });
+  const mode = settings?.currency_mode ?? "USD_ARS";
+  const summary = mode === "USD_ARS" ? await getMonthSummary(groupId, month) : null;
+  const projection = mode === "ARS_ARS" && process.env.ACT05_ARS_MODE_ENABLED === "true"
+    ? await getAccountingMonthProjection(groupId, month)
+    : null;
+  let financials: DashboardFinancials | null = null;
+  if (mode === "USD_ARS" && summary) {
+    financials = {
+      currency: "USD",
+      income: summary.income_usd,
+      savings: summary.ahorro_proyectado_usd,
+      goal: summary.saving_goal_usd,
+      status: summary.status,
+    };
+  } else if (mode === "ARS_ARS" && projection?.mode === "ARS_ARS" &&
+    settings?.saving_goal_yellow_ars != null && Number.isFinite(settings.saving_goal_yellow_ars)) {
+    financials = {
+      currency: "ARS",
+      income: projection.effectiveIncome,
+      savings: projection.projectedSavings,
+      goal: projection.savingGoal,
+      status: calculateMonthStatus({
+        income_usd: projection.effectiveIncome,
+        total_spent_usd: projection.totalExpenses,
+        saving_goal_usd: projection.savingGoal,
+        saving_goal_yellow: settings.saving_goal_yellow_ars,
+      }),
+    };
+  }
 
   const spentARS = categoryBreakdown
     .filter(c => !c.is_income)
     .reduce((acc, c) => acc + c.gastado_ars, 0);
-  const pctAhorro = calculateSavingsPercent({
-    income_usd: summary?.income_usd ?? 0,
-    ahorro_proyectado_usd: summary?.ahorro_proyectado_usd ?? 0,
-  });
-  const ahorroUSD = summary?.ahorro_proyectado_usd ?? 0;
-  const goalUSD = summary?.saving_goal_usd ?? 0;
-  const status = summary?.status ?? "GREEN";
+  const pctAhorro = financials ? calculateSavingsPercent({
+    income_usd: financials.income,
+    ahorro_proyectado_usd: financials.savings,
+  }) : null;
+  const status = financials?.status;
 
   // Gauge offset: 188 = full circle. offset=38 means 80% filled
-  const gaugePct = goalUSD > 0 ? Math.min(1, ahorroUSD / goalUSD) : 0;
+  const gaugePct = financials && financials.goal > 0 ? Math.max(0, Math.min(1, financials.savings / financials.goal)) : 0;
   const gaugeOffset = Math.round(188 - gaugePct * 188);
   const gaugeColor = status === "GREEN" ? "" : status === "YELLOW" ? "yellow" : "red";
 
   const closedCats = categoryBreakdown.filter(c => c.status === "CLOSED");
   // Expense-only breakdown for charts/lists (income is shown as balance, not spend).
   const expenseBreakdown = categoryBreakdown.filter(c => !c.is_income);
-  const monthLabel = new Date(month + "-01").toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+  const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
 
   return (
     <>
@@ -98,7 +135,7 @@ export default async function DashboardPage({
       )}
 
       {/* Exchange rate warning */}
-      {summary?.exchange_rate_source !== "ripio" && (
+      {mode === "USD_ARS" && summary?.exchange_rate_source === "manual" && (
         <div className="h-alert-warn h-animate">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
@@ -110,6 +147,7 @@ export default async function DashboardPage({
 
       {/* ── Status Banner ── */}
       <div className="h-status-banner h-animate">
+        {financials ? <>
         <div className="h-status-gauge" aria-hidden="true">
           <svg className="h-gauge-svg" viewBox="0 0 80 80">
             <circle className="h-gauge-track" cx="40" cy="40" r="30"/>
@@ -129,10 +167,10 @@ export default async function DashboardPage({
             {status === "GREEN" ? "Estado verde" : status === "YELLOW" ? "Estado amarillo" : "Estado rojo"}
           </div>
           <div className="h-status-main">
-            USD {ahorroUSD.toLocaleString("es-AR", { maximumFractionDigits: 0 })}
+            {financials.currency} {financials.savings.toLocaleString("es-AR", { maximumFractionDigits: 0 })}
           </div>
           <div className="h-status-sub">
-            Ahorro proyectado · meta: USD {goalUSD.toLocaleString("es-AR", { maximumFractionDigits: 0 })}
+            Ahorro proyectado · meta: {financials.currency} {financials.goal.toLocaleString("es-AR", { maximumFractionDigits: 0 })}
           </div>
         </div>
 
@@ -140,7 +178,7 @@ export default async function DashboardPage({
           <div className="h-status-stat">
             <div className="h-stat-label">Ingreso</div>
             <div className="h-stat-val">
-              USD {(summary?.income_usd ?? 0).toFixed(0)}
+              {financials.currency} {financials.income.toLocaleString("es-AR", { maximumFractionDigits: 0 })}
             </div>
           </div>
           <div className="h-status-stat">
@@ -151,11 +189,17 @@ export default async function DashboardPage({
           </div>
           <div className="h-status-stat">
             <div className="h-stat-label">% Ahorro</div>
-            <div className={`h-stat-val${pctAhorro >= 50 ? " green" : " red"}`}>
-              {pctAhorro.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+            <div className={`h-stat-val${pctAhorro !== null && pctAhorro >= 50 ? " green" : " red"}`}>
+              {pctAhorro?.toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
             </div>
           </div>
         </div>
+        </> : <div className="h-status-info" role="status">
+          <div className="h-status-main">Datos contables no disponibles</div>
+          <div className="h-status-sub">
+            {settings ? "Revisá la configuración y los movimientos de este mes." : "Configurá este mes desde Ajustes para ver tu balance."}
+          </div>
+        </div>}
       </div>
 
       {/* ── Charts row ── */}
@@ -234,11 +278,14 @@ export default async function DashboardPage({
             <h2 className="h-card-title">Registrar gasto</h2>
           </div>
           <div className="h-card-body">
-            <HermesExpenseForm
+            {financials ? <HermesExpenseForm
               categories={categoryBreakdown}
-              exchangeRate={summary?.exchange_rate ?? 1}
+              currencyMode={mode === "ARS_ARS" ? "ARS_ARS" : "USD_ARS"}
+              exchangeRate={mode === "USD_ARS" ? summary?.exchange_rate ?? null : null}
               month={month}
-            />
+            /> : <p className="h-form-hint">
+              El registro está pausado hasta corregir los datos del mes. <a href={`/dashboard/settings?month=${month}`}>Revisar ajustes</a>.
+            </p>}
           </div>
         </div>
       </div>

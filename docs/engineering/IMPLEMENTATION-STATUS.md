@@ -638,8 +638,7 @@ ARS/ARS con flag apagada, umbral ARS configurado y ticket editado. Ningún
 recurso remoto cambió: beta conserva esquema/flag/código desplegado previos y
 legacy sigue intacto.
 
-**Próximo corte abierto ACT-05c, owner Codex:** adaptar primero el dashboard
-y sus pruebas al modo contable, sin interpretar `amount_usd=NULL` como cero.
+**Checkpoint histórico:** ACT-05c fue implementado localmente el 03/10 (ver abajo).
 Después, en cortes separados bajo el mismo owner, quedan alertas, XLSX,
 reembolsos y UI para elegir modo/fuente de cotización. La anomalía canary beta
 en `telegram_operations` sigue con owner Codex y requiere revisión aislada
@@ -647,3 +646,29 @@ antes de migrar beta. Al cerrar esos gates locales,
 Codex repetirá export/backup, conciliación, aislamiento y migración solamente
 en beta con autorización separada; Esteban conserva el QA funcional y una
 eventual decisión de release. No activar `ACT05_ARS_MODE_ENABLED` antes.
+
+### ACT-05c dashboard contable — 03/10/2026
+
+**Corte local cerrado, owner Codex.** El dashboard muestra ingreso, ahorro,
+meta y estado en ARS para `ARS_ARS`, usando la proyección contable y el umbral
+amarillo configurado para ese mes. Los gastos y límites de categoría siguen
+en ARS. El modo mixto conserva sus importes contables en USD y su vista previa
+de conversión de gasto ARS→USD. La vista previa USD no aparece en ARS/ARS.
+
+Con la flag apagada, configuración incompleta o proyección inconsistente, la
+cabecera informa que los datos contables no están disponibles y pausa el
+formulario; nunca convierte `amount_usd=NULL` en cero ni muestra un estado
+financiero inventado. La etiqueta del mes se construye en horario local para
+que octubre no aparezca como septiembre en Argentina. Las pruebas dirigidas
+cubren ambos modos, flag apagada, proyección inválida y regresión del panel de
+exportación. Los gates completos de este commit se registran al cierre de la
+verificación: Node 22, harness 84/84, Jest 97 suites y 839/839 tests,
+typecheck y build verdes; lint 0 errores y 67 warnings preexistentes. Typecheck
+y build se ejecutaron secuencialmente porque ambos comparten `.next/types`.
+Ninguna DB, flag o implementación remota cambió en este corte.
+
+**Próximo corte abierto ACT-05d, owner Codex:** revisar y adaptar la exportación
+XLSX/CSV al contrato de moneda mensual sin reinterpretar movimientos históricos;
+seguir con alertas y reintegros en cortes separados. La anomalía canary beta
+en `telegram_operations` conserva owner Codex antes de cualquier migración
+remota. Esteban conserva la aceptación funcional beta y cualquier release.

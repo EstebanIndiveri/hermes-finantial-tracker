@@ -23,7 +23,10 @@ jest.mock("@/lib/finance/summaries", () => ({
 }));
 
 jest.mock("@/lib/db/client", () => ({
-  db: { query: { transactions: { findMany: jest.fn().mockResolvedValue([]) } } },
+  db: { query: {
+    monthly_settings: { findFirst: jest.fn().mockResolvedValue({ currency_mode: "USD_ARS" }) },
+    transactions: { findMany: jest.fn().mockResolvedValue([]) },
+  } },
 }));
 
 jest.mock("@/lib/utils/dates", () => ({

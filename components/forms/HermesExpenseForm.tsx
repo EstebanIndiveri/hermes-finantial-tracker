@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import type { CurrencyMode } from "@/lib/finance/currency-mode";
 
 interface Category {
   id: string; slug: string; name: string; emoji: string;
@@ -10,11 +11,12 @@ interface Category {
 
 interface Props {
   categories: Category[];
-  exchangeRate: number;
+  currencyMode: CurrencyMode;
+  exchangeRate: number | null;
   month?: string;
 }
 
-export function HermesExpenseForm({ categories, exchangeRate, month }: Props) {
+export function HermesExpenseForm({ categories, currencyMode, exchangeRate, month }: Props) {
   const router = useRouter();
   const [amount, setAmount] = useState("");
   const [catId, setCatId] = useState("");
@@ -23,8 +25,10 @@ export function HermesExpenseForm({ categories, exchangeRate, month }: Props) {
   const [loading, setLoading] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const usdPreview = amount && parseFloat(amount) > 0
-    ? (parseFloat(amount.replace(",", ".")) / exchangeRate).toFixed(2)
+  const hasUsdPreview = currencyMode === "USD_ARS" && exchangeRate !== null && Number.isFinite(exchangeRate) && exchangeRate > 0;
+  const parsedAmount = parseFloat(amount.replace(",", "."));
+  const usdPreview = hasUsdPreview && Number.isFinite(parsedAmount) && parsedAmount > 0
+    ? (parsedAmount / exchangeRate).toFixed(2)
     : "—";
 
   async function submit(isException = false) {
@@ -98,7 +102,9 @@ export function HermesExpenseForm({ categories, exchangeRate, month }: Props) {
               inputMode="numeric"
             />
           </div>
-          <span className="h-form-hint">≈ USD {usdPreview}</span>
+          {currencyMode === "USD_ARS" && <span className="h-form-hint">
+            {hasUsdPreview ? `≈ USD ${usdPreview}` : "Cotización no disponible"}
+          </span>}
         </div>
 
         <div className="h-form-group">
