@@ -42,7 +42,7 @@
     {
       "id": "0090-currency-modes",
       "files": ["0011_currency_modes.sql"],
-      "foreignKeys": "disabled-during-rebuild"
+      "minimumSqliteVersion": "3.35.0"
     }
   ],
   "excluded": [

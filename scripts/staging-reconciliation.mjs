@@ -93,10 +93,11 @@ const SNAPSHOT_KEYS = [
   "schemaFingerprint",
   "signature",
   "tableInventory",
+  "telegramOperationsContentHash",
   "version",
 ];
 const SNAPSHOT_KIND = "hermes-staging-reconciliation";
-const SNAPSHOT_VERSION = 2;
+const SNAPSHOT_VERSION = 3;
 const SHA256 = /^[a-f0-9]{64}$/;
 
 function reconciliationError(code, message) {
@@ -209,7 +210,7 @@ async function duplicateOperationGroups(client, table, columns) {
   `);
 }
 
-async function integrityEvidence(client, tables, columnsByTable) {
+async function integrityEvidence(client, tables, columnsByTable, evidenceSalt) {
   const tableSet = new Set(tables);
   const foreignKeys = await client.execute("PRAGMA foreign_key_check");
   const evidence = {
@@ -279,6 +280,16 @@ async function integrityEvidence(client, tables, columnsByTable) {
     "bot_id", "committed_at", "operation_id", "operation_kind", "resource_id", "resource_type", "result_json", "status", "update_id",
   ])) {
     operationSchemaReady = true;
+    const operationColumns = [...columnsByTable.get("telegram_operations")].sort();
+    const operations = await client.execute(
+      `SELECT ${operationColumns.join(", ")} FROM telegram_operations ORDER BY operation_id`,
+    );
+    const protectedOperations = operations.rows.map((row) => createHmac("sha256", evidenceSalt)
+      .update(JSON.stringify(operationColumns.map((column) => row[column] ?? null)))
+      .digest("hex"));
+    evidence.telegramOperationsContentHash = createHash("sha256")
+      .update(protectedOperations.join("\n"))
+      .digest("hex");
     evidence.operationDuplicateNamespaces = await scalarCount(client, `
       SELECT COUNT(*) AS count FROM (
         SELECT bot_id, update_id, operation_kind FROM telegram_operations
@@ -395,6 +406,7 @@ function loadedManifestDigest(manifest) {
       })),
       checksum: migration.checksum,
       preflight: migration.preflight,
+      minimumSqliteVersion: migration.minimumSqliteVersion ?? null,
     })),
     excluded: manifest.excluded,
   };
@@ -441,6 +453,9 @@ function verifySnapshot(snapshot, evidenceSalt) {
   if (snapshot.version !== SNAPSHOT_VERSION || snapshot.kind !== SNAPSHOT_KIND) invalidEvidence("Unsupported evidence format.");
   for (const field of ["schemaFingerprint", "manifestDigest", "databaseEvidenceId", "evidenceKeyId", "signature"]) {
     if (typeof snapshot[field] !== "string" || !SHA256.test(snapshot[field])) invalidEvidence(`${field} must be SHA-256.`);
+  }
+  if (snapshot.telegramOperationsContentHash !== null && !SHA256.test(snapshot.telegramOperationsContentHash)) {
+    invalidEvidence("telegramOperationsContentHash must be SHA-256 or null.");
   }
   if (snapshot.readOnlyVerified !== true) invalidEvidence("The capture did not verify query_only mode.");
   if (snapshot.redaction !== "counts-hmac-content-and-aggregates-only") invalidEvidence("Unexpected redaction contract.");
@@ -512,7 +527,10 @@ export async function captureReconciliationSnapshot({ url, evidenceSalt }) {
       }
     }
 
-    const integrity = await integrityEvidence(client, tables, columnsByTable);
+    const integrityEvidenceResult = await integrityEvidence(client, tables, columnsByTable, evidenceSalt);
+    const telegramOperationsContentHash = integrityEvidenceResult.telegramOperationsContentHash ?? null;
+    delete integrityEvidenceResult.telegramOperationsContentHash;
+    const integrity = integrityEvidenceResult;
     const payload = {
       version: SNAPSHOT_VERSION,
       kind: SNAPSHOT_KIND,
@@ -522,6 +540,7 @@ export async function captureReconciliationSnapshot({ url, evidenceSalt }) {
       evidenceKeyId: createHmac("sha256", evidenceSalt).update("hermes-staging-evidence-key-v1").digest("hex"),
       readOnlyVerified: true,
       tableInventory,
+      telegramOperationsContentHash,
       financialAggregates,
       integrity,
       blockingFindings: blockingFindings(integrity),
@@ -536,13 +555,22 @@ export async function captureReconciliationSnapshot({ url, evidenceSalt }) {
 export function compareReconciliationSnapshots(
   beforeInput,
   afterInput,
-  { evidenceSalt, expectedAfterSchemaFingerprint, expectedAfterManifestDigest, allowedAddedTables = [] } = {},
+  {
+    evidenceSalt,
+    expectedAfterSchemaFingerprint,
+    expectedAfterManifestDigest,
+    allowedAddedTables = [],
+    acceptedBaselineBlockers = [],
+  } = {},
 ) {
   const before = verifySnapshot(beforeInput, evidenceSalt);
   const after = verifySnapshot(afterInput, evidenceSalt);
   const differences = [];
   if (allowedAddedTables.some((table) => !(table in TABLE_KEYS))) {
     invalidEvidence("allowedAddedTables contains an unknown table.");
+  }
+  if (acceptedBaselineBlockers.some((blocker) => blocker !== "invalidOperationStates")) {
+    invalidEvidence("acceptedBaselineBlockers only supports invalidOperationStates.");
   }
   if (before.evidenceKeyId !== after.evidenceKeyId) differences.push("evidence-key-changed");
   if (before.databaseEvidenceId !== after.databaseEvidenceId) differences.push("database-target-changed");
@@ -574,7 +602,26 @@ export function compareReconciliationSnapshots(
   for (const table of Object.keys(after.financialAggregates)) {
     if (!(table in before.financialAggregates) && !allowedAdditions.has(table)) differences.push(`unapproved-added-financial-evidence:${table}`);
   }
-  for (const finding of after.blockingFindings) differences.push(`blocking:${finding}`);
+  const acceptedBlockers = new Set();
+  if (acceptedBaselineBlockers.includes("invalidOperationStates")) {
+    const beforeCount = before.integrity.invalidOperationStates;
+    const afterCount = after.integrity.invalidOperationStates;
+    const beforeInventory = before.tableInventory.telegram_operations;
+    const afterInventory = after.tableInventory.telegram_operations;
+    const stableOperationEvidence = beforeInventory && afterInventory
+      && canonicalJson(beforeInventory) === canonicalJson(afterInventory)
+      && typeof before.telegramOperationsContentHash === "string"
+      && before.telegramOperationsContentHash === after.telegramOperationsContentHash;
+    if (beforeCount === 1 && afterCount === 1 && stableOperationEvidence) {
+      acceptedBlockers.add("invalidOperationStates");
+    } else {
+      differences.push("baseline-blocker-not-stable:invalidOperationStates");
+    }
+  }
+  for (const finding of after.blockingFindings) {
+    if (acceptedBlockers.has(finding)) continue;
+    differences.push(`blocking:${finding}`);
+  }
   return { ok: differences.length === 0, differences: [...new Set(differences)].sort() };
 }
 

@@ -105,7 +105,7 @@ async function writeManifestSnapshot(directory, manifest, migrationCount, { fail
     id: migration.id,
     files: migration.files.map(({ file }) => file),
     ...(migration.preflight.length ? { preflight: migration.preflight } : {}),
-    ...(migration.foreignKeys !== "enabled" ? { foreignKeys: migration.foreignKeys } : {}),
+    ...(migration.minimumSqliteVersion ? { minimumSqliteVersion: migration.minimumSqliteVersion } : {}),
   }));
   const excluded = manifest.excluded.map(({ file, reason }) => ({ file, reason }));
   for (const migration of manifest.migrations.slice(migrationCount)) {
@@ -164,10 +164,33 @@ test("currency migration preserves existing records, incoming FKs, indexes and p
   assert.equal(transaction.rows[0].exchange_rate_snapshot, null);
   const settings = await query(database.url, "SELECT * FROM monthly_settings WHERE id = 'm1'");
   assert.equal(Number(settings.rows[0].income_usd), 2500);
+  assert.equal(Number(settings.rows[0].saving_goal_usd), 500);
+  assert.equal(Number(settings.rows[0].saving_goal_yellow), 300);
+  assert.equal(Number(settings.rows[0].exchange_rate), 1600);
   assert.equal(settings.rows[0].currency_mode, "USD_ARS");
   assert.equal(settings.rows[0].income_ars, null);
   assert.equal(settings.rows[0].saving_goal_ars, null);
   assert.equal(settings.rows[0].saving_goal_yellow_ars, null);
+  const settingsColumns = await query(database.url, "PRAGMA table_info(monthly_settings)");
+  for (const name of ["income_usd", "saving_goal_usd", "saving_goal_yellow", "exchange_rate"]) {
+    assert.equal(Number(settingsColumns.rows.find((row) => row.name === name)?.notnull), 0);
+  }
+  await query(database.url, `
+    INSERT INTO monthly_settings (id, user_id, group_id, month, currency_mode,
+      income_ars, saving_goal_ars, saving_goal_yellow_ars)
+    VALUES ('m2', 'u1', 'g1', '2026-11', 'ARS_ARS', 2000000, 500000, 300000)
+  `);
+  const arsSettings = await query(database.url, "SELECT * FROM monthly_settings WHERE id = 'm2'");
+  for (const name of ["income_usd", "saving_goal_usd", "saving_goal_yellow", "exchange_rate"]) {
+    assert.equal(arsSettings.rows[0][name], null);
+  }
+  await assert.rejects(query(database.url, "UPDATE monthly_settings SET income_usd = 1 WHERE id = 'm2'"));
+  await assert.rejects(query(database.url, "UPDATE monthly_settings SET income_ars = 1 WHERE id = 'm1'"));
+  await assert.rejects(query(database.url, `
+    INSERT INTO monthly_settings (id, user_id, group_id, month, currency_mode,
+      income_ars, saving_goal_ars, saving_goal_yellow_ars, income_usd)
+    VALUES ('m3', 'u1', 'g1', '2026-12', 'ARS_ARS', 2000000, 500000, 300000, 1)
+  `));
   const childCounts = await query(database.url, `
     SELECT
       (SELECT COUNT(*) FROM reimbursement_requests WHERE transaction_id = 't1') AS reimbursements,
@@ -195,18 +218,31 @@ test("currency migration preserves existing records, incoming FKs, indexes and p
   await assert.rejects(query(database.url, `
     INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,
       exchange_rate_snapshot, currency_mode, date, month)
-    VALUES ('t3', 'u1', 'g1', 'c1', 2500, 1.56, 1600, 'ARS_ARS', '2026-10-03', '2026-10')
+    VALUES ('t3', 'u1', 'g1', 'c1', 2500, 1.56, NULL, 'ARS_ARS', '2026-10-03', '2026-10')
+  `));
+  await assert.rejects(query(database.url, `
+    INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,
+      exchange_rate_snapshot, currency_mode, date, month)
+    VALUES ('t6', 'u1', 'g1', 'c1', 2500, NULL, 1600, 'ARS_ARS', '2026-10-03', '2026-10')
   `));
   await assert.rejects(query(database.url, `
     INSERT INTO transactions (id, operation_id, user_id, group_id, category_id, amount_ars,
       amount_usd, currency_mode, date, month)
     VALUES ('t4', 'op1', 'u1', 'g1', 'c1', 2500, NULL, 'ARS_ARS', '2026-10-03', '2026-10')
   `));
+  await assert.rejects(query(database.url, `
+    INSERT INTO transactions (id, user_id, group_id, category_id, amount_ars, amount_usd,
+      exchange_rate_snapshot, currency_mode, date, month)
+    VALUES ('t5', 'u1', 'g1', 'c1', 2500, NULL, 1600, 'USD_ARS', '2026-10-03', '2026-10')
+  `));
+  await assert.rejects(query(database.url, "UPDATE transactions SET amount_usd = NULL WHERE id = 't1'"));
+  await assert.rejects(query(database.url, "UPDATE transactions SET exchange_rate_snapshot = 1600 WHERE id = 't2'"));
+  await query(database.url, "UPDATE transactions SET description = 'valid update' WHERE id = 't2'");
   const second = await migrateDatabase({ url: database.url });
   assert.deepEqual(second.appliedMigrationIds, []);
 });
 
-test("currency table rebuild rolls back atomically and restores FK enforcement", async (t) => {
+test("currency migration rolls back atomically with FK enforcement left on", async (t) => {
   const database = await temporaryDatabase(t);
   const canonical = await loadMigrationManifest();
   const prefixManifest = await writeManifestSnapshot(database.directory, canonical, 9);
@@ -227,6 +263,22 @@ test("currency table rebuild rolls back atomically and restores FK enforcement",
   assert.equal(Number(data.rows[0].amount_usd), 1);
   const ledger = await query(database.url, "SELECT migration_id FROM hermes_schema_migrations ORDER BY migration_id");
   assert.equal(ledger.rows.length, 9);
+});
+
+test("migration refuses SQLite versions older than the DROP COLUMN requirement", async (t) => {
+  const database = await temporaryDatabase(t);
+  const canonical = await loadMigrationManifest();
+  const fullManifestPath = await writeManifestSnapshot(database.directory, canonical, 10);
+  const manifest = JSON.parse(await readFile(fullManifestPath, "utf8"));
+  manifest.migrations.at(-1).minimumSqliteVersion = "99.0.0";
+  await writeFile(fullManifestPath, JSON.stringify(manifest), "utf8");
+
+  await assert.rejects(
+    migrateDatabase({ url: database.url, manifestPath: fullManifestPath }),
+    (error) => error.code === "SQLITE_VERSION_UNSUPPORTED",
+  );
+  const tables = await query(database.url, "SELECT name FROM sqlite_schema WHERE type = 'table'");
+  assert.deepEqual(tables.rows, []);
 });
 
 test("unmanaged non-empty databases are inspected but never adopted or mutated", async (t) => {

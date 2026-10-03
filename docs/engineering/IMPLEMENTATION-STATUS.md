@@ -460,34 +460,58 @@ rehearsed, compatible nullable/typed-amount migration on isolated beta copies
 with backup and reconciliation, not just a UI flag.
 
 ACT-05 entry gate (historical checkpoint, now closed locally), owner **Codex**: extend the canonical migration runner to
-rebuild `transactions` safely with its incoming reimbursement/recurring FKs,
-preserve all rows and partial operation index, add group/month mode and ARS
-settings, then prove rollback/reconciliation on local copies. The runner
-currently wraps each SQL migration in a transaction, so `PRAGMA foreign_keys`
-cannot simply be toggled inside a SQL file. No beta or legacy migration was
+relax USD-column nullability without rebuilding tables or disabling FKs,
+preserve all rows and indexes, add group/month mode and ARS settings, then
+prove rollback/reconciliation on local copies. No beta or legacy migration was
 performed by this local contract cut. Subsequent owner Codex gates are
 mode-aware writers/readers, a corrected or disabled recurrent writer, full
 regression, then a separately gated beta rehearsal/activation and operator QA.
 
 ### ACT-05 local migration foundation — 03/10/2026
 
-The canonical `0090-currency-modes` migration and a narrowly scoped FK-aware
-rebuild path are implemented **locally only** on `codex/act05-currency-modes`.
+The canonical `0090-currency-modes` migration and a transactional add/copy/drop/rename
+path with FKs **enabled** are implemented **locally only** on `codex/act05-currency-modes`.
 Historical USD/ARS settings and transaction values remain unchanged; new
 transactions can explicitly represent ARS/ARS with `amount_usd=NULL`. Tests
 cover incoming reimbursement/recurring references, indexes, duplicate
 operation identity, all preserved historical columns, invalid pseudo-USD,
-idempotent rerun, induced rollback and FK restoration. The runner now checks
+idempotent rerun, induced rollback and uninterrupted FK enforcement. The runner now checks
 SQLite integrity and both the pre-currency and new canonical fingerprints.
-Node 22 gates: 93/93 Jest suites and 787/787 tests; migration runner 14/14;
+The initial local gates were 93/93 Jest suites and 787/787 tests; migration runner 14/14;
 typecheck, lint with zero errors and build passed. Typecheck and build must run
 sequentially because `next build` regenerates `.next/types` while TypeScript
 reads it; a parallel attempt produced transient missing-file errors, then the
 sequential rerun passed. No remote DB, beta, webhook or legacy resource changed.
 
-This closes **only the local schema/rehearsal foundation**. Owner **Codex**
-still must validate the migration against a fresh isolated beta backup/restore
-and the target's FK behavior before any beta write; update all writers,
+The 03/10 fresh beta export was restored to independent local copies. Both
+copies reached the new canonical fingerprint
+`fb830cf40e951abd3c4072e8c0b011d4040782d44c1dc8325d150973260a6046`;
+inventory and financial aggregates were identical before/after, repeat apply
+was a no-op, and the beta SQLite version 3.47.0 exceeds the 3.35 requirement.
+The isolated CLI session authenticated `esteban-indiveri` and verified
+`beta-hermes` (DB ID `01a0c0bd-0601-7f27-b147-915d105b19f2b`);
+the production CLI login was not changed. The untouched export bundle SHA-256
+values were DB `69d2cb13a4184d62c820f888228e4c2ab4e2c44599c895e6bc57263fc2b6b733`,
+WAL `abcf56b42fd3cabe4515388808a0e6a0481d76daa1e119719c951d847e11f1b9`,
+metadata `f7eb930c6e9ee2ceeedbbfe9ab8120f5e3d1aeea8b343ff7a34b7cb18eed0be2`.
+The default strict reconciliation is **not green**: one pre-existing
+`telegram_operations` row of kind `outbox.scheduler.canary` is committed with
+both `committed_at` and `result_json` absent. It was present before and after
+the local migration, references no financial resource, and remains an open
+beta data-integrity finding. A signed snapshot v3 and an explicit, narrowly
+scoped `acceptedBaselineBlockers: ["invalidOperationStates"]` option make the
+local reconciliation green **only** when exactly one such row and its full
+HMAC-protected content remain identical before/after. The default remains
+strict; other findings still block. The isolated beta rehearsal passed with
+this explicit exception. Owner **Codex** retains the canary anomaly for a
+separate safe cleanup review; it has not been edited. No remote migration is
+authorized by this rehearsal. No financial row content or operation ID was
+included in the evidence.
+
+This closes **only the local schema mechanics and the bounded local
+reconciliation rehearsal**, not the remote beta migration gate. Owner
+**Codex** must verify a fresh beta export and the same one-row canary baseline
+immediately before any beta schema write; update all writers,
 projections and surfaces behind a disabled beta flag; remove the recurrent
 1200-rate path; and run cross-channel money/permission tests. Because the
 TypeScript schema now selects the new columns, this branch must **not** be

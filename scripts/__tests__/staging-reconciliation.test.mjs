@@ -95,7 +95,7 @@ test("captures deterministic redacted evidence without mutating an unmanaged leg
   assert.equal(afterTables.rows.some((row) => row.name === "hermes_schema_migrations"), false);
   assert.equal(first.tableInventory.transactions.rowCount, 1);
   assert.equal(first.readOnlyVerified, true);
-  assert.equal(first.version, 2);
+  assert.equal(first.version, 3);
   assert.match(first.signature, /^[a-f0-9]{64}$/);
   assert.deepEqual(first.financialAggregates.transactions.sums, {
     amount_ars: 1234.5,
@@ -170,6 +170,115 @@ test("compares preserved tables, key sets, financial aggregates and blockers", a
     compareReconciliationSnapshots(changed, drifted, { evidenceSalt: EVIDENCE_SALT }).differences.includes("schema-fingerprint-changed"),
     true,
   );
+});
+
+async function operationCanaryFixture(url) {
+  await withClient(url, (client) => client.executeMultiple(`
+    CREATE TABLE telegram_operations (
+      operation_id TEXT PRIMARY KEY,
+      bot_id TEXT NOT NULL,
+      update_id INTEGER NOT NULL,
+      operation_kind TEXT NOT NULL,
+      status TEXT NOT NULL,
+      committed_at TEXT,
+      result_json TEXT,
+      resource_type TEXT,
+      resource_id TEXT
+    );
+    INSERT INTO telegram_operations
+      (operation_id, bot_id, update_id, operation_kind, status, result_json)
+    VALUES ('legacy-operation', 'beta-bot', 41, 'expense', 'legacy-invalid', '{"preserved":true}');
+    CREATE TABLE recurring_executions (
+      id TEXT PRIMARY KEY,
+      recurring_expense_id TEXT NOT NULL,
+      scheduled_date TEXT NOT NULL
+    );
+  `));
+}
+
+test("explicitly accepts only an unchanged invalidOperationStates baseline canary", async (t) => {
+  const database = await temporaryDatabase(t);
+  await operationCanaryFixture(database.url);
+  const before = await captureReconciliationSnapshot({ url: database.url, evidenceSalt: EVIDENCE_SALT });
+  const unchanged = await captureReconciliationSnapshot({ url: database.url, evidenceSalt: EVIDENCE_SALT });
+
+  assert.equal(before.integrity.invalidOperationStates, 1);
+  assert.match(before.telegramOperationsContentHash, /^[a-f0-9]{64}$/);
+  assert.deepEqual(
+    compareReconciliationSnapshots(before, unchanged, {
+      evidenceSalt: EVIDENCE_SALT,
+      acceptedBaselineBlockers: ["invalidOperationStates"],
+    }),
+    { ok: true, differences: [] },
+  );
+
+  await withClient(database.url, (client) => client.execute(
+    "UPDATE telegram_operations SET result_json = '{\"preserved\":false}' WHERE operation_id = 'legacy-operation'",
+  ));
+  const changedContent = await captureReconciliationSnapshot({ url: database.url, evidenceSalt: EVIDENCE_SALT });
+  const changedContentResult = compareReconciliationSnapshots(before, changedContent, {
+    evidenceSalt: EVIDENCE_SALT,
+    acceptedBaselineBlockers: ["invalidOperationStates"],
+  });
+  assert.equal(changedContentResult.ok, false);
+  assert.equal(changedContentResult.differences.includes("baseline-blocker-not-stable:invalidOperationStates"), true);
+
+  await withClient(database.url, (client) => client.execute(
+    `INSERT INTO telegram_operations
+      (operation_id, bot_id, update_id, operation_kind, status)
+     VALUES ('new-invalid-operation', 'beta-bot', 42, 'expense', 'legacy-invalid')`,
+  ));
+  const changedInventory = await captureReconciliationSnapshot({ url: database.url, evidenceSalt: EVIDENCE_SALT });
+  const changedInventoryResult = compareReconciliationSnapshots(before, changedInventory, {
+    evidenceSalt: EVIDENCE_SALT,
+    acceptedBaselineBlockers: ["invalidOperationStates"],
+  });
+  assert.equal(changedInventoryResult.ok, false);
+  assert.equal(changedInventoryResult.differences.includes("baseline-blocker-not-stable:invalidOperationStates"), true);
+  assert.equal(changedInventoryResult.differences.includes("table-changed:telegram_operations"), true);
+});
+
+test("the canary opt-in does not suppress any other blocker or accept arbitrary names", async (t) => {
+  const database = await temporaryDatabase(t);
+  await operationCanaryFixture(database.url);
+  const before = await captureReconciliationSnapshot({ url: database.url, evidenceSalt: EVIDENCE_SALT });
+  await withClient(database.url, (client) => client.executeMultiple(`
+    INSERT INTO recurring_executions VALUES ('duplicate-one', 'canary-recurring', '2026-10-01');
+    INSERT INTO recurring_executions VALUES ('duplicate-two', 'canary-recurring', '2026-10-01');
+  `));
+  const after = await captureReconciliationSnapshot({ url: database.url, evidenceSalt: EVIDENCE_SALT });
+  const comparison = compareReconciliationSnapshots(before, after, {
+    evidenceSalt: EVIDENCE_SALT,
+    acceptedBaselineBlockers: ["invalidOperationStates"],
+  });
+  assert.equal(comparison.ok, false);
+  assert.equal(comparison.differences.includes("blocking:recurringDuplicateGroups"), true);
+  assert.throws(
+    () => compareReconciliationSnapshots(before, after, {
+      evidenceSalt: EVIDENCE_SALT,
+      acceptedBaselineBlockers: ["foreignKeyViolations"],
+    }),
+    (error) => error.code === "INVALID_RECONCILIATION_EVIDENCE",
+  );
+});
+
+test("the canary opt-in rejects a baseline with more than one invalid operation state", async (t) => {
+  const database = await temporaryDatabase(t);
+  await operationCanaryFixture(database.url);
+  await withClient(database.url, (client) => client.execute(
+    `INSERT INTO telegram_operations
+      (operation_id, bot_id, update_id, operation_kind, status)
+     VALUES ('second-invalid-operation', 'beta-bot', 42, 'expense', 'legacy-invalid')`,
+  ));
+  const before = await captureReconciliationSnapshot({ url: database.url, evidenceSalt: EVIDENCE_SALT });
+  const after = await captureReconciliationSnapshot({ url: database.url, evidenceSalt: EVIDENCE_SALT });
+  const comparison = compareReconciliationSnapshots(before, after, {
+    evidenceSalt: EVIDENCE_SALT,
+    acceptedBaselineBlockers: ["invalidOperationStates"],
+  });
+  assert.equal(before.integrity.invalidOperationStates, 2);
+  assert.equal(comparison.ok, false);
+  assert.equal(comparison.differences.includes("baseline-blocker-not-stable:invalidOperationStates"), true);
 });
 
 test("a canonical no-op migration preserves synthetic staging evidence", async (t) => {

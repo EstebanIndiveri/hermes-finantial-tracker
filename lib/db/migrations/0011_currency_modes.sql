@@ -9,54 +9,90 @@ ALTER TABLE monthly_settings ADD COLUMN income_ars REAL;
 ALTER TABLE monthly_settings ADD COLUMN saving_goal_ars REAL;
 ALTER TABLE monthly_settings ADD COLUMN saving_goal_yellow_ars REAL;
 
--- amount_usd must be nullable to represent ARS-only transactions without a
--- fabricated conversion. SQLite requires a table rebuild to change nullability.
--- The runner disables FK enforcement before opening this migration's transaction
--- and reenables it after commit/rollback. Keep incoming references pointing to
--- the stable `transactions` table name throughout the replacement.
-CREATE TABLE transactions_currency_modes (
-  id TEXT PRIMARY KEY NOT NULL,
-  operation_id TEXT,
-  user_id TEXT NOT NULL REFERENCES users(id) ON UPDATE NO ACTION ON DELETE NO ACTION,
-  group_id TEXT REFERENCES groups(id) ON UPDATE NO ACTION ON DELETE NO ACTION,
-  category_id TEXT NOT NULL REFERENCES categories(id) ON UPDATE NO ACTION ON DELETE NO ACTION,
-  amount_ars REAL NOT NULL,
-  amount_usd REAL,
-  exchange_rate_snapshot REAL,
-  currency_mode TEXT NOT NULL DEFAULT 'USD_ARS'
-    CHECK (currency_mode IN ('USD_ARS', 'ARS_ARS')),
-  merchant TEXT,
-  description TEXT,
-  date TEXT NOT NULL,
-  month TEXT NOT NULL,
-  source TEXT NOT NULL DEFAULT 'web',
-  status TEXT NOT NULL DEFAULT 'active',
-  requires_reimbursement INTEGER DEFAULT 0,
-  is_exception INTEGER NOT NULL DEFAULT 0,
-  deleted_at INTEGER,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
-  CHECK (
-    (currency_mode = 'USD_ARS' AND amount_usd IS NOT NULL) OR
-    (currency_mode = 'ARS_ARS' AND amount_usd IS NULL AND exchange_rate_snapshot IS NULL)
-  )
-);
+-- ARS-only months must not carry invented USD configuration or an implicit FX
+-- rate of 1. Preserve every existing mixed-mode value while relaxing only the
+-- nullability of these legacy columns.
+ALTER TABLE monthly_settings ADD COLUMN income_usd_nullable_tmp REAL;
+UPDATE monthly_settings SET income_usd_nullable_tmp = income_usd;
+ALTER TABLE monthly_settings DROP COLUMN income_usd;
+ALTER TABLE monthly_settings RENAME COLUMN income_usd_nullable_tmp TO income_usd;
+ALTER TABLE monthly_settings ADD COLUMN saving_goal_usd_nullable_tmp REAL;
+UPDATE monthly_settings SET saving_goal_usd_nullable_tmp = saving_goal_usd;
+ALTER TABLE monthly_settings DROP COLUMN saving_goal_usd;
+ALTER TABLE monthly_settings RENAME COLUMN saving_goal_usd_nullable_tmp TO saving_goal_usd;
+ALTER TABLE monthly_settings ADD COLUMN saving_goal_yellow_nullable_tmp REAL;
+UPDATE monthly_settings SET saving_goal_yellow_nullable_tmp = saving_goal_yellow;
+ALTER TABLE monthly_settings DROP COLUMN saving_goal_yellow;
+ALTER TABLE monthly_settings RENAME COLUMN saving_goal_yellow_nullable_tmp TO saving_goal_yellow;
+ALTER TABLE monthly_settings ADD COLUMN exchange_rate_nullable_tmp REAL;
+UPDATE monthly_settings SET exchange_rate_nullable_tmp = exchange_rate;
+ALTER TABLE monthly_settings DROP COLUMN exchange_rate;
+ALTER TABLE monthly_settings RENAME COLUMN exchange_rate_nullable_tmp TO exchange_rate;
 
-INSERT INTO transactions_currency_modes (
-  id, operation_id, user_id, group_id, category_id, amount_ars, amount_usd,
-  merchant, description, date, month, source, status, requires_reimbursement,
-  is_exception, deleted_at, created_at
+CREATE TRIGGER monthly_settings_currency_mode_insert
+BEFORE INSERT ON monthly_settings
+WHEN NOT (
+  (NEW.currency_mode = 'USD_ARS' AND NEW.income_usd IS NOT NULL
+    AND NEW.saving_goal_usd IS NOT NULL AND NEW.saving_goal_yellow IS NOT NULL
+    AND NEW.exchange_rate IS NOT NULL AND NEW.exchange_rate > 0
+    AND NEW.income_ars IS NULL AND NEW.saving_goal_ars IS NULL
+    AND NEW.saving_goal_yellow_ars IS NULL) OR
+  (NEW.currency_mode = 'ARS_ARS' AND NEW.income_ars IS NOT NULL
+    AND NEW.saving_goal_ars IS NOT NULL AND NEW.saving_goal_yellow_ars IS NOT NULL
+    AND NEW.income_usd IS NULL AND NEW.saving_goal_usd IS NULL
+    AND NEW.saving_goal_yellow IS NULL)
 )
-SELECT
-  id, operation_id, user_id, group_id, category_id, amount_ars, amount_usd,
-  merchant, description, date, month, source, status, requires_reimbursement,
-  is_exception, deleted_at, created_at
-FROM transactions;
+BEGIN
+  SELECT RAISE(ABORT, 'monthly settings currency mode and amounts are inconsistent');
+END;
 
-DROP TABLE transactions;
-ALTER TABLE transactions_currency_modes RENAME TO transactions;
+CREATE TRIGGER monthly_settings_currency_mode_update
+BEFORE UPDATE ON monthly_settings
+WHEN NOT (
+  (NEW.currency_mode = 'USD_ARS' AND NEW.income_usd IS NOT NULL
+    AND NEW.saving_goal_usd IS NOT NULL AND NEW.saving_goal_yellow IS NOT NULL
+    AND NEW.exchange_rate IS NOT NULL AND NEW.exchange_rate > 0
+    AND NEW.income_ars IS NULL AND NEW.saving_goal_ars IS NULL
+    AND NEW.saving_goal_yellow_ars IS NULL) OR
+  (NEW.currency_mode = 'ARS_ARS' AND NEW.income_ars IS NOT NULL
+    AND NEW.saving_goal_ars IS NOT NULL AND NEW.saving_goal_yellow_ars IS NOT NULL
+    AND NEW.income_usd IS NULL AND NEW.saving_goal_usd IS NULL
+    AND NEW.saving_goal_yellow IS NULL)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'monthly settings currency mode and amounts are inconsistent');
+END;
 
-CREATE INDEX tx_user_month_idx ON transactions(user_id, month);
-CREATE INDEX tx_category_idx ON transactions(category_id);
-CREATE INDEX tx_group_id_idx ON transactions(group_id);
-CREATE UNIQUE INDEX transactions_operation_id_idx ON transactions(operation_id)
-  WHERE operation_id IS NOT NULL;
+-- SQLite 3.35+ supports transactional DROP COLUMN. Keep the table identity,
+-- incoming foreign keys, and existing indexes in place while replacing only the
+-- NOT NULL amount column. Existing USD values are copied verbatim.
+ALTER TABLE transactions ADD COLUMN amount_usd_nullable_tmp REAL;
+UPDATE transactions SET amount_usd_nullable_tmp = amount_usd;
+ALTER TABLE transactions DROP COLUMN amount_usd;
+ALTER TABLE transactions RENAME COLUMN amount_usd_nullable_tmp TO amount_usd;
+
+ALTER TABLE transactions ADD COLUMN exchange_rate_snapshot REAL;
+ALTER TABLE transactions ADD COLUMN currency_mode TEXT NOT NULL DEFAULT 'USD_ARS'
+  CHECK (currency_mode IN ('USD_ARS', 'ARS_ARS'));
+
+-- SQLite CHECK constraints cannot be added to an existing table. Triggers keep
+-- the currency invariant enforceable for both inserts and later updates.
+CREATE TRIGGER transactions_currency_mode_insert
+BEFORE INSERT ON transactions
+WHEN NOT (
+  (NEW.currency_mode = 'USD_ARS' AND NEW.amount_usd IS NOT NULL) OR
+  (NEW.currency_mode = 'ARS_ARS' AND NEW.amount_usd IS NULL AND NEW.exchange_rate_snapshot IS NULL)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'transactions currency mode and amounts are inconsistent');
+END;
+
+CREATE TRIGGER transactions_currency_mode_update
+BEFORE UPDATE ON transactions
+WHEN NOT (
+  (NEW.currency_mode = 'USD_ARS' AND NEW.amount_usd IS NOT NULL) OR
+  (NEW.currency_mode = 'ARS_ARS' AND NEW.amount_usd IS NULL AND NEW.exchange_rate_snapshot IS NULL)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'transactions currency mode and amounts are inconsistent');
+END;

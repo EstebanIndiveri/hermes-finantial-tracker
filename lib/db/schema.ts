@@ -18,15 +18,15 @@ export const monthly_settings = sqliteTable("monthly_settings", {
   group_id: text("group_id").references(() => groups.id),
   month: text("month").notNull(),
   currency_mode: text("currency_mode").notNull().default("USD_ARS"),
-  income_usd: real("income_usd").notNull().default(0),
+  income_usd: real("income_usd"),
   income_ars: real("income_ars"),
-  exchange_rate: real("exchange_rate").notNull().default(1),
+  exchange_rate: real("exchange_rate"),
   exchange_rate_source: text("exchange_rate_source").notNull().default("manual"),
   exchange_rate_updated_at: integer("exchange_rate_updated_at"),
-  saving_goal_usd: real("saving_goal_usd").notNull().default(0),
+  saving_goal_usd: real("saving_goal_usd"),
   saving_goal_ars: real("saving_goal_ars"),
   saving_goal_yellow_ars: real("saving_goal_yellow_ars"),
-  saving_goal_yellow: real("saving_goal_yellow").notNull().default(0),
+  saving_goal_yellow: real("saving_goal_yellow"),
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 }, (t) => ({
   uniqGroupMonth: uniqueIndex("ms_group_month_idx").on(t.group_id, t.month),
@@ -85,10 +85,6 @@ export const transactions = sqliteTable("transactions", {
   categoryIdx: index("tx_category_idx").on(t.category_id),
   groupIdx: index("tx_group_id_idx").on(t.group_id),
   operationIdx: uniqueIndex("transactions_operation_id_idx").on(t.operation_id).where(sql`${t.operation_id} IS NOT NULL`),
-  currencyModeAmountCheck: check(
-    "transactions_currency_mode_amount_check",
-    sql`(${t.currency_mode} = 'USD_ARS' AND ${t.amount_usd} IS NOT NULL) OR (${t.currency_mode} = 'ARS_ARS' AND ${t.amount_usd} IS NULL AND ${t.exchange_rate_snapshot} IS NULL)`,
-  ),
 }));
 
 export const bot_messages = sqliteTable("bot_messages", {

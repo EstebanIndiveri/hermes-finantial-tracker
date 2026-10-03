@@ -6,7 +6,7 @@ import { createClient } from "@libsql/client";
 
 export const RUNNER_VERSION = "1";
 const PRE_CURRENCY_SCHEMA_FINGERPRINT = "309646a60fcdfc1566e6110cc4e5ec8eb32cbfdb1ffa4ee03a3d838d54014701";
-export const CANONICAL_SCHEMA_FINGERPRINT = "303c87dd206a35f97200560a7974b6cd729763890daff27947f8371e3f9c6227";
+export const CANONICAL_SCHEMA_FINGERPRINT = "fb830cf40e951abd3c4072e8c0b011d4040782d44c1dc8325d150973260a6046";
 export const DEFAULT_MANIFEST_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../lib/db/migrations/manifest.json",
@@ -173,17 +173,12 @@ export async function loadMigrationManifest(manifestPath = DEFAULT_MANIFEST_PATH
         "The Telegram operations/outbox migration requires the recurring-duplicates preflight.",
       );
     }
-    const foreignKeys = migration.foreignKeys ?? "enabled";
-    if (foreignKeys !== "enabled" && foreignKeys !== "disabled-during-rebuild") {
-      throw migrationError("INVALID_MANIFEST", `Migration ${migration.id} has an unsupported foreign-key mode.`);
-    }
+    const minimumSqliteVersion = migration.minimumSqliteVersion;
     if (
-      foreignKeys === "disabled-during-rebuild" &&
-      (migration.id !== "0090-currency-modes" ||
-        loadedFiles.length !== 1 ||
-        loadedFiles[0].file !== "0011_currency_modes.sql")
+      minimumSqliteVersion !== undefined &&
+      (typeof minimumSqliteVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(minimumSqliteVersion))
     ) {
-      throw migrationError("INVALID_MANIFEST", "Foreign-key suspension is restricted to the currency table rebuild.");
+      throw migrationError("INVALID_MANIFEST", `Migration ${migration.id} has an invalid minimum SQLite version.`);
     }
 
     const checksumMaterial = loadedFiles
@@ -194,7 +189,7 @@ export async function loadMigrationManifest(manifestPath = DEFAULT_MANIFEST_PATH
       files: loadedFiles,
       checksum: sha256(checksumMaterial),
       preflight,
-      foreignKeys,
+      minimumSqliteVersion,
     });
   }
 
@@ -488,26 +483,32 @@ async function assertOutboxPreflight(client) {
   }
 }
 
+function sqliteVersionAtLeast(actualVersion, minimumVersion) {
+  const actual = actualVersion.split(".").map(Number);
+  const minimum = minimumVersion.split(".").map(Number);
+  for (let index = 0; index < minimum.length; index += 1) {
+    if ((actual[index] ?? 0) > minimum[index]) return true;
+    if ((actual[index] ?? 0) < minimum[index]) return false;
+  }
+  return true;
+}
+
+async function assertMinimumSqliteVersion(client, migration) {
+  if (!migration.minimumSqliteVersion) return;
+  const result = await client.execute("SELECT sqlite_version() AS version");
+  const actualVersion = String(result.rows[0]?.version ?? "0.0.0");
+  if (!sqliteVersionAtLeast(actualVersion, migration.minimumSqliteVersion)) {
+    throw migrationError(
+      "SQLITE_VERSION_UNSUPPORTED",
+      `Migration ${migration.id} requires SQLite ${migration.minimumSqliteVersion} or newer; found ${actualVersion}.`,
+    );
+  }
+}
+
 async function applyMigration(client, migration) {
+  await assertMinimumSqliteVersion(client, migration);
   if (migration.preflight.includes("recurring-duplicates")) {
     await assertOutboxPreflight(client);
-  }
-
-  if (migration.foreignKeys === "disabled-during-rebuild") {
-    try {
-      await client.execute("PRAGMA foreign_keys = OFF");
-      const setting = await client.execute("PRAGMA foreign_keys");
-      if (Number(setting.rows[0]?.foreign_keys ?? 1) !== 0) {
-        throw migrationError("FOREIGN_KEY_MODE_FAILED", `Could not disable foreign keys for ${migration.id}.`);
-      }
-    } catch (error) {
-      try {
-        await client.execute("PRAGMA foreign_keys = ON");
-      } catch (restoreError) {
-        throw new AggregateError([error, restoreError], `Could not prepare or restore foreign keys for ${migration.id}.`);
-      }
-      throw error;
-    }
   }
 
   let migrationFailure;
@@ -554,23 +555,6 @@ async function applyMigration(client, migration) {
     }
   }
 
-  if (migration.foreignKeys === "disabled-during-rebuild") {
-    try {
-      await client.execute("PRAGMA foreign_keys = ON");
-      const setting = await client.execute("PRAGMA foreign_keys");
-      if (Number(setting.rows[0]?.foreign_keys ?? 0) !== 1) {
-        throw migrationError("FOREIGN_KEY_RESTORE_FAILED", `Could not restore foreign keys after ${migration.id}.`);
-      }
-      const violations = await foreignKeyViolationCount(client);
-      if (violations > 0) {
-        throw migrationError("FOREIGN_KEY_VIOLATION", `${migration.id} left ${violations} foreign key violation(s).`);
-      }
-    } catch (restoreError) {
-      migrationFailure = migrationFailure
-        ? new AggregateError([migrationFailure, restoreError], `Migration ${migration.id} failed and FK restoration/check failed.`)
-        : restoreError;
-    }
-  }
   if (migrationFailure) throw migrationFailure;
 }
 
@@ -610,6 +594,9 @@ export async function migrateDatabase({ url, manifestPath = DEFAULT_MANIFEST_PAT
     }
 
     const appliedIds = new Set(ledger.map((entry) => entry.migrationId));
+    for (const migration of loadedManifest.migrations) {
+      if (!appliedIds.has(migration.id)) await assertMinimumSqliteVersion(client, migration);
+    }
     for (const migration of loadedManifest.migrations) {
       if (appliedIds.has(migration.id)) continue;
       await applyMigration(client, migration);
