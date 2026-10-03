@@ -740,8 +740,31 @@ ARS/ARS beta:** `POST /api/reimbursements` recibe un monto arbitrario del
 cliente; requiere validar gasto, autor, grupo, importe ARS y repetición antes
 de crear la solicitud. Este corte de denominación no certifica esa frontera.
 
-**Próximo corte abierto ACT-05g, owner Codex:** UI de ajustes para seleccionar
-el modo por grupo/mes, con campos ARS o USD coherentes, sin cambiar meses con
-movimientos y con flag apagada. Después se resolverá ACT-06/R-POST y el canary
-beta antes de cualquier migración o activación remota. Esteban conserva QA
-funcional y decisión de release.
+**Checkpoint histórico:** ACT-05g se implementó localmente el 03/10 (abajo).
+ACT-06/R-POST y el canary beta conservan owner Codex antes de cualquier
+migración o activación remota. Esteban conserva QA funcional y release.
+
+### ACT-05g selector mensual de moneda — 03/10/2026
+
+**Corte local cerrado, owner Codex.** Ajustes usa el modo del grupo/mes: ingreso
+y umbrales en USD para el mixto o ARS para solo pesos; la tasa solo aparece y es
+obligatoria en el mixto. Un mes nuevo ya no muestra tasa ficticia 1: empieza
+sin cotización válida. El modo ARS solo es elegible si la flag está activa; si
+ya existe un mes ARS y la flag se apaga, se muestra sin permitir edición. El
+GET entrega disponibilidad de la flag y bloqueo por cualquier movimiento como
+metadatos HTTP sin cambiar el payload histórico; el servidor mantiene la
+guarda transaccional al guardar. El endpoint legacy de umbrales USD rechaza un
+mes ARS. Límites de categoría continúan en ARS en ambos modos.
+
+Tests de API cubren metadatos de flag/bloqueo y rechazo de umbrales USD en ARS;
+SSR cubre etiquetas/campos del modo ARS. Harness 84/84, Jest 97 suites y
+853/853 tests, typecheck, build y lint 0 errores/67 warnings verificados en
+Node 22. No hubo cambios remotos ni flag activada. El uso de `ui-design`
+conservó controles y tokens existentes y añadió estados explícitos de bloqueo.
+
+**Siguiente corte abierto ACT-06/R-POST, owner Codex:** cerrar la validación de
+solicitudes de reintegro creadas vía web antes de exponer ARS/ARS en beta.
+Después: conciliar el canary preexistente en `telegram_operations` (owner Codex),
+repetir backup/restore y migración solo beta, desplegar con flag apagada,
+verificar aislamiento y recién activar ARS con QA de Esteban. Ningún paso
+autoriza tocar legacy.

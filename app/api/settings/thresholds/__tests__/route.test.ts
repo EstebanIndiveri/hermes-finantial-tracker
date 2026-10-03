@@ -112,6 +112,13 @@ describe("PATCH /api/settings/thresholds", () => {
     expect(db.update).toHaveBeenCalled();
   });
 
+  test("does not write USD thresholds into an ARS-only month", async () => {
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ currency_mode: "ARS_ARS" });
+    const response = await PATCH(makeReq({ saving_goal_usd: 1000, saving_goal_yellow: 500 }));
+    expect(response.status).toBe(409);
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
   test("accepts zero values for goals", async () => {
     (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({
       id: "setting-123",

@@ -17,6 +17,7 @@ jest.mock("@/lib/db/client", () => ({
       monthly_settings: {
         findFirst: jest.fn(),
       },
+      transactions: { findFirst: jest.fn() },
     },
     update: jest.fn(() => ({
       set: jest.fn(() => ({
@@ -118,6 +119,17 @@ describe("GET /api/settings/monthly", () => {
     (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue({ month: "2025-05" });
     const response = await GET(makeReq("http://localhost:3000/api/settings/monthly?month=2025-05"));
     expect(await response.json()).toMatchObject({ currency_mode: "USD_ARS" });
+  });
+
+  test("exposes feature availability and movement lock without changing the settings payload", async () => {
+    process.env.ACT05_ARS_MODE_ENABLED = "true";
+    (db.query.monthly_settings.findFirst as jest.Mock).mockResolvedValue(null);
+    (db.query.transactions.findFirst as jest.Mock).mockResolvedValue({ id: "existing" });
+    const response = await GET(makeReq("http://localhost:3000/api/settings/monthly?month=2025-05"));
+    expect(await response.json()).toBeNull();
+    expect(response.headers.get("X-ARS-Mode-Enabled")).toBe("true");
+    expect(response.headers.get("X-Currency-Mode-Locked")).toBe("true");
+    delete process.env.ACT05_ARS_MODE_ENABLED;
   });
 
   test("uses current month if month param not provided", async () => {

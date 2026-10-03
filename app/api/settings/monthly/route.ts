@@ -39,8 +39,17 @@ export async function GET(req: NextRequest) {
     const settings = await db.query.monthly_settings.findFirst({
       where: and(eq(monthly_settings.group_id, groupId), eq(monthly_settings.month, month)),
     });
+    const movement = await db.query.transactions.findFirst({
+      where: and(eq(transactions.group_id, groupId), eq(transactions.month, month)),
+      columns: { id: true },
+    });
     // Legacy rows predate currency_mode and are interpreted as USD_ARS.
-    return NextResponse.json(settings ? { ...settings, currency_mode: settings.currency_mode ?? "USD_ARS" } : null);
+    return NextResponse.json(settings ? { ...settings, currency_mode: settings.currency_mode ?? "USD_ARS" } : null, {
+      headers: {
+        "X-ARS-Mode-Enabled": String(process.env.ACT05_ARS_MODE_ENABLED === "true"),
+        "X-Currency-Mode-Locked": String(Boolean(movement)),
+      },
+    });
   } catch (err) {
     console.error("Error fetching monthly settings:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

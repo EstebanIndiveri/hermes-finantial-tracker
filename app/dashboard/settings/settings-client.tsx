@@ -6,10 +6,14 @@ import SettingsLoading from "./loading";
 import { MonthSelectorGeneric } from "@/components/dashboard/MonthSelectorGeneric";
 
 interface MonthlySettings {
-  income_usd: number;
-  exchange_rate: number;
-  saving_goal_usd: number;
-  saving_goal_yellow: number;
+  currency_mode: "USD_ARS" | "ARS_ARS";
+  income_usd: number | null;
+  income_ars: number | null;
+  exchange_rate: number | null;
+  saving_goal_usd: number | null;
+  saving_goal_ars: number | null;
+  saving_goal_yellow: number | null;
+  saving_goal_yellow_ars: number | null;
 }
 interface Category { id: string; name: string; emoji: string; }
 interface BudgetItem { budget_ars: number; hard_limit: boolean; }
@@ -40,10 +44,13 @@ export function SettingsPageClient() {
   const [saving, setSaving] = useState<string | null>(null);
   const [noGroup, setNoGroup] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [selectedMode, setSelectedMode] = useState<MonthlySettings["currency_mode"]>("USD_ARS");
+  const [arsModeAvailable, setArsModeAvailable] = useState(false);
+  const [modeLocked, setModeLocked] = useState(false);
 
   // Raw string states for numeric inputs — avoids the "0 stuck" / leading-zero issue
   const [incomeRaw, setIncomeRaw] = useState("0");
-  const [exchangeRaw, setExchangeRaw] = useState("1");
+  const [exchangeRaw, setExchangeRaw] = useState("0");
   const [greenRaw, setGreenRaw] = useState("0");
   const [yellowRaw, setYellowRaw] = useState("0");
 
@@ -56,34 +63,53 @@ export function SettingsPageClient() {
   // Inline validation errors for semáforo
   const [thresholdError, setThresholdError] = useState<string | null>(null);
   const isReadOnly = userRole === "member";
-  const monthlyValid = parseNum(incomeRaw) > 0 && parseNum(exchangeRaw) > 0;
+  const isArs = selectedMode === "ARS_ARS";
+  const modeNotSaved = settings?.currency_mode !== selectedMode;
+  const monthlyValid = parseNum(incomeRaw) > 0 && (isArs || parseNum(exchangeRaw) > 0) && (!isArs || arsModeAvailable);
 
   const thresholdsValid = parseNum(greenRaw) > 0 && parseNum(yellowRaw) > 0;
 
   useEffect(() => {
+    let cancelled = false;
     Promise.all([
-      fetch(`/api/settings/monthly${monthQuery}`).then(r => r.ok ? r.json() : null),
+      fetch(`/api/settings/monthly${monthQuery}`).then(async r => {
+        if (!r.ok) throw new Error("monthly settings unavailable");
+        return {
+          data: await r.json() as MonthlySettings | null,
+          arsAvailable: r.headers.get("X-ARS-Mode-Enabled") === "true",
+          locked: r.headers.get("X-Currency-Mode-Locked") === "true",
+        };
+      }),
       fetch("/api/categories").then(r => r.ok ? r.json() : null),
       fetch("/api/groups/active").then(r => r.ok ? r.json() : null),
-    ]).then(([s, c, activeGroup]) => {
+    ]).then(([response, c, activeGroup]) => {
+      if (cancelled) return;
       if (!Array.isArray(c)) { setNoGroup(true); return; }
-      const loaded = s ?? { income_usd: 0, exchange_rate: 1, saving_goal_usd: 0, saving_goal_yellow: 0 };
+      const loaded: MonthlySettings = response.data ?? {
+        currency_mode: "USD_ARS", income_usd: 0, income_ars: null, exchange_rate: null,
+        saving_goal_usd: 0, saving_goal_ars: null, saving_goal_yellow: 0, saving_goal_yellow_ars: null,
+      };
+      const mode = loaded.currency_mode ?? "USD_ARS";
       setSettings(loaded);
-      setIncomeRaw(String(loaded.income_usd));
-      setExchangeRaw(String(loaded.exchange_rate));
-      setGreenRaw(String(loaded.saving_goal_usd));
-      setYellowRaw(String(loaded.saving_goal_yellow));
-      setSavedIncome(loaded.income_usd);
+      setSelectedMode(mode);
+      setArsModeAvailable(response.arsAvailable);
+      setModeLocked(response.locked);
+      setIncomeRaw(String((mode === "ARS_ARS" ? loaded.income_ars : loaded.income_usd) ?? 0));
+      setExchangeRaw(String(loaded.exchange_rate ?? 0));
+      setGreenRaw(String((mode === "ARS_ARS" ? loaded.saving_goal_ars : loaded.saving_goal_usd) ?? 0));
+      setYellowRaw(String((mode === "ARS_ARS" ? loaded.saving_goal_yellow_ars : loaded.saving_goal_yellow) ?? 0));
+      setSavedIncome((mode === "ARS_ARS" ? loaded.income_ars : loaded.income_usd) ?? 0);
       setCats(c);
       if (activeGroup?.role) setUserRole(activeGroup.role);
-    }).catch(() => toast.error("Error al cargar configuración"));
+    }).catch(() => { if (!cancelled) toast.error("Error al cargar configuración"); });
 
     fetch(`/api/settings/budgets${monthQuery}`).then(r => r.json()).then((data: { category_id: string; budget_ars: number; hard_limit: boolean }[]) => {
       if (!Array.isArray(data)) return;
       const map: Record<string, BudgetItem> = {};
       data.forEach(b => { map[b.category_id] = { budget_ars: b.budget_ars, hard_limit: b.hard_limit }; });
-      setBudgets(map);
+      if (!cancelled) setBudgets(map);
     }).catch(() => {});
+    return () => { cancelled = true; };
   }, [monthQuery]);
 
   function parseNum(raw: string): number {
@@ -96,11 +122,24 @@ export function SettingsPageClient() {
     return String(n);
   }
 
+  function chooseMode(mode: MonthlySettings["currency_mode"]) {
+    if (!settings || modeLocked || (mode === "ARS_ARS" && !arsModeAvailable)) return;
+    setSelectedMode(mode);
+    const persisted = mode === settings.currency_mode;
+    setIncomeRaw(String(persisted ? (mode === "ARS_ARS" ? settings.income_ars : settings.income_usd) ?? 0 : 0));
+    setGreenRaw(String(persisted ? (mode === "ARS_ARS" ? settings.saving_goal_ars : settings.saving_goal_usd) ?? 0 : 0));
+    setYellowRaw(String(persisted ? (mode === "ARS_ARS" ? settings.saving_goal_yellow_ars : settings.saving_goal_yellow) ?? 0 : 0));
+    setExchangeRaw(String(persisted ? settings.exchange_rate ?? 0 : 0));
+    setMonthlyError(null);
+    setThresholdError(null);
+  }
+
   async function saveMonthly() {
     if (!settings) return;
     const income = parseNum(incomeRaw);
     const exchange = parseNum(exchangeRaw);
-    if (exchange <= 0) { setMonthlyError("El tipo de cambio debe ser mayor a 0."); return; }
+    if (!isArs && exchange <= 0) { setMonthlyError("El tipo de cambio debe ser mayor a 0."); return; }
+    if (modeLocked && modeNotSaved) { setMonthlyError("Este mes ya tiene movimientos; no se puede cambiar su moneda."); return; }
 
     // Cross-validation: income cannot be below already-configured thresholds
     const green = parseNum(greenRaw);
@@ -119,17 +158,19 @@ export function SettingsPageClient() {
     try {
       const res = await fetch("/api/settings/monthly", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ income_usd: income, exchange_rate: exchange, month: month ?? undefined }),
+        body: JSON.stringify({ currency_mode: selectedMode, ...(isArs ? { income_ars: income } : { income_usd: income, exchange_rate: exchange }), month: month ?? undefined }),
       });
       if (res.ok) {
-        setSettings({ ...settings, income_usd: income, exchange_rate: exchange });
+        const updated = await res.json() as MonthlySettings;
+        setSettings(updated);
         setIncomeRaw(String(income));
-        setExchangeRaw(String(exchange));
+        if (!isArs) setExchangeRaw(String(exchange));
         setSavedIncome(income);
         setMonthlyError(null);
         setThresholdError(null);
         toast.success("Configuración mensual guardada ✅");
-      } else toast.error("Error al guardar");
+      } else if (res.status === 409) setMonthlyError("No se puede cambiar el modo de un mes con movimientos, o el modo ARS aún no está habilitado.");
+      else toast.error("Error al guardar");
     } catch { toast.error("Error de conexión"); }
     finally { setSaving(null); }
   }
@@ -141,6 +182,7 @@ export function SettingsPageClient() {
     const income = savedIncome;
 
     // Validations
+    if (modeNotSaved) { setThresholdError("Guardá primero el modo y el ingreso mensual."); return; }
     if (income <= 0) { setThresholdError("Primero guardá la configuración mensual con un ingreso mayor a 0."); return; }
     if (green > income) { setThresholdError(`Meta verde ($${green}) no puede superar el ingreso mensual ($${income}).`); return; }
     if (yellow >= income) { setThresholdError(`Umbral amarillo ($${yellow}) debe ser menor al ingreso mensual ($${income}).`); return; }
@@ -149,12 +191,16 @@ export function SettingsPageClient() {
     setThresholdError(null);
     setSaving("thresholds");
     try {
-      const res = await fetch("/api/settings/thresholds", {
+      const res = await fetch(isArs ? "/api/settings/monthly" : "/api/settings/thresholds", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ saving_goal_usd: green, saving_goal_yellow: yellow, month: month ?? undefined }),
+        body: JSON.stringify(isArs
+          ? { currency_mode: "ARS_ARS", saving_goal_ars: green, saving_goal_yellow_ars: yellow, month: month ?? undefined }
+          : { saving_goal_usd: green, saving_goal_yellow: yellow, month: month ?? undefined }),
       });
       if (res.ok) {
-        setSettings({ ...settings, saving_goal_usd: green, saving_goal_yellow: yellow });
+        setSettings({ ...settings, ...(isArs
+          ? { saving_goal_ars: green, saving_goal_yellow_ars: yellow }
+          : { saving_goal_usd: green, saving_goal_yellow: yellow }) });
         setGreenRaw(String(green));
         setYellowRaw(String(yellow));
         toast.success("Umbrales guardados ✅");
@@ -220,22 +266,48 @@ export function SettingsPageClient() {
             <h2 className="h-card-title" style={{ fontSize: 14, fontWeight: 600, color: "var(--htext1)" }}>
               💵 Configuración mensual
             </h2>
-            <p style={{ fontSize: 12, color: "var(--htext3)", marginTop: 2 }}>Ingreso y tipo de cambio del mes</p>
+            <p style={{ fontSize: 12, color: "var(--htext3)", marginTop: 2 }}>Ingreso y moneda contable del mes</p>
           </div>
         </div>
         <div className="h-card-body">
+          {(arsModeAvailable || isArs) && (
+            <div className="h-form-group" style={{ marginBottom: 16 }}>
+              <label className="h-form-label" htmlFor="currency-mode">Modo del mes</label>
+              <select
+                id="currency-mode" name="currency_mode" className="h-form-control"
+                value={selectedMode}
+                disabled={isReadOnly || modeLocked || (!arsModeAvailable && isArs)}
+                onChange={e => chooseMode(e.target.value as MonthlySettings["currency_mode"])}
+                aria-describedby="currency-mode-hint"
+              >
+                <option value="USD_ARS">Mixto: ingreso y ahorro USD · gastos ARS</option>
+                <option value="ARS_ARS" disabled={!arsModeAvailable}>Solo pesos: todo ARS</option>
+              </select>
+              <span id="currency-mode-hint" className="h-form-hint">
+                {modeLocked
+                  ? "Este mes ya tiene movimientos: el modo no se puede cambiar, incluso si se anulan."
+                  : "Elegí el modo antes del primer movimiento del mes. Los límites de categoría siempre están en ARS."}
+              </span>
+            </div>
+          )}
+          {isArs && !arsModeAvailable && (
+            <p style={{ fontSize: 13, color: "var(--hred)", marginBottom: 12 }} role="alert">
+              El modo ARS de este mes está temporalmente deshabilitado. No se pueden editar sus valores hasta reactivarlo.
+            </p>
+          )}
           <div className="h-form-grid" style={{ marginBottom: 16 }}>
             <div className="h-form-group">
-              <label className="h-form-label" htmlFor="income">Ingreso mensual (USD)</label>
+              <label className="h-form-label" htmlFor="income">Ingreso mensual ({isArs ? "ARS" : "USD"})</label>
               <div className="h-input-prefix">
                 <span className="h-input-prefix-text">$</span>
                 <input
                   id="income"
+                  name={isArs ? "income_ars" : "income_usd"}
                   className="h-form-control"
                   type="text"
                   inputMode="decimal"
                   value={incomeRaw}
-                  readOnly={isReadOnly}
+                  readOnly={isReadOnly || (isArs && !arsModeAvailable)}
                   onChange={isReadOnly ? undefined : e => { setIncomeRaw(e.target.value.replace(/[^0-9.]/g, "")); setMonthlyError(null); }}
                   onFocus={isReadOnly ? undefined : e => e.target.select()}
                   onBlur={isReadOnly ? undefined : () => setIncomeRaw(normalizeRaw(incomeRaw))}
@@ -243,10 +315,11 @@ export function SettingsPageClient() {
                 />
               </div>
             </div>
-            <div className="h-form-group">
+            {!isArs && <div className="h-form-group">
               <label className="h-form-label" htmlFor="exchange">Tipo de cambio (ARS/USD)</label>
               <input
                 id="exchange"
+                name="exchange_rate"
                 className="h-form-control"
                 type="text"
                 inputMode="decimal"
@@ -257,7 +330,7 @@ export function SettingsPageClient() {
                 onBlur={isReadOnly ? undefined : () => setExchangeRaw(normalizeRaw(exchangeRaw))}
                 style={isReadOnly ? { opacity: 0.7, cursor: "default" } : undefined}
               />
-            </div>
+            </div>}
           </div>
           {!isReadOnly && (
             <>
@@ -268,9 +341,10 @@ export function SettingsPageClient() {
               )}
               <button
                 className="h-btn-submit"
+                type="button"
                 style={{ width: "auto", padding: "9px 24px", opacity: !monthlyValid ? 0.5 : 1 }}
                 onClick={() => void saveMonthly()}
-                disabled={saving === "monthly" || !monthlyValid}
+                disabled={saving === "monthly" || !monthlyValid || (modeLocked && modeNotSaved)}
               >
                 {saving === "monthly" ? "Guardando…" : "Guardar configuración"}
               </button>
@@ -297,18 +371,19 @@ export function SettingsPageClient() {
               <label className="h-form-label" htmlFor="goal-green">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#059669", display: "inline-block" }} />
-                  Meta verde (USD)
+                  Meta verde ({isArs ? "ARS" : "USD"})
                 </span>
               </label>
               <div className="h-input-prefix">
                 <span className="h-input-prefix-text">$</span>
                 <input
                   id="goal-green"
+                  name={isArs ? "saving_goal_ars" : "saving_goal_usd"}
                   className="h-form-control"
                   type="text"
                   inputMode="decimal"
                   value={greenRaw}
-                  readOnly={isReadOnly}
+                  readOnly={isReadOnly || (isArs && !arsModeAvailable)}
                   onChange={isReadOnly ? undefined : e => { setGreenRaw(e.target.value.replace(/[^0-9.]/g, "")); setThresholdError(null); }}
                   onFocus={isReadOnly ? undefined : e => e.target.select()}
                   onBlur={isReadOnly ? undefined : () => setGreenRaw(normalizeRaw(greenRaw))}
@@ -321,18 +396,19 @@ export function SettingsPageClient() {
               <label className="h-form-label" htmlFor="goal-yellow">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#D97706", display: "inline-block" }} />
-                  Umbral amarillo (USD)
+                  Umbral amarillo ({isArs ? "ARS" : "USD"})
                 </span>
               </label>
               <div className="h-input-prefix">
                 <span className="h-input-prefix-text">$</span>
                 <input
                   id="goal-yellow"
+                  name={isArs ? "saving_goal_yellow_ars" : "saving_goal_yellow"}
                   className="h-form-control"
                   type="text"
                   inputMode="decimal"
                   value={yellowRaw}
-                  readOnly={isReadOnly}
+                  readOnly={isReadOnly || (isArs && !arsModeAvailable)}
                   onChange={isReadOnly ? undefined : e => { setYellowRaw(e.target.value.replace(/[^0-9.]/g, "")); setThresholdError(null); }}
                   onFocus={isReadOnly ? undefined : e => e.target.select()}
                   onBlur={isReadOnly ? undefined : () => setYellowRaw(normalizeRaw(yellowRaw))}
@@ -349,16 +425,17 @@ export function SettingsPageClient() {
                   ⚠️ {thresholdError}
                 </p>
               )}
-              {savedIncome <= 0 && !thresholdError && (
+              {(savedIncome <= 0 || modeNotSaved) && !thresholdError && (
                 <p style={{ fontSize: "0.82rem", color: "var(--hyellow)", background: "var(--hyellow-soft)", padding: "8px 12px", borderRadius: 6, marginBottom: 12 }}>
-                  Guardá primero la configuración mensual con un ingreso mayor a 0 para habilitar los umbrales.
+                  Guardá primero el modo y el ingreso mensual para habilitar los umbrales.
                 </p>
               )}
               <button
                 className="h-btn-submit"
-                style={{ width: "auto", padding: "9px 24px", opacity: (savedIncome <= 0 || !thresholdsValid) ? 0.5 : 1 }}
+                type="button"
+                style={{ width: "auto", padding: "9px 24px", opacity: (savedIncome <= 0 || modeNotSaved || !thresholdsValid) ? 0.5 : 1 }}
                 onClick={() => void saveThresholds()}
-                disabled={saving === "thresholds" || savedIncome <= 0 || !thresholdsValid}
+                disabled={saving === "thresholds" || savedIncome <= 0 || modeNotSaved || !thresholdsValid || (isArs && !arsModeAvailable)}
               >
                 {saving === "thresholds" ? "Guardando…" : "Guardar umbrales"}
               </button>

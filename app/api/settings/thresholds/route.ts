@@ -44,6 +44,9 @@ export async function PATCH(req: NextRequest) {
     if (!existing) {
       return NextResponse.json({ error: "Settings not found for this month" }, { status: 404 });
     }
+    if (existing.currency_mode === "ARS_ARS") {
+      return NextResponse.json({ error: "Use ARS thresholds for this month" }, { status: 409 });
+    }
 
     await db.update(monthly_settings)
       .set({ saving_goal_usd: parsed.data.saving_goal_usd, saving_goal_yellow: parsed.data.saving_goal_yellow })
