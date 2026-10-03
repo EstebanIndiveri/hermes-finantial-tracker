@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
 import { getSessionCookieName } from "@/lib/auth/session-cookie";
 import {
-  createReimbursementWithNotifications,
+  createVerifiedWebReimbursement,
   getReimbursementsByUser,
 } from "@/lib/reimbursements/requests";
 
@@ -31,11 +31,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const amount = body?.amount;
   const payerId = typeof body?.payerId === "string" ? body.payerId : undefined;
 
-  if (!transactionId || typeof amount !== "number" || amount <= 0) {
-    return NextResponse.json({ error: "transactionId and positive amount required" }, { status: 400 });
+  if (!transactionId || (amount !== undefined && (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0))) {
+    return NextResponse.json({ error: "transactionId and optional positive amount required" }, { status: 400 });
   }
 
-  const result = await createReimbursementWithNotifications(transactionId, userId, amount, payerId);
+  const result = await createVerifiedWebReimbursement(transactionId, userId, amount, payerId);
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }

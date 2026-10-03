@@ -197,6 +197,82 @@ export async function createReimbursementRequest(
   return mapReimbursementRequestRow(request);
 }
 
+/** Web-only boundary: derive the ARS amount from the owned expense and serialize duplicate checks. */
+export async function createVerifiedWebReimbursement(
+  transactionId: string,
+  requesterId: string,
+  requestedAmount?: number,
+  payerId?: string,
+): Promise<ReimbursementRequest | { error: string }> {
+  const outcome = await db.transaction(async (tx) => {
+    const [expense] = await tx.select({
+      userId: transactions.user_id,
+      groupId: transactions.group_id,
+      categoryId: transactions.category_id,
+      amountArs: transactions.amount_ars,
+      description: transactions.description,
+      status: transactions.status,
+      deletedAt: transactions.deleted_at,
+    }).from(transactions).where(eq(transactions.id, transactionId));
+    if (!expense || expense.userId !== requesterId || expense.status !== "active" || expense.deletedAt !== null || !expense.groupId) {
+      return { error: "El gasto no está activo o no pertenece al solicitante." };
+    }
+    if (!Number.isFinite(expense.amountArs) || expense.amountArs <= 0 ||
+      (requestedAmount !== undefined && Math.round(requestedAmount * 100) !== Math.round(expense.amountArs * 100))) {
+      return { error: "El importe solicitado no coincide con el gasto en ARS." };
+    }
+    const [requesterMembership] = await tx.select({ userId: group_members.user_id })
+      .from(group_members).where(and(eq(group_members.group_id, expense.groupId), eq(group_members.user_id, requesterId)));
+    if (!requesterMembership) return { error: "Ya no tenés acceso al grupo del gasto." };
+
+    const [existing] = await tx.select({ id: reimbursementRequests.id })
+      .from(reimbursementRequests)
+      .where(and(eq(reimbursementRequests.transactionId, transactionId), eq(reimbursementRequests.status, "pending")));
+    if (existing) return { error: "Ya existe un reintegro pendiente para este gasto." };
+
+    let effectivePayerId = payerId;
+    if (!effectivePayerId) {
+      const [group] = await tx.select({ partnerId: groups.partner_id })
+        .from(groups).where(eq(groups.id, expense.groupId));
+      effectivePayerId = group?.partnerId ?? undefined;
+    }
+    if (effectivePayerId === requesterId) return { error: "No podés solicitar un reintegro a vos mismo." };
+    if (effectivePayerId) {
+      const [payerMembership] = await tx.select({ userId: group_members.user_id })
+        .from(group_members).where(and(eq(group_members.group_id, expense.groupId), eq(group_members.user_id, effectivePayerId)));
+      if (!payerMembership) return { error: "El pagador no pertenece al grupo del gasto." };
+    }
+
+    const [category] = await tx.select({ name: categories.name })
+      .from(categories).where(eq(categories.id, expense.categoryId));
+    const [row] = await tx.insert(reimbursementRequests).values({
+      id: nanoid(), transactionId, requesterId, payerId: effectivePayerId ?? null,
+      amount: expense.amountArs, status: "pending",
+    }).returning();
+    return {
+      request: mapReimbursementRequestRow(row),
+      groupId: expense.groupId,
+      categoryName: category?.name ?? "Sin categoría",
+      description: expense.description ?? "",
+      payerId: effectivePayerId,
+    };
+  }, { behavior: "immediate" });
+
+  if (outcome.error !== undefined) return { error: outcome.error };
+  await notifyGroupOfReimbursementRequest(
+    outcome.groupId, requesterId, outcome.request.id, outcome.request.amount,
+    outcome.categoryName, outcome.description,
+  );
+  if (outcome.payerId) {
+    await sendPushToUser(outcome.payerId, {
+      title: "💸 Solicitud de Reintegro",
+      body: `Te han solicitado ARS $${outcome.request.amount.toLocaleString("es-AR")}`,
+      url: "/dashboard/reimbursements",
+    });
+  }
+  return outcome.request;
+}
+
 /**
  * Creates a pending reimbursement request and dispatches notifications.
  *

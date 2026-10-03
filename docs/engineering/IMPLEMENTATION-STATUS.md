@@ -762,9 +762,32 @@ SSR cubre etiquetas/campos del modo ARS. Harness 84/84, Jest 97 suites y
 Node 22. No hubo cambios remotos ni flag activada. El uso de `ui-design`
 conservó controles y tokens existentes y añadió estados explícitos de bloqueo.
 
-**Siguiente corte abierto ACT-06/R-POST, owner Codex:** cerrar la validación de
-solicitudes de reintegro creadas vía web antes de exponer ARS/ARS en beta.
+**Checkpoint histórico:** ACT-06/R-POST se cerró localmente el 03/10 (abajo).
 Después: conciliar el canary preexistente en `telegram_operations` (owner Codex),
 repetir backup/restore y migración solo beta, desplegar con flag apagada,
 verificar aislamiento y recién activar ARS con QA de Esteban. Ningún paso
 autoriza tocar legacy.
+
+### ACT-06/R-POST frontera web de reintegros — 03/10/2026
+
+**Corte local cerrado, owner Codex.** `POST /api/reimbursements` ya no confía
+en el importe del cliente: lo omite o contrasta con `amount_ars` del gasto,
+rechaza discrepancias, gastos ajenos/anulados, exmiembros, pagador externo o
+igual al solicitante y otro reintegro pendiente. La comprobación y el insert
+se serializan en una transacción inmediata; notifica después del commit. No
+reescribe solicitudes existentes ni afecta al camino Telegram con operación
+durable. Gates Node 22: harness 84/84, Jest 98 suites y 858/858 tests,
+typecheck y build verdes, lint 0 errores/67 warnings preexistentes.
+
+**Residual ACT-06/R-DELIVERY, owner Codex, no bloqueo de la migración de
+moneda:** la creación web sigue entregando notificaciones inline después de
+guardar, por contrato histórico. Un fallo del proveedor puede dejar una
+solicitud persistida sin aviso. La separación durable de notificaciones web
+requiere un corte posterior con outbox y conciliación; antes de activarlo se
+hará un canary específico. No se presenta la entrega web como garantizada.
+
+**Siguiente gate ACT-05h, owner Codex:** comprobar y corregir el canary
+`telegram_operations` en la copia beta, reconciliar el snapshot remoto de
+`beta-hermes` y ejecutar backup/restore antes de solicitar aplicar la
+migración monetaria. Esteban conserva QA funcional solo después de tener una
+beta aislada y verificable.
