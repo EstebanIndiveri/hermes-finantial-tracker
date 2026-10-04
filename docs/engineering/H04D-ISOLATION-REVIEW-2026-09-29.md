@@ -201,3 +201,30 @@ acceptance therefore covers this exact deployment after the successful
 technical reattestation. It still does not certify running-function secret
 readback, retired URLs or any legacy release. Codex owns the next per-deploy
 reattestation and the separate OCR/reimbursement functional gates.
+
+### Addendum — code-only OCR reconciliation deployment 04/10/2026
+
+The beta alias resolves to READY deployment
+`dpl_AtyHSVU2H6dw4CpQi9yUUo6yPfdz` from clean local source
+`e8790a2d6924c790554798a6602fba86470f3a41` in the separate beta
+project `prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`. The legacy alias still
+resolves to `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. No push, binding,
+secret, webhook, DB or legacy change was made. The exact beta build emitted
+`beta_build_isolation_attested`, `passed:true`, ten checks and six matching
+secret fingerprints. Read-only probes returned 200 for beta `/login` and 401
+for its unauthenticated worker route.
+
+The private evidence root initially lacked five of seven referenced receipts,
+so the first local runner failed `UNKNOWN_OR_MISSING_EVIDENCE_FILE`. Codex
+reconstituted the missing redacted metadata receipts: Vercel and both Turso
+accounts were queried authenticated/read-only on 04/10; the Telegram records
+are **historical 29/09 Bot API observations**, not fresh re-queries. Their
+original observation timestamps remain 29/09 and therefore within the
+seven-day contract window on 04/10. The seven mode-restricted receipts,
+digests and updated manifest then passed the hardened runner:
+`ok:true`, `postActivationRuntimeConsistent:true`,
+`providerMetadataComparison:"distinct-identities-declared"`, and
+`isolationVerified:false` by design. This is a scoped beta-pilot reattestation
+under Esteban's 02/10 standing residual policy, **not** formal runtime or
+retired-URL certification. Codex owns renewal before Telegram evidence ages
+out, plus the pending OCR and audio-reimbursement functional canaries.

@@ -1141,3 +1141,22 @@ una prueba manual del mismo ticket sin confirmar nada incorrecto. **Owner
 Esteban:** revisar la propuesta y confirmar solo si muestra ARS 25.548,77;
 Codex conciliará `receipt_imports` y la ausencia de escrituras previas. El
 canary de reintegro por audio sigue abierto con los owners indicados arriba.
+
+**Despliegue y H04d (mismo día):** commit local de código y estado
+`e8790a2d6924c790554798a6602fba86470f3a41`, sin push. Deployment
+beta-only `dpl_AtyHSVU2H6dw4CpQi9yUUo6yPfdz` READY en proyecto
+`prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`; el alias beta apunta a él. El build
+pasó los diez checks y seis fingerprints de aislamiento; beta `/login` 200,
+worker no autenticado 401. Alias legacy sin cambios en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El paquete privado H04d del worktree
+anterior solo conservaba dos de siete recibos, por lo que el primer runner
+falló `UNKNOWN_OR_MISSING_EVIDENCE_FILE`. Codex reconstruyó el paquete con
+consultas autenticadas y de solo lectura **hoy** a Vercel y a ambas cuentas
+Turso; los dos recibos Telegram son reconstituciones explícitamente fechadas
+de las lecturas del 29/09, no nuevas consultas. Los siete archivos privados y
+sus digests pasan el runner con `ok:true`,
+`postActivationRuntimeConsistent:true`, `isolationVerified:false`. Bajo la
+política beta acotada de Esteban, H04d queda reatestado para este deployment;
+Codex es owner de renovar Telegram antes de vencer los siete días o ante
+cualquier drift. La aceptación funcional OCR sigue abierta hasta el canary
+manual; ninguna nueva transacción OCR fue creada por esta verificación.
