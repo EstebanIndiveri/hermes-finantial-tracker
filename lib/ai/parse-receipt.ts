@@ -65,10 +65,28 @@ function extractAmountWithRegex(ocrText: string): { amount: number; confidence: 
     const uniqueAmounts = new Set(cents.filter(reasonable));
 
     // A single amount (including repeated copies in payment details) directly
-    // supports the explicit total label. Multiple amounts are ambiguous unless
-    // a subtotal plus intervening discounts reconciles to a displayed amount.
+    // supports the explicit total label. A subtotal and its trailing discounts
+    // immediately before that label can raise confidence: OCR.Space sometimes
+    // emits the entire amount column before its final TOIAL/total label.
+    // Multiple amounts are ambiguous unless arithmetic reconciles them.
     if (uniqueAmounts.size === 1) {
-      verifiedTotals.set([...uniqueAmounts][0] / 100, 0.7);
+      const totalCents = [...uniqueAmounts][0];
+      const subtotalLabel = text.lastIndexOf("SUBTOTAL", match.index);
+      const precedingAmounts = subtotalLabel < 0 ? [] :
+        (text.slice(subtotalLabel + "SUBTOTAL".length, match.index).match(amountPattern) ?? [])
+          .map(parseArgentineAmount)
+          .filter((amount): amount is number => amount !== null)
+          .map((amount) => Math.round(amount * 100));
+      let previous = precedingAmounts.length - 1;
+      let discounts = 0;
+      while (previous >= 0 && precedingAmounts[previous] < 0) {
+        discounts += precedingAmounts[previous];
+        previous--;
+      }
+      const reconciled = discounts < 0 && previous >= 0 &&
+        reasonable(precedingAmounts[previous]) &&
+        precedingAmounts[previous] + discounts === totalCents;
+      verifiedTotals.set(totalCents / 100, reconciled ? 0.9 : 0.7);
       continue;
     }
 
@@ -192,7 +210,7 @@ export async function parseReceiptText(ocrText: string): Promise<ParsedReceipt |
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    console.error("Groq receipt JSON parse error. Raw:", raw.slice(0, 300));
+    console.error("Groq receipt JSON parse error", { contentLength: raw.length });
     // Try regex fallback on JSON parse error
     const regexAmount = extractAmountWithRegex(ocrText);
     if (regexAmount) {

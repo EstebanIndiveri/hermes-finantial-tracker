@@ -54,6 +54,43 @@ describe("parseReceiptText runtime isolation", () => {
     },
   );
 
+  it("reconciles a total when OCR puts the subtotal and discounts before the TOIAL label", async () => {
+    delete process.env.AI_MODE;
+    delete process.env.GROQ_API_KEY;
+
+    const result = await parseReceiptText(
+      [
+        "Subtotal", "Descuento Tapas horno Danal", "Descuento Leche UAI prot Las T",
+        "3349,99", "1539,62", "28154,71", "-601,98", "-2003,96",
+        "TOIAL", "25548,77", "RECIDI/NO: Mercado Pago",
+      ].join("\n"),
+    );
+
+    expect(result).toMatchObject({ amount_ars: 25548.77, confidence: 0.9 });
+  });
+
+  it("keeps a non-reconciled pre-total column below the proposal gate", async () => {
+    delete process.env.AI_MODE;
+    delete process.env.GROQ_API_KEY;
+
+    await expect(parseReceiptText(
+      "Subtotal 28154,71 Descuento -601,98 -2003,96 TOIAL 25549,77",
+    )).resolves.toMatchObject({ amount_ars: 25549.77, confidence: 0.7 });
+  });
+
+  it("uses the reconciled printed total when Groq returns empty content", async () => {
+    delete process.env.AI_MODE;
+    process.env.GROQ_API_KEY = "test-key";
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "" } }] }),
+    });
+
+    await expect(parseReceiptText(
+      "Subtotal 28154,71 Descuento -601,98 -2003,96 TOIAL 25548,77",
+    )).resolves.toMatchObject({ amount_ars: 25548.77, confidence: 0.9 });
+  });
+
   it("abstains when OCR has no recognizable total instead of selecting a partial amount", async () => {
     delete process.env.AI_MODE;
     delete process.env.GROQ_API_KEY;

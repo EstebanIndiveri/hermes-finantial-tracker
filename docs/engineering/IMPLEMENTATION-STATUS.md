@@ -1117,3 +1117,27 @@ resultado durable no demuestra que se haya pulsado ese botón. Esteban hará
 un nuevo canary de audio con captura del botón y respuesta en un grupo beta
 con pagador, después de cerrar OCR; Codex conciliará transacción, solicitud y
 entrega. Ninguna solicitud retroactiva fue creada.
+
+### OCR beta: resultado del canary y segundo ajuste — 04/10/2026
+
+El ticket de Esteban muestra `TOTAL 25.548,77`; el OCR persistido en beta
+contiene `Subtotal 28154,71`, descuentos `-601,98` y `-2003,96`, y después
+`TOIAL 25548,77`. Dos intentos nuevos quedaron `failed`, sin `transaction_id`
+ni propuesta de escritura: el parser encontraba el importe, pero lo marcaba
+con confianza 0,7 porque la conciliación solo miraba números **posteriores**
+al rótulo `TOIAL`; el gate financiero exige 0,8. El cliente Groq devolvió
+contenido vacío en esos intentos, así que el fallback era decisivo. Esta es
+una abstención segura, no una prueba de OCR aceptado.
+
+**Owner Codex:** la regresión roja reprodujo el 0,7. El parser ahora permite
+confianza 0,9 únicamente cuando el último subtotal positivo y los descuentos
+inmediatamente anteriores al rótulo reconcilian exactamente con el importe
+impreso. Un total que no reconcilia conserva 0,7 y exige corrección manual;
+no se relajó el gate ni se usa el precio mayor. El log de JSON inválido ya no
+incluye texto OCR/financiero. Node 22: 98 suites/871 tests, typecheck y build
+pasaron; lint 0 errores/67 warnings preexistentes. **Estado:** código local
+verificado; falta desplegar solo en beta, reatestar H04d para ese deployment y
+una prueba manual del mismo ticket sin confirmar nada incorrecto. **Owner
+Esteban:** revisar la propuesta y confirmar solo si muestra ARS 25.548,77;
+Codex conciliará `receipt_imports` y la ausencia de escrituras previas. El
+canary de reintegro por audio sigue abierto con los owners indicados arriba.
