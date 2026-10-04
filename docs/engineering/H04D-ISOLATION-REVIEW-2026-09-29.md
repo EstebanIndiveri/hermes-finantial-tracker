@@ -157,3 +157,17 @@ scoped human certificate**: activation changed a beta binding, which the
 ratifying or rejecting the same build-snapshot-versus-running-function and
 retired-URL residual for this deployment. Functional ARS/ARS acceptance is a
 separate manual gate. Nothing here authorizes legacy changes or a release.
+
+### Owner decision — 03/10/2026, current beta currency deployment
+
+After reviewing the residual again, Esteban explicitly accepted it **only
+for the beta pilot on `dpl_H7PhfyxS8E68T1WVStoWjsv2Lmad`**. The residual is
+unchanged: the verified build environment and redacted provider receipts do
+not directly attest every running function's bindings, and URLs of retired
+deployments have not been certified. The technical gate above passed for the
+exact active beta alias. H04d is therefore closed **at the scoped human pilot
+level** for this deployment; the machine output remains
+`isolationVerified:false` and `certificationState:"not-certified"`. This
+decision does not cover a future deployment, provider/binding drift, legacy
+promotion or production release. Codex owns freshness and reattestation on
+the next beta change; Esteban retains any new residual/release decision.

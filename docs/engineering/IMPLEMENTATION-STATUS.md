@@ -942,3 +942,28 @@ conciliará las filas beta después del reporte y abrirá un fix con owner si
 aparece un hallazgo. ACT-06/R-DELIVERY (notificaciones web inline) y el
 canary histórico de outbox siguen bajo owner Codex, en cortes separados; no
 bloquean este QA ni se presentan como resueltos.
+
+### ACT-05k primer QA y decisión H04d — 03/10/2026
+
+Esteban creó el grupo beta `test` y guardó octubre 2026 en modo `ARS_ARS` con
+ingreso ARS 3.000.000, meta verde ARS 2.000.000 y umbral amarillo
+ARS 1.000.000. Las capturas muestran Ajustes sin cotización y dashboard con
+ingreso/ahorro/meta ARS, gasto cero y 100 % de ahorro. Codex verificó por
+consulta **solo lectura** en `beta-hermes`, autenticado como
+`esteban-indiveri`, que la fila de ese grupo/mes tiene exactamente esos tres
+valores, `income_usd`, `saving_goal_usd` y `exchange_rate` nulos y cero
+movimientos. **Subpaso configuración ARS/ARS: cerrado.** No se creó ni editó
+ningún movimiento en esta comprobación.
+
+Esteban ratificó el residual H04d descrito arriba **únicamente para el piloto
+beta del deployment `dpl_H7PhfyxS8E68T1WVStoWjsv2Lmad`**. La revisión
+técnica había pasado; el alcance humano H04d queda cerrado para ese ID,
+sin cambiar `isolationVerified:false` ni certificar URLs retiradas o release
+legacy. [Decisión exacta](H04D-ISOLATION-REVIEW-2026-09-29.md#owner-decision--03102026-current-beta-currency-deployment).
+
+**ACT-05k aún abierto, owners Esteban/Codex:** Esteban registra en `test` un
+gasto y un ingreso sintéticos de importes convenidos y reporta respuestas;
+Codex comprueba categoría, signo, moneda, `amount_usd=NULL`, snapshot de tasa
+`NULL`, dashboard/Telegram y exportaciones, y cierra o corrige hallazgos.
+Después se verifica que el grupo beta histórico de octubre siga en USD/ARS.
+No se adelanta aceptación funcional por haber guardado los ajustes.
