@@ -967,3 +967,41 @@ Codex comprueba categoría, signo, moneda, `amount_usd=NULL`, snapshot de tasa
 `NULL`, dashboard/Telegram y exportaciones, y cierra o corrige hallazgos.
 Después se verifica que el grupo beta histórico de octubre siga en USD/ARS.
 No se adelanta aceptación funcional por haber guardado los ajustes.
+
+### ACT-05k prueba financiera web/Telegram — 03/10/2026
+
+**Subpaso gasto web + ingreso Telegram + resumen: cerrado, owner Codex tras
+QA de Esteban.** En el grupo beta `test`, Esteban registró desde la web un
+gasto ARS 137 en `supermercado`, sin reintegro, y desde el bot beta `Ingreso
+2000 sueldo QA` tras `/grupo test`. Las capturas muestran un solo gasto en la
+lista, la respuesta de ingreso y `/resumen` con ingreso ARS 3.002.000,
+gastado ARS 137 y ahorro proyectado ARS 3.001.863. Una consulta **solo
+lectura** a la DB ID beta confirmó exactamente dos movimientos activos de
+octubre en ese grupo: `web/supermercado/137` y
+`telegram/ingresos/2000`, ambos `ARS_ARS`, con `amount_usd=NULL` y
+`exchange_rate_snapshot=NULL`; el ingreso Telegram tiene identidad durable,
+el gasto no pidió reintegro y no hay duplicados en el grupo. Los dos meses de
+octubre ahora son uno `ARS_ARS` y otro `USD_ARS`: el grupo histórico no cambió
+de modo. No se escribió en DB por esta verificación.
+
+**Subpaso exportación CSV/XLSX: cerrado, owner Codex.** Desde la sesión web
+beta autenticada en `test`, Codex actualizó el dashboard: mostró ingreso
+ARS 3.002.000, gasto ARS 137 y ahorro ARS 3.001.863. Descargó las
+exportaciones de octubre de este grupo, sin escribir movimientos: ambos
+archivos contienen solo las filas del gasto web 137 y el ingreso Telegram
+2.000, con `Monto contable` numérico 137/2.000, `Moneda contable=ARS` y
+`Cotización registrada (ARS/USD)` vacía. El XLSX además contiene tres hojas;
+`Resumen por categoría` muestra presupuesto supermercado ARS 10.000,
+gastado ARS 137 y saldo ARS 9.863. No hay conversión USD inventada.
+
+**ACT-05k sigue abierto, owners definidos:** Codex conserva la conciliación
+de estado y prepara los gates locales de consultas, propuestas y canales.
+Esteban ejecuta los casos de Telegram que requieren su cuenta/bot:
+`/disponible supermercado` (solo lectura) y una propuesta sintética de gasto
+que luego cancela (cero escritura); después texto natural, voz y OCR en
+ARS/ARS en pasos acotados. Codex concilia cada resultado, verifica no
+duplicación y que el grupo histórico continúe en USD/ARS. Los flujos de
+reintegro y recurrentes requieren canaries propios antes de declarar
+aceptación funcional completa. H04d permanece cerrado solo para el deployment
+beta actual bajo el residual aceptado; no equivale a release legacy ni
+certifica esas pruebas pendientes.
