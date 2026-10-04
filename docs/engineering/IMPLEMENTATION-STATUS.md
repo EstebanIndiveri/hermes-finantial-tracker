@@ -1141,6 +1141,11 @@ una prueba manual del mismo ticket sin confirmar nada incorrecto. **Owner
 Esteban:** revisar la propuesta y confirmar solo si muestra ARS 25.548,77;
 Codex conciliará `receipt_imports` y la ausencia de escrituras previas. El
 canary de reintegro por audio sigue abierto con los owners indicados arriba.
+**Follow-up no bloqueante, owner Codex:** investigar por separado por qué la
+completación Groq de este ticket tuvo contenido vacío; el fallback verificado
+cubre este formato, pero el modelo/contrato JSON necesita un gate propio antes
+de darlo por estable en todos los tickets. No modificar el binding sensible
+`GROQ_MODEL` por inferencia.
 
 **Despliegue y H04d (mismo día):** commit local de código y estado
 `e8790a2d6924c790554798a6602fba86470f3a41`, sin push. Deployment
