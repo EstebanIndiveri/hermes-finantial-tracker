@@ -1147,6 +1147,20 @@ cubre este formato, pero el modelo/contrato JSON necesita un gate propio antes
 de darlo por estable en todos los tickets. No modificar el binding sensible
 `GROQ_MODEL` por inferencia.
 
+**Canary recibido 04/10 15:00 ART, resultado:** Esteban reenvió el mismo
+ticket; el bot beta detectó **ARS 25.548,77** y ofreció la categoría
+`supermercado`. La captura posterior dice `Ticket cancelado`. La fila beta
+`receipt_imports` de las 18:00:11 UTC está `rejected`, con
+`parsed_amount_ars=25548.77`, `parsed_category_slug=NULL` (se canceló antes
+de elegir categoría) y `transaction_id=NULL`. Por tanto, **cerrado** el gate
+funcional de detección de total/propuesta segura y cancelación sin escritura;
+**no** se afirma que el OCR haya registrado un gasto ni que la categoría se
+haya seleccionado automáticamente. Codex mantiene la regresión. El siguiente
+gate abierto es el reintegro por audio de ARS 102 descrito arriba: owner
+Codex para conciliación/corrección y Esteban para un único canary manual con
+captura del botón pulsado y respuesta. El follow-up Groq sigue a cargo de
+Codex, no bloquea esta detección OCR.
+
 **Despliegue y H04d (mismo día):** commit local de código y estado
 `e8790a2d6924c790554798a6602fba86470f3a41`, sin push. Deployment
 beta-only `dpl_AtyHSVU2H6dw4CpQi9yUUo6yPfdz` READY en proyecto
