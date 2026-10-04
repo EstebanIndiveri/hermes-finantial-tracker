@@ -994,14 +994,32 @@ archivos contienen solo las filas del gasto web 137 y el ingreso Telegram
 `Resumen por categoría` muestra presupuesto supermercado ARS 10.000,
 gastado ARS 137 y saldo ARS 9.863. No hay conversión USD inventada.
 
-**ACT-05k sigue abierto, owners definidos:** Codex conserva la conciliación
-de estado y prepara los gates locales de consultas, propuestas y canales.
-Esteban ejecuta los casos de Telegram que requieren su cuenta/bot:
-`/disponible supermercado` (solo lectura) y una propuesta sintética de gasto
-que luego cancela (cero escritura); después texto natural, voz y OCR en
-ARS/ARS en pasos acotados. Codex concilia cada resultado, verifica no
-duplicación y que el grupo histórico continúe en USD/ARS. Los flujos de
-reintegro y recurrentes requieren canaries propios antes de declarar
-aceptación funcional completa. H04d permanece cerrado solo para el deployment
-beta actual bajo el residual aceptado; no equivale a release legacy ni
-certifica esas pruebas pendientes.
+**ACT-05k sigue abierto, owners definidos:** el gate de consulta y
+cancelación se cierra a continuación; voz y OCR son los próximos canaries.
+Reintegro y recurrentes conservan gates posteriores, no se consideran
+certificados por estas pruebas. H04d permanece cerrado solo para el
+deployment beta actual bajo el residual aceptado; no equivale a release
+legacy.
+
+### ACT-05k consulta y cancelación Telegram — 03/10/2026
+
+**Subpaso cerrado, owners Esteban (QA) y Codex (conciliación).** Esteban
+consultó `/disponible supermercado` en el bot beta con `test` activo: el bot
+mostró presupuesto ARS 10.000, gastado ARS 137 y disponible ARS 9.863, sin
+USD ni tasa. Envió `Gasté 101 en supermercado sin reintegro` y canceló el
+intento; el bot respondió «Gasto cancelado». Codex volvió a identificar la
+cuenta Turso aislada `esteban-indiveri` y la DB `beta-hermes` por su ID antes
+de consultar. La DB conserva exactamente dos movimientos activos de octubre
+en `test` (137 web y 2.000 Telegram), cero filas de 101: la cancelación no
+escribió un gasto, ni siquiera una fila inactiva. No hubo escritura por parte
+de Codex. Los tests locales dirigidos de `currency-queries`, `voice` y `ocr`
+pasaron: 3 suites, 13 tests (Node 22).
+
+**ACT-05k continúa abierto, owners definidos.** Próximo gate: Esteban prueba
+una propuesta por audio en ARS/ARS y una por ticket OCR en `test`, cancelando
+ambas si los importes/categorías son correctos; Codex concilia que sigan
+exactamente los mismos dos movimientos. Una lectura errónea debe cancelarse
+y registrarse como hallazgo antes de avanzar. Reintegros y recurrentes son
+canaries posteriores separados, con owner Codex para preparar/verificar y
+Esteban para el QA real. H04d conserva el alcance del deployment beta ya
+aceptado; no se extiende a otro deployment ni a producción legacy.
