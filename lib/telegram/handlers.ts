@@ -1735,7 +1735,11 @@ export async function handleTelegramMessage(
       console.error("Receipt Groq error:", err instanceof Error ? err.message : String(err));
     }
 
-    const amount_ars = groqResult?.amount_ars ?? null;
+    // OCR values are only candidates. A weak guess (including a lone price
+    // following a flattened TOTAL label) must not become a payable proposal.
+    const amount_ars = groqResult && groqResult.confidence >= 0.8
+      ? groqResult.amount_ars
+      : null;
     const slug = groqResult?.category_slug?.toLowerCase() ?? null;
     const merchant = groqResult?.merchant ?? null;
     const parsedDate = (() => {
@@ -1759,7 +1763,7 @@ export async function handleTelegramMessage(
       parsed_date: parsedDate,
       groq_raw_response: groqResult ? JSON.stringify(groqResult) : null,
       status: amount_ars ? "pending" : "failed",
-      fail_reason: amount_ars ? null : "Could not extract amount",
+      fail_reason: amount_ars ? null : "Could not extract a reliable total",
     });
 
     if (!amount_ars) {
@@ -1779,7 +1783,7 @@ export async function handleTelegramMessage(
           `📷 <b>Texto del ticket (OCR):</b>`,
           `<code>${escapeHtml(ocrText.slice(0, 300))}</code>`,
           ``,
-          `❌ No pude detectar el monto automáticamente.`,
+          `❌ No pude detectar el total con suficiente confianza.`,
           ``,
           `📝 <b>Escribí o decí el monto</b> (ej: 22000, 22 mil)`,
           `O decí <b>cancelar</b> para salir.`,
@@ -2795,7 +2799,8 @@ async function buildCategoryKeyboard(
     data: { import_id: importId },
   });
 
-  const cats = await db.select().from(categories).where(eq(categories.group_id, groupId));
+  const cats = (await db.select().from(categories).where(eq(categories.group_id, groupId)))
+    .filter((category) => !isIncomeCategory(category.slug));
 
   const rows: Array<Array<{ text: string; callback_data: string }>> = [];
   for (let i = 0; i < cats.length; i += 2) {

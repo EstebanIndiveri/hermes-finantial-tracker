@@ -41,60 +41,61 @@ function parseArgentineAmount(str: string): number | null {
  * Fallback regex extraction when AI fails to parse receipt.
  * Searches for common patterns like "TOTAL 22215,50" or "Total: $22.215"
  */
-function extractAmountWithRegex(ocrText: string): number | null {
-  // Normalize text: uppercase, collapse whitespace
+function extractAmountWithRegex(ocrText: string): { amount: number; confidence: number } | null {
+  // Require an explicit total label. OCR may flatten lines and scramble columns,
+  // so searching for the largest number anywhere can mistake item prices or a
+  // subtotal for the total.
   const text = ocrText.toUpperCase().replace(/\s+/g, ' ');
-  
-  // Pattern 1: "TOTAL" followed by amount (with optional separators)
-  // Matches: TOTAL 22215,50 | TOTAL: $22.215,50 | TOTAL A PAGAR 22215.50
-  const totalPatterns = [
-    /TOTAL\s*(?:A\s*PAGAR)?[:\s]*\$?\s*([\d.,]+)/,
-    /IMPORTE\s*TOTAL[:\s]*\$?\s*([\d.,]+)/,
-    /TOTAL\s*FACTURA[:\s]*\$?\s*([\d.,]+)/,
-  ];
-  
-  for (const pattern of totalPatterns) {
-    const match = text.match(pattern);
-    if (match?.[1]) {
-      const amount = parseArgentineAmount(match[1]);
-      if (amount && amount > 100 && amount < 10000000) {
-        return amount;
+
+  // Match TOTAL as a whole word so SUBTOTAL cannot trigger it. TOIAL is a
+  // common OCR substitution in the total label.
+  const totalPattern = /(?:^|[^A-Z])(?:IMPORTE\s+)?(?:TOTAL|TOIAL)\b/g;
+  const amountPattern = /-?\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|-?\d+(?:[.,]\d{1,2})?/g;
+  let match: RegExpExecArray | null;
+  const verifiedTotals = new Map<number, number>();
+
+  while ((match = totalPattern.exec(text)) !== null) {
+    const suffix = text.slice(match.index + match[0].length, match.index + match[0].length + 180);
+    const tokens = suffix.match(amountPattern) ?? [];
+    const cents = tokens
+      .map(parseArgentineAmount)
+      .filter((amount): amount is number => amount !== null)
+      .map((amount) => Math.round(amount * 100));
+    const reasonable = (amount: number) => amount > 10000 && amount < 1000000000;
+    const uniqueAmounts = new Set(cents.filter(reasonable));
+
+    // A single amount (including repeated copies in payment details) directly
+    // supports the explicit total label. Multiple amounts are ambiguous unless
+    // a subtotal plus intervening discounts reconciles to a displayed amount.
+    if (uniqueAmounts.size === 1) {
+      verifiedTotals.set([...uniqueAmounts][0] / 100, 0.7);
+      continue;
+    }
+
+    const reconciled = new Set<number>();
+    for (let start = 0; start < cents.length; start++) {
+      const subtotal = cents[start];
+      if (!reasonable(subtotal)) continue;
+
+      let discounts = 0;
+      for (let end = start + 1; end < cents.length; end++) {
+        if (cents[end] < 0) {
+          discounts += cents[end];
+          continue;
+        }
+        // Discounts must be the only values between the subtotal and total.
+        if (discounts < 0 && cents[end] === subtotal + discounts && reasonable(cents[end])) {
+          reconciled.add(cents[end] / 100);
+        }
+        break;
       }
     }
+    if (reconciled.size === 1) verifiedTotals.set([...reconciled][0], 0.9);
   }
-  
-  // Pattern 2: Look for the largest reasonable amount near "TOTAL" keyword
-  const totalIndex = text.lastIndexOf('TOTAL');
-  if (totalIndex !== -1) {
-    // Search in a window of 150 chars after TOTAL
-    const window = text.slice(totalIndex, totalIndex + 150);
-    const amounts = window.match(/[\d.,]+/g) || [];
-    
-    let maxAmount = 0;
-    for (const amtStr of amounts) {
-      const amt = parseArgentineAmount(amtStr);
-      if (amt && amt > maxAmount && amt > 100 && amt < 10000000) {
-        maxAmount = amt;
-      }
-    }
-    if (maxAmount > 0) {
-      return maxAmount;
-    }
-  }
-  
-  // Pattern 3: Find all large numbers and take the largest (last resort)
-  const allAmounts = text.match(/[\d.,]+/g) || [];
-  let maxAmount = 0;
-  for (const amtStr of allAmounts) {
-    if (amtStr.length >= 4) { // At least 4 digits for reasonable total
-      const amt = parseArgentineAmount(amtStr);
-      if (amt && amt > maxAmount && amt > 1000 && amt < 10000000) {
-        maxAmount = amt;
-      }
-    }
-  }
-  
-  return maxAmount > 0 ? maxAmount : null;
+
+  if (verifiedTotals.size !== 1) return null;
+  const [amount, confidence] = [...verifiedTotals][0];
+  return { amount, confidence };
 }
 
 const RECEIPT_SYSTEM_PROMPT = `Sos un extractor de datos de tickets y facturas en pesos argentinos.
@@ -157,11 +158,11 @@ export async function parseReceiptText(ocrText: string): Promise<ParsedReceipt |
     const regexAmount = extractAmountWithRegex(ocrText);
     if (regexAmount) {
       return {
-        amount_ars: regexAmount,
+        amount_ars: regexAmount.amount,
         category_slug: null,
         merchant: null,
         date_text: null,
-        confidence: 0.3, // Low confidence for regex-only
+        confidence: regexAmount.confidence,
       };
     }
     return null;
@@ -176,11 +177,11 @@ export async function parseReceiptText(ocrText: string): Promise<ParsedReceipt |
     const regexAmount = extractAmountWithRegex(ocrText);
     if (regexAmount) {
       return {
-        amount_ars: regexAmount,
+        amount_ars: regexAmount.amount,
         category_slug: null,
         merchant: null,
         date_text: null,
-        confidence: 0.3,
+        confidence: regexAmount.confidence,
       };
     }
     return null;
@@ -196,11 +197,11 @@ export async function parseReceiptText(ocrText: string): Promise<ParsedReceipt |
     const regexAmount = extractAmountWithRegex(ocrText);
     if (regexAmount) {
       return {
-        amount_ars: regexAmount,
+        amount_ars: regexAmount.amount,
         category_slug: null,
         merchant: null,
         date_text: null,
-        confidence: 0.3,
+        confidence: regexAmount.confidence,
       };
     }
     return null;
@@ -213,24 +214,34 @@ export async function parseReceiptText(ocrText: string): Promise<ParsedReceipt |
     const regexAmount = extractAmountWithRegex(ocrText);
     if (regexAmount) {
       return {
-        amount_ars: regexAmount,
+        amount_ars: regexAmount.amount,
         category_slug: null,
         merchant: null,
         date_text: null,
-        confidence: 0.3,
+        confidence: regexAmount.confidence,
       };
     }
     return null;
   }
 
+  const verifiedTotal = extractAmountWithRegex(ocrText);
+  // A reconciled printed total outranks an AI price guess. If the OCR only
+  // exposes a weaker, conflicting total, abstain and request manual input.
+  if (result.data.amount_ars !== null && verifiedTotal &&
+      Math.abs(result.data.amount_ars - verifiedTotal.amount) > 0.01) {
+    if (verifiedTotal.confidence >= 0.8) {
+      return { ...result.data, amount_ars: verifiedTotal.amount, confidence: verifiedTotal.confidence };
+    }
+    return { ...result.data, amount_ars: null, confidence: 0 };
+  }
+
   // If AI returned null amount, try regex fallback
   if (result.data.amount_ars === null) {
-    const regexAmount = extractAmountWithRegex(ocrText);
-    if (regexAmount) {
+    if (verifiedTotal) {
       return {
         ...result.data,
-        amount_ars: regexAmount,
-        confidence: Math.min(result.data.confidence, 0.4), // Lower confidence
+        amount_ars: verifiedTotal.amount,
+        confidence: verifiedTotal.confidence,
       };
     }
   }

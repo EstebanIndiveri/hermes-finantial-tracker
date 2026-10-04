@@ -47,6 +47,24 @@ describe("Groq transcribeAudio", () => {
     expect(getGroqClient()).toBeNull();
   });
 
+  it("retries a retired configured text model once with a supported replacement", async () => {
+    process.env.GROQ_API_KEY = "test-key";
+    process.env.GROQ_MODEL = "llama-3.3-70b-versatile";
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: false, status: 404 })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "{}" } }] }),
+      });
+
+    await expect(getGroqClient()!.complete("system", "user")).resolves.toBe("{}");
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    const secondBody = JSON.parse((global.fetch as jest.Mock).mock.calls[1][1].body);
+    expect(firstBody.model).toBe("llama-3.3-70b-versatile");
+    expect(secondBody.model).toBe("openai/gpt-oss-120b");
+  });
+
   it("transcribes audio successfully", async () => {
     process.env.GROQ_API_KEY = "test-key";
     (global.fetch as jest.Mock).mockResolvedValue({

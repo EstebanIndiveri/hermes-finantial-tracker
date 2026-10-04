@@ -38,18 +38,19 @@ export function getGroqClient(): GroqClient | null {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
 
-  const model = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+  const replacementModel = "openai/gpt-oss-120b";
+  const model = process.env.GROQ_MODEL ?? replacementModel;
 
   return {
     async complete(systemPrompt: string, userPrompt: string): Promise<string> {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const request = (selectedModel: string) => fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model,
+          model: selectedModel,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
@@ -58,6 +59,14 @@ export function getGroqClient(): GroqClient | null {
           max_tokens: 300,
         }),
       });
+
+      let res = await request(model);
+      // A configured model can be retired or unavailable to this account.
+      // Retry once with a currently supported production model; an outage or
+      // endpoint error still fails closed at the caller's parser boundary.
+      if (res.status === 404 && model !== replacementModel) {
+        res = await request(replacementModel);
+      }
 
       if (!res.ok) throw new Error(`Groq API error: ${res.status}`);
       const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };

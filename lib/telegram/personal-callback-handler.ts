@@ -794,7 +794,8 @@ export async function handlePersonalCallback(
         data: { import_id: pending.id },
       });
 
-      const cats = await db.select().from(categories).where(eq(categories.group_id, groupId));
+      const cats = (await db.select().from(categories).where(eq(categories.group_id, groupId)))
+        .filter((category) => !isIncomeCategory(category.slug));
       const kbRows: Array<Array<{ text: string; callback_data: string }>> = [];
       for (let i = 0; i < cats.length; i += 2) {
         const row: Array<{ text: string; callback_data: string }> = [
@@ -1116,6 +1117,9 @@ export async function handlePersonalCallback(
         where: and(eq(categories.slug, slug), eq(categories.group_id, groupId)),
       });
       if (!cat) return { text: `❌ Categoría <b>${slug}</b> no encontrada en tu grupo.`, edit: true };
+      if (isIncomeCategory(cat.slug)) {
+        return { text: "❌ La categoría Ingresos no es válida para un gasto de ticket.", edit: true };
+      }
 
       const amount = pending.parsed_amount_ars;
       if (amount == null || !Number.isFinite(amount) || amount <= 0) {

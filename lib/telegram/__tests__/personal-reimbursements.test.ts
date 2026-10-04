@@ -237,6 +237,27 @@ describe("telegram reimbursements", () => {
     expect(mockClearConversationState).not.toHaveBeenCalled();
   });
 
+  it("never lets an OCR expense be categorized as income", async () => {
+    const pendingReceipt = { id: "receipt-1", parsed_amount_ars: 5000 };
+    (mockDb.select as jest.Mock).mockReturnValue({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({
+          orderBy: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([pendingReceipt]) })),
+        })),
+      })),
+    });
+    (mockDb.query.categories.findFirst as jest.Mock).mockResolvedValue({
+      id: "cat-income", slug: "ingresos", name: "Ingresos", emoji: "💵",
+    });
+
+    const response = await handlePersonalCallback(
+      "chat-1", "telegram-1", "user-1", "group-1", "receipt:select_category:ingresos",
+    );
+
+    expect(response.text).toContain("no es válida para un gasto");
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
   it("re-proposes an edited receipt in a valid ARS-only month without writing a transaction", async () => {
     process.env.ACT05_ARS_MODE_ENABLED = "true";
     const pendingReceipt = { id: "receipt-1", parsed_amount_ars: 5000, parsed_merchant: "Almacén" };

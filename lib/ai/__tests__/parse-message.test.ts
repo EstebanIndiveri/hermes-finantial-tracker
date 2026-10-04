@@ -127,6 +127,6 @@ describe("parseFinancialMessage", () => {
 
     const callArgs = (global.fetch as jest.Mock).mock.calls[0][1];
     const body = JSON.parse(callArgs.body);
-    expect(body.model).toBe("llama-3.3-70b-versatile");
+    expect(body.model).toBe("openai/gpt-oss-120b");
   });
 });

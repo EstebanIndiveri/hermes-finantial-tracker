@@ -25,7 +25,7 @@ describe("parseReceiptText runtime isolation", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("keeps the legacy regex fallback when AI_MODE is absent and no key is configured", async () => {
+  it("uses the explicit total regex fallback when AI_MODE is absent and no key is configured", async () => {
     delete process.env.AI_MODE;
     delete process.env.GROQ_API_KEY;
 
@@ -34,8 +34,68 @@ describe("parseReceiptText runtime isolation", () => {
       category_slug: null,
       merchant: null,
       date_text: null,
-      confidence: 0.3,
+      confidence: 0.7,
     });
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["TOTAL", "TOIAL"])(
+    "uses arithmetic to disambiguate flattened OCR columns after %s",
+    async (totalLabel) => {
+      delete process.env.AI_MODE;
+      delete process.env.GROQ_API_KEY;
+
+      const result = await parseReceiptText(
+        `Subtotal 3349,99 Cebollas 1539,62 28154,71 -601,98 -2003,96 ${totalLabel} 1539,62 28154,71 -601,98 -2003,96 25548,77`,
+      );
+
+      expect(result?.amount_ars).toBe(25548.77);
+      expect(result?.confidence).toBe(0.9);
+    },
+  );
+
+  it("abstains when OCR has no recognizable total instead of selecting a partial amount", async () => {
+    delete process.env.AI_MODE;
+    delete process.env.GROQ_API_KEY;
+
+    await expect(
+      parseReceiptText("Subtotal 28154,71 Descuento -601,98 Cebollas 1539,62"),
+    ).resolves.toBeNull();
+  });
+
+  it("preserves a normal explicit total", async () => {
+    delete process.env.AI_MODE;
+    delete process.env.GROQ_API_KEY;
+
+    await expect(parseReceiptText("TOTAL 22215,50")).resolves.toMatchObject({
+      amount_ars: 22215.5,
+      confidence: 0.7,
+    });
+  });
+
+  it("abstains when multiple post-total amounts cannot be reconciled", async () => {
+    delete process.env.AI_MODE;
+    delete process.env.GROQ_API_KEY;
+
+    await expect(parseReceiptText("TOTAL 1539,62 28154,71 25548,77")).resolves.toBeNull();
+  });
+
+  it("prefers a reconciled printed total over a conflicting AI item price", async () => {
+    delete process.env.AI_MODE;
+    process.env.GROQ_API_KEY = "test-key";
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify({
+        amount_ars: 1539.62,
+        category_slug: "supermercado",
+        merchant: null,
+        date_text: null,
+        confidence: 0.99,
+      }) } }] }),
+    });
+
+    await expect(parseReceiptText(
+      "TOTAL 1539,62 28154,71 -601,98 -2003,96 25548,77",
+    )).resolves.toMatchObject({ amount_ars: 25548.77, confidence: 0.9 });
   });
 });

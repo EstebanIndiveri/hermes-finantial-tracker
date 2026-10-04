@@ -85,6 +85,9 @@ import { handlePersonalCallback } from "../personal-callback-handler";
 import { db } from "@/lib/db/client";
 import { getMonthSummary } from "@/lib/finance/summaries";
 import { parseFinancialMessage } from "@/lib/ai/parse-message";
+import { parseReceiptText } from "@/lib/ai/parse-receipt";
+import { ocrTelegramPhoto } from "../ocr";
+import { sendTelegramMessage } from "../send-message";
 import { runTelegramOperation } from "@/lib/telegram/financial-operation";
 import { createTelegramOperationContext } from "@/lib/telegram/operation-context";
 import {
@@ -98,6 +101,8 @@ import {
 import { setConversationState } from "../splits/conversation-state";
 
 const mockParseFinancialMessage = parseFinancialMessage as jest.MockedFunction<typeof parseFinancialMessage>;
+const mockParseReceiptText = parseReceiptText as jest.MockedFunction<typeof parseReceiptText>;
+const mockOcrTelegramPhoto = ocrTelegramPhoto as jest.MockedFunction<typeof ocrTelegramPhoto>;
 const mockConfirmExecution = confirmExecution as jest.MockedFunction<typeof confirmExecution>;
 const mockGetUserRecurringExpenses = getUserRecurringExpenses as jest.MockedFunction<typeof getUserRecurringExpenses>;
 const mockGetPendingExecutions = getPendingExecutions as jest.MockedFunction<typeof getPendingExecutions>;
@@ -420,6 +425,69 @@ describe("telegram recurring messages", () => {
     const buttons = proposal.replyMarkup?.inline_keyboard?.flat() ?? [];
     expect(buttons.some((button) => button.text === expectedButton)).toBe(true);
     expect(buttons.some((button) => button.callback_data === "receipt:confirm")).toBe(true);
+  });
+
+  it("asks for manual receipt amount when fallback confidence is low, without proposing a partial price", async () => {
+    (sendTelegramMessage as jest.Mock).mockResolvedValue(undefined);
+    mockOcrTelegramPhoto.mockResolvedValue({ text: "Subtotal 28154,71 TOTAL 1539,62 25548,77", isReliable: true });
+    mockParseReceiptText.mockResolvedValue({
+      amount_ars: 1539.62,
+      category_slug: null,
+      merchant: null,
+      date_text: null,
+      confidence: 0.3,
+    });
+
+    const response = await handleTelegramMessage({
+      update_id: 9900,
+      message: {
+        photo: [{ file_id: "test-photo", width: 100, height: 200 }],
+        chat: { id: 10 },
+        from: { id: 20 },
+      },
+    }, "user-1", "group-1");
+
+    expect(response.text).toContain("Escribí o decí el monto");
+    expect(response.text).not.toContain("$1.539,62");
+    expect(response.replyMarkup).toBeUndefined();
+    expect(setConversationState).toHaveBeenCalledWith("10", "20", expect.objectContaining({
+      step: "receipt_manual_amount",
+    }));
+    expect(mockDb.insert).toHaveBeenCalledTimes(1); // receipt_imports only
+  });
+
+  it("offers the reconciled total but never offers income as a ticket category", async () => {
+    (sendTelegramMessage as jest.Mock).mockResolvedValue(undefined);
+    mockOcrTelegramPhoto.mockResolvedValue({ text: "TOTAL 1539,62 28154,71 -601,98 -2003,96 25548,77", isReliable: true });
+    mockParseReceiptText.mockResolvedValue({
+      amount_ars: 25548.77,
+      category_slug: null,
+      merchant: null,
+      date_text: null,
+      confidence: 0.9,
+    });
+    (mockDb.select as jest.Mock).mockReturnValue({
+      from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([
+        { name: "Supermercado", slug: "supermercado", emoji: "🛒" },
+        { name: "Ingresos", slug: "ingresos", emoji: "💵" },
+      ]) })),
+    });
+
+    const response = await handleTelegramMessage({
+      update_id: 9901,
+      message: {
+        photo: [{ file_id: "test-photo", width: 100, height: 200 }],
+        chat: { id: 10 }, from: { id: 20 },
+      },
+    }, "user-1", "group-1");
+
+    expect(response.text).toContain("$25.548,77 ARS");
+    expect(response.replyMarkup?.inline_keyboard.flat().map((button) => button.callback_data))
+      .toContain("receipt:select_category:supermercado");
+    expect(response.replyMarkup?.inline_keyboard.flat().map((button) => button.callback_data))
+      .not.toContain("receipt:select_category:ingresos");
+    expect(mockRunTelegramOperation).not.toHaveBeenCalled();
+    expect(mockDb.insert).toHaveBeenCalledTimes(1); // receipt_imports only
   });
 
   it("recognizes an unambiguous income in text without requiring Groq", async () => {
