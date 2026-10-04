@@ -1015,11 +1015,56 @@ escribió un gasto, ni siquiera una fila inactiva. No hubo escritura por parte
 de Codex. Los tests locales dirigidos de `currency-queries`, `voice` y `ocr`
 pasaron: 3 suites, 13 tests (Node 22).
 
-**ACT-05k continúa abierto, owners definidos.** Próximo gate: Esteban prueba
-una propuesta por audio en ARS/ARS y una por ticket OCR en `test`, cancelando
-ambas si los importes/categorías son correctos; Codex concilia que sigan
-exactamente los mismos dos movimientos. Una lectura errónea debe cancelarse
-y registrarse como hallazgo antes de avanzar. Reintegros y recurrentes son
-canaries posteriores separados, con owner Codex para preparar/verificar y
-Esteban para el QA real. H04d conserva el alcance del deployment beta ya
-aceptado; no se extiende a otro deployment ni a producción legacy.
+**Checkpoint histórico; resultados abajo.** El QA de audio y OCR se ejecutó:
+el audio registró un gasto y OCR reveló un defecto bloqueante. H04d conserva
+el alcance del deployment beta ya aceptado; no se extiende a otro deployment
+ni a producción legacy.
+
+### ACT-05k bloqueo OCR y discrepancia de reintegro — 03/10/2026
+
+**OCR no aprobado; owner Codex para corrección, Esteban para retest.** Esteban
+repitió un ticket cuyo total impreso es ARS 25.548,77. Beta propuso
+ARS 1.539,62 dos veces y ARS 3.349,99 una vez; producción legacy propuso
+ARS 25.548,77 en una prueba separada que Esteban canceló. Ningún gasto OCR
+beta fue confirmado: `receipt_imports` tiene tres intentos `rejected`, todos
+sin `transaction_id`; los movimientos del grupo `test` no incluyen importes
+OCR. Los tres parseos registraron confianza 0,3 y categoría nula. Logs de
+**solo el deployment beta** muestran tres `Groq receipt parse error: Groq API
+error: 404` en esos horarios. El código cae al regex de respaldo sin exigir
+confianza mínima para mostrar una propuesta. El texto de OCR.Space agrupa
+precios en una columna: en dos lecturas `TOTAL` aparece antes de `1539,62`,
+seguido más abajo por `28154,71`, descuentos y `25548,77`; en la tercera
+`TOTAL` fue leído `TOIAL`. El regex toma el primer número posterior a TOTAL,
+o el mayor de respaldo, sin reconstruir la relación subtotal-descuentos-
+total. Esa combinación explica las propuestas erróneas. El modelo por defecto
+en código, `llama-3.3-70b-versatile`, fue retirado para cuentas free/developer
+por Groq el 16/08/2026; `GROQ_MODEL` existe en beta, pero su valor no se
+confirmó en esta investigación. No atribuir el 404 a ese modelo específico
+sin comprobar el binding/response body. Referencia upstream:
+https://console.groq.com/docs/deprecations.
+
+**Gate de seguridad previo a otro OCR, owner Codex:** identificar el modelo
+efectivo del deployment beta y validar disponibilidad en Groq; sustituir el
+modelo retirado por uno compatible después de comparar costo/calidad;
+reproducir los tres OCR guardados en test local redaccionado; rechazar
+propuestas de importe bajo confianza o sin validación cruzada de total,
+subtotal/descuentos y pago; ofrecer ingreso manual del monto cuando el OCR
+sea ambiguo; excluir categorías de ingreso de tickets. Tests deben cubrir
+columnas desordenadas, `TOIAL`, varios totales/pagos y cero escrituras antes
+de confirmar. Solo entonces desplegar a beta, reatestar H04d para el nuevo
+deployment y pedir retest del mismo ticket. Legacy no se modifica.
+
+**Audio: registro correcto, reintegro no certificado.** Esteban aclaró que
+hubo propuesta y que seleccionó confirmar con reintegro; se retira la
+hipótesis anterior de escritura directa. La DB beta tiene una sola
+transacción Telegram ARS 102, categoría supermercado, `ARS_ARS`, y el bot
+mostró gastado ARS 239 / disponible ARS 9.761 / ahorro ARS 3.001.761.
+Sin embargo, esa fila tiene `requires_reimbursement=0` y cero solicitudes
+en `reimbursement_requests`; el resultado durable de la operación tampoco
+menciona reintegro. La captura visible muestra únicamente la confirmación
+del gasto, no el botón pulsado. Owner Codex: revisar contrato de teclado,
+callback y escritura y reproducir con evidencia del botón/resultado; owner
+Esteban: repetir QA de reintegro solo después del diagnóstico, idealmente
+en grupo beta con pagador para verificar solicitud y entrega. No declarar
+reintegro exitoso por el mensaje de gasto. No crear una solicitud retroactiva
+ni tocar producción.
