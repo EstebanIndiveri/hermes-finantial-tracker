@@ -36,12 +36,15 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  if (req.nextUrl.searchParams.has("test")) {
+    return NextResponse.json({ error: "dry-run not supported" }, { status: 400 });
+  }
+
   try {
     const month = getActiveMonthArgentina();
     const today = getArgentinaDate();
     const todayStr = today.toISOString().split("T")[0]; // YYYY-MM-DD
-    const isForceTest = req.nextUrl.searchParams.get("test") === "1";
-    const isMonday = isForceTest || today.getDay() === 1;
+    const isMonday = today.getDay() === 1;
 
     // Get all users (personal app — typically one)
     const allUsers = await db.select().from(users);

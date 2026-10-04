@@ -1199,3 +1199,88 @@ política beta acotada de Esteban, H04d queda reatestado para este deployment;
 Codex es owner de renovar Telegram antes de vencer los siete días o ante
 cualquier drift. La aceptación funcional OCR sigue abierta hasta el canary
 manual; ninguna nueva transacción OCR fue creada por esta verificación.
+
+### Continuidad local: Groq vacío y entrega web durable — 04/10/2026
+
+**Groq vacío, corte diagnóstico local cerrado; owner Codex para seguimiento.**
+Una completación 200 sin texto ahora produce `GROQ_EMPTY_COMPLETION` con solo
+metadatos validados y acotados (modelo, motivo de finalización y contadores de
+tokens). Texto natural abstiene como `unknown`; OCR mantiene el fallback de
+total reconciliado. Ninguna respuesta cruda, ticket o mensaje financiero se
+registra al fallar JSON/Zod. No se alteraron `GROQ_MODEL`, claves, prompts,
+reintentos ni bindings. La causa upstream/modelo del contenido vacío sigue
+**abierta, no bloqueante, owner Codex**; no se declara estable para todos los
+tickets sin un gate separado. El canary OCR del 04/10 sí cerró el caso
+25.548,77 y cancelación sin escritura; la frase histórica inmediatamente
+anterior que lo llama abierto se refiere al estado previo a ese canary.
+
+**ACT-06/R-DELIVERY Telegram web, implementación local verificada; owners
+Codex para rollout y Esteban para canary.** Con inbox, outbox y worker beta
+habilitados, la solicitud web, su operación de origen explícito
+`web.reimbursement.create` y una entrega por miembro Telegram elegible
+(excluido el solicitante) se escriben en la misma transacción inmediata. La
+entrega se intenta en línea después del commit y queda para reintento del
+worker si falla; un error de dispatcher o Web Push posterior al commit no
+convierte la solicitud persistida en una respuesta HTTP de fallo. El switch
+`NOTIFICATIONS_ENABLED=false` de avisos proactivos **no** desactiva esta
+entrega financiera, igual que el flujo financiero Telegram ya operativo.
+Con la vía durable apagada se conserva el comportamiento web inline anterior;
+ese modo no tiene garantía de recuperación. Web Push sigue best-effort y su
+durabilidad permanece **abierta, owner Codex**, en un corte separado. No hay
+migración de esquema ni cambio en legacy.
+
+Gates locales Node 22: 99 suites/889 tests, typecheck, build y lint con 0
+errores/67 warnings preexistentes. La integración temporal libSQL con FK
+activas verifica filas únicas por destinatario y rollback conjunto ante una
+violación de namespace; los tests unitarios cubren rechazo, duplicado, flags
+y fallo posterior al commit. **No desplegado aún:** beta necesita publicar el
+cut, reatestar H04d para el nuevo SHA/deployment y un canary web de
+reintegro con conciliación de solicitud, operación, outbox y aceptación del
+proveedor. Esteban debe aprobar primero commit/push del preview vinculado a
+GitHub; Codex queda owner del preflight, rollout y conciliación. El residual
+H04d aceptado solo para beta no certifica aislamiento de producción. Codex
+también conserva la renovación de los recibos Telegram del 29/09 antes de
+vencer su ventana de siete días. Ninguno de estos pendientes queda sin owner.
+
+### Priorización del siguiente corte local — 04/10/2026
+
+**Web Push durable, diferido con owner Codex.** La auditoría del flujo actual
+confirmó que `sendPushToUser` es best-effort: no hay fila recuperable, lease ni
+reintento después del commit. Resolverlo exige una tabla outbox aditiva,
+worker y política de retención/redacción del payload, además de pruebas de
+atomicidad y del proveedor. No se mezclará esa migración con el corte Telegram
+web ya verificado ni se activará Web Push proactivo en beta por inferencia.
+Codex diseña el corte y valida migración/worker en entorno aislado; Esteban
+decidirá retención y activación al llegar a ese gate. Sigue abierto y asignado.
+
+**Groq, gate siguiente owner Codex.** La API oficial documenta que `max_tokens`
+está deprecado a favor de `max_completion_tokens` y que GPT-OSS usa tokens de
+razonamiento (por defecto esfuerzo medio); el cliente actual limita la
+completación a 300 tokens. Un `finish_reason=length` con 300 tokens y contenido
+vacío es compatible con agotamiento del presupuesto antes de una respuesta
+final, pero **no demuestra** que esa sea la causa del ticket observado.
+Primero se agrega una matriz offline con respuestas y tickets sintéticos,
+sin uso del proveedor, cambios de modelo ni datos reales. Solo una muestra
+posterior, redactada y autorizada en beta permitiría confirmar causa y medir
+el efecto/costo de cambiar presupuesto o formato. Referencias:
+[API Groq](https://console.groq.com/docs/api-reference) y
+[razonamiento GPT-OSS](https://console.groq.com/docs/reasoning).
+
+**Gate offline ejecutado:** siete regresiones nuevas verifican `length` con
+300 tokens y texto vacío, `stop` vacío, JSON válido, metadatos malformados,
+logs redactados y fallback/abstención de tickets sintéticos. Solo se usó
+`fetch` simulado. La suite completa quedó en 100 suites/896 tests verdes en
+Node 22. Este gate verifica seguridad local, **no** prueba la causa del
+proveedor ni autoriza cambiar el presupuesto de tokens en beta.
+
+**ACT-17, primer corte local owner Codex:** la ruta autenticada
+`/api/cron/daily-alerts?test=1` antes forzaba `isMonday` y podía enviar avisos
+reales. Ahora rechaza cualquier parámetro `test` con HTTP 400 antes de
+consultas, envíos o escrituras; la URL normal del cron no cambia. Regresión
+dirigida cubierta. La auditoría también encontró que este cron mezcla el
+resumen financiero privado, recordatorios de sesiones a un chat grupal
+persistido y recordatorios de reintegro a un pagador. **ACT-17 sigue abierto,
+owner Codex** para reglas de destinatario/membresía, consentimiento por tipo
+de aviso y pruebas A/B/exmiembro; **Esteban** decide la activación de avisos
+proactivos solo después de esos gates. `NOTIFICATIONS_ENABLED=false` se
+mantiene en beta; este corte no envía mensajes ni cambia flags.

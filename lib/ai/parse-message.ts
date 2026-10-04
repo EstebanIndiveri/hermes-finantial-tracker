@@ -1,4 +1,4 @@
-import { getGroqClient } from "./groq";
+import { getGroqClient, GroqCompletionError } from "./groq";
 import { z } from "zod";
 
 const ParsedMessageSchema = z.object({
@@ -208,7 +208,11 @@ export async function parseFinancialMessage(text: string): Promise<ParsedMessage
   try {
     raw = await client.complete(SYSTEM_PROMPT, text);
   } catch (err) {
-    console.error("Groq API error:", err instanceof Error ? err.message : String(err));
+    if (err instanceof GroqCompletionError) {
+      console.error("Groq API error:", err.code, err.metadata);
+    } else {
+      console.error("Groq API error", { errorName: err instanceof Error ? err.name : "UnknownError" });
+    }
     return { intent: "unknown", confidence: 0, needs_confirmation: false, requires_reimbursement: false };
   }
 
@@ -217,15 +221,15 @@ export async function parseFinancialMessage(text: string): Promise<ParsedMessage
   let parsed: unknown;
   try {
     parsed = JSON.parse(cleaned);
-  } catch (err) {
-    console.error("Groq JSON parse error. Raw:", raw, "Error:", err instanceof Error ? err.message : String(err));
+  } catch {
+    console.error("Groq JSON parse error", { contentLength: raw.length });
     return { intent: "unknown", confidence: 0, needs_confirmation: false, requires_reimbursement: false };
   }
 
   try {
     return ParsedMessageSchema.parse(parsed);
-  } catch (err) {
-    console.error("Groq Zod validation error:", err instanceof Error ? err.message : String(err), "Parsed:", JSON.stringify(parsed));
+  } catch {
+    console.error("Groq Zod validation error");
     return { intent: "unknown", confidence: 0, needs_confirmation: false, requires_reimbursement: false };
   }
 }

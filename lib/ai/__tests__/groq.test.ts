@@ -65,6 +65,58 @@ describe("Groq transcribeAudio", () => {
     expect(secondBody.model).toBe("openai/gpt-oss-120b");
   });
 
+  it.each([
+    { choices: [{ message: { content: "  " }, finish_reason: "length" }], model: "test-model", usage: { prompt_tokens: 20, completion_tokens: 300 } },
+    { choices: [{ message: { content: null }, finish_reason: "stop" }] },
+    { choices: [{ finish_reason: "stop" }] },
+    { choices: [] },
+    {},
+  ])("classifies empty or missing text completion content without exposing it", async (payload) => {
+    process.env.GROQ_API_KEY = "test-key";
+    (global.fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => payload });
+
+    await expect(getGroqClient()!.complete("private prompt", "financial text"))
+      .rejects.toMatchObject({ code: "GROQ_EMPTY_COMPLETION" });
+  });
+
+  it("exposes only validated response metadata for an empty completion", async () => {
+    process.env.GROQ_API_KEY = "test-key";
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: "openai/gpt-oss-120b",
+        choices: [{ message: { content: "" }, finish_reason: "length" }],
+        usage: { prompt_tokens: 31, completion_tokens: 300 },
+      }),
+    });
+
+    await expect(getGroqClient()!.complete("private prompt", "financial text"))
+      .rejects.toMatchObject({
+        code: "GROQ_EMPTY_COMPLETION",
+        metadata: {
+          model: "openai/gpt-oss-120b",
+          finishReason: "length",
+          promptTokens: 31,
+          completionTokens: 300,
+        },
+      });
+  });
+
+  it("omits malformed provider labels and token counts from diagnostic metadata", async () => {
+    process.env.GROQ_API_KEY = "test-key";
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: "model\nprivate text",
+        choices: [{ message: { content: null }, finish_reason: { detail: "private text" } }],
+        usage: { prompt_tokens: -1, completion_tokens: 2.5 },
+      }),
+    });
+
+    await expect(getGroqClient()!.complete("private prompt", "financial text"))
+      .rejects.toMatchObject({ code: "GROQ_EMPTY_COMPLETION", metadata: {} });
+  });
+
   it("transcribes audio successfully", async () => {
     process.env.GROQ_API_KEY = "test-key";
     (global.fetch as jest.Mock).mockResolvedValue({

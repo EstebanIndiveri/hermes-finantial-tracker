@@ -86,9 +86,32 @@ describe("parseReceiptText runtime isolation", () => {
       json: async () => ({ choices: [{ message: { content: "" } }] }),
     });
 
+    const errorLog = jest.spyOn(console, "error").mockImplementation(() => undefined);
     await expect(parseReceiptText(
       "Subtotal 28154,71 Descuento -601,98 -2003,96 TOIAL 25548,77",
     )).resolves.toMatchObject({ amount_ars: 25548.77, confidence: 0.9 });
+    expect(errorLog).toHaveBeenCalledWith("Groq receipt parse error:", "GROQ_EMPTY_COMPLETION", {});
+    errorLog.mockRestore();
+  });
+
+  it("does not log malformed receipt fields supplied by Groq", async () => {
+    delete process.env.AI_MODE;
+    process.env.GROQ_API_KEY = "test-key";
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify({
+        amount_ars: "private merchant payload",
+        category_slug: null,
+        merchant: null,
+        date_text: null,
+        confidence: 0.9,
+      }) } }] }),
+    });
+    const errorLog = jest.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(parseReceiptText("TOTAL 25548,77")).resolves.toMatchObject({ amount_ars: 25548.77 });
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("private merchant payload");
+    errorLog.mockRestore();
   });
 
   it("abstains when OCR has no recognizable total instead of selecting a partial amount", async () => {

@@ -110,6 +110,28 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(sendTelegramMessage).not.toHaveBeenCalled();
   });
 
+  it("rejects authenticated test mode without running queries or sending notifications", async () => {
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret" };
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts?test=1", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "dry-run not supported" });
+    expect(db.select).not.toHaveBeenCalled();
+    expect(db.query.transactions.findMany).not.toHaveBeenCalled();
+    expect(db.query.monthly_settings.findFirst).not.toHaveBeenCalled();
+    expect(db.query.split_sessions.findMany).not.toHaveBeenCalled();
+    expect(db.query.splits.findFirst).not.toHaveBeenCalled();
+    expect(getMonthSummary).not.toHaveBeenCalled();
+    expect(getCategoryBreakdown).not.toHaveBeenCalled();
+    expect(buildDailyAlert).not.toHaveBeenCalled();
+    expect(resolveAuthorizedTelegramGroup).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+  });
+
   function setupDailyProcessing(users: Array<Record<string, unknown>>) {
     process.env = { ...originalEnv, CRON_SECRET: "cron-secret", TELEGRAM_CHAT_ID: "global-chat" };
     (db.select as jest.Mock)

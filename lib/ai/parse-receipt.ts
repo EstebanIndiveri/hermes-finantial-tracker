@@ -1,4 +1,4 @@
-import { getAiRuntimeMode, getGroqClient } from "./groq";
+import { getAiRuntimeMode, getGroqClient, GroqCompletionError } from "./groq";
 import { z } from "zod";
 
 const ReceiptSchema = z.object({
@@ -190,7 +190,11 @@ export async function parseReceiptText(ocrText: string): Promise<ParsedReceipt |
   try {
     raw = await client.complete(RECEIPT_SYSTEM_PROMPT, ocrText.slice(0, 2000));
   } catch (err) {
-    console.error("Groq receipt parse error:", err instanceof Error ? err.message : String(err));
+    if (err instanceof GroqCompletionError) {
+      console.error("Groq receipt parse error:", err.code, err.metadata);
+    } else {
+      console.error("Groq receipt parse error", { errorName: err instanceof Error ? err.name : "UnknownError" });
+    }
     // Try regex fallback on AI error
     const regexAmount = extractAmountWithRegex(ocrText);
     if (regexAmount) {
@@ -227,7 +231,7 @@ export async function parseReceiptText(ocrText: string): Promise<ParsedReceipt |
 
   const result = ReceiptSchema.safeParse(parsed);
   if (!result.success) {
-    console.error("Groq receipt Zod error:", result.error.message);
+    console.error("Groq receipt Zod validation error");
     // Try regex fallback on schema error
     const regexAmount = extractAmountWithRegex(ocrText);
     if (regexAmount) {

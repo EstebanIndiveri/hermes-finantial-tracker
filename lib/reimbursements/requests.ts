@@ -5,6 +5,7 @@ import {
   group_members,
   reimbursementRequests,
   telegram_delivery_outbox,
+  telegram_operations,
   transactions,
   userPaymentInfo,
   users,
@@ -28,6 +29,8 @@ import {
 } from "@/lib/telegram/operation-context";
 import { runTelegramOperation, type TelegramOperationTransaction } from "@/lib/telegram/financial-operation";
 import { buildTelegramDeliveryRow } from "@/lib/telegram/outbox";
+import { dispatchTelegramDeliveriesForUpdate } from "@/lib/telegram/outbox-dispatcher";
+import { resolveTelegramBotId } from "@/lib/telegram/update-inbox";
 
 export type ReimbursementStatus = "pending" | "paid" | "cancelled";
 
@@ -165,6 +168,25 @@ async function enqueueReimbursementTelegram(
   }
 }
 
+/** Web entry point keeps member selection and the outbox insert in its caller's transaction. */
+export async function enqueueWebReimbursementTelegram(
+  transaction: TelegramOperationTransaction,
+  context: TelegramOperationContext,
+  operationId: string,
+  requesterId: string,
+  members: Array<{ userId: string; telegramId: string | null }>,
+  message: { text: string; replyMarkup?: Record<string, unknown> },
+): Promise<void> {
+  await enqueueReimbursementTelegram(
+    transaction,
+    context,
+    operationId,
+    members.filter((member) => member.userId !== requesterId && member.telegramId)
+      .map((member) => ({ telegramId: member.telegramId as string, message })),
+    "web.reimbursement.request",
+  );
+}
+
 /**
  * Creates a pending reimbursement request.
  *
@@ -204,6 +226,22 @@ export async function createVerifiedWebReimbursement(
   requestedAmount?: number,
   payerId?: string,
 ): Promise<ReimbursementRequest | { error: string }> {
+  const outboxBotId = getWebReimbursementOutboxBotId();
+  const requestId = nanoid();
+  const outboxUpdateId = outboxBotId ? `web-reimbursement:${requestId}` : null;
+  const outboxContext = outboxBotId && outboxUpdateId
+    ? createTelegramOperationContext({
+        botId: outboxBotId,
+        updateId: outboxUpdateId,
+        chatId: "web",
+        action: "web.reimbursement.create",
+        suffix: requestId,
+      })
+    : null;
+  const operationIdentity = outboxContext
+    ? createTelegramOperationIdentity(outboxContext)
+    : null;
+
   const outcome = await db.transaction(async (tx) => {
     const [expense] = await tx.select({
       userId: transactions.user_id,
@@ -246,11 +284,53 @@ export async function createVerifiedWebReimbursement(
     const [category] = await tx.select({ name: categories.name })
       .from(categories).where(eq(categories.id, expense.categoryId));
     const [row] = await tx.insert(reimbursementRequests).values({
-      id: nanoid(), transactionId, requesterId, payerId: effectivePayerId ?? null,
+      id: requestId,
+      ...(operationIdentity ? { operationId: operationIdentity.operationId } : {}),
+      transactionId, requesterId, payerId: effectivePayerId ?? null,
       amount: expense.amountArs, status: "pending",
     }).returning();
+    const request = mapReimbursementRequestRow(row);
+
+    if (outboxBotId && outboxUpdateId && outboxContext && operationIdentity) {
+      const [requester] = await tx.select({ name: users.name })
+        .from(users).where(eq(users.id, requesterId));
+      const [paymentInfo] = await tx.select({ paymentMethod: userPaymentInfo.paymentMethod, value: userPaymentInfo.value })
+        .from(userPaymentInfo)
+        .where(and(eq(userPaymentInfo.userId, requesterId), eq(userPaymentInfo.isDefault, true)));
+      const members = await tx.select({ userId: group_members.user_id, telegramId: users.telegram_user_id })
+        .from(group_members)
+        .innerJoin(users, eq(group_members.user_id, users.id))
+        .where(eq(group_members.group_id, expense.groupId));
+      const message = buildReimbursementRequestNotification({
+        requesterName: requester?.name,
+        amount: expense.amountArs,
+        categoryName: category?.name ?? "Sin categoría",
+        description: expense.description ?? "",
+        reimbursementId: requestId,
+        paymentMethod: paymentInfo?.paymentMethod,
+        paymentValue: paymentInfo?.value,
+      });
+      await tx.insert(telegram_operations).values({
+        operation_id: operationIdentity.operationId,
+        bot_id: outboxBotId,
+        update_id: outboxUpdateId,
+        operation_kind: "web.reimbursement.create",
+        status: "committed",
+        resource_type: "reimbursement",
+        resource_id: requestId,
+        result_json: JSON.stringify({ request }),
+      });
+      await enqueueWebReimbursementTelegram(
+        tx,
+        outboxContext,
+        operationIdentity.operationId,
+        requesterId,
+        members,
+        message,
+      );
+    }
     return {
-      request: mapReimbursementRequestRow(row),
+      request,
       groupId: expense.groupId,
       categoryName: category?.name ?? "Sin categoría",
       description: expense.description ?? "",
@@ -259,18 +339,50 @@ export async function createVerifiedWebReimbursement(
   }, { behavior: "immediate" });
 
   if (outcome.error !== undefined) return { error: outcome.error };
-  await notifyGroupOfReimbursementRequest(
-    outcome.groupId, requesterId, outcome.request.id, outcome.request.amount,
-    outcome.categoryName, outcome.description,
-  );
+  if (outboxBotId && outboxUpdateId) {
+    try {
+      await dispatchTelegramDeliveriesForUpdate({ botId: outboxBotId, updateId: outboxUpdateId });
+    } catch (error) {
+      console.error("Web reimbursement Telegram delivery deferred", error instanceof Error ? error.name : "unknown");
+    }
+  } else {
+    await notifyGroupOfReimbursementRequest(
+      outcome.groupId, requesterId, outcome.request.id, outcome.request.amount,
+      outcome.categoryName, outcome.description,
+    );
+  }
   if (outcome.payerId) {
-    await sendPushToUser(outcome.payerId, {
-      title: "💸 Solicitud de Reintegro",
-      body: `Te han solicitado ARS $${outcome.request.amount.toLocaleString("es-AR")}`,
-      url: "/dashboard/reimbursements",
-    });
+    try {
+      await sendPushToUser(outcome.payerId, {
+        title: "💸 Solicitud de Reintegro",
+        body: `Te han solicitado ARS $${outcome.request.amount.toLocaleString("es-AR")}`,
+        url: "/dashboard/reimbursements",
+      });
+    } catch (error) {
+      // Push is not durable yet; never turn a committed request into a retryable
+      // financial write because the best-effort provider failed afterward.
+      console.error("Web reimbursement push deferred", error instanceof Error ? error.name : "unknown");
+    }
   }
   return outcome.request;
+}
+
+/** Keep existing inline behavior unless the durable Telegram lane is enabled. */
+function getWebReimbursementOutboxBotId(): string | null {
+  if (
+    process.env.TELEGRAM_INBOX_ENABLED !== "true" ||
+    process.env.TELEGRAM_OUTBOX_ENABLED !== "true" ||
+    process.env.TELEGRAM_OUTBOX_WORKER_ENABLED !== "true" ||
+    !process.env.TELEGRAM_BOT_TOKEN?.trim()
+  ) return null;
+
+  try {
+    return resolveTelegramBotId();
+  } catch {
+    // A missing/malformed stable identity must not turn a legacy reimbursement
+    // into a failed financial request. The caller retains the historic path.
+    return null;
+  }
 }
 
 /**

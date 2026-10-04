@@ -64,6 +64,49 @@ describe("parseFinancialMessage", () => {
     });
   });
 
+  it("fails closed and logs no financial input when Groq returns empty completion content", async () => {
+    process.env.GROQ_API_KEY = "test-key";
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: "openai/gpt-oss-120b",
+        choices: [{ message: { content: "" }, finish_reason: "length" }],
+        usage: { prompt_tokens: 31, completion_tokens: 300 },
+      }),
+    }) as jest.Mock;
+    const errorLog = jest.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const result = await parseFinancialMessage("gasté 5000 en supermercado confidencial");
+
+    expect(result).toEqual({
+      intent: "unknown",
+      confidence: 0,
+      needs_confirmation: false,
+      requires_reimbursement: false,
+    });
+    expect(errorLog).toHaveBeenCalledWith("Groq API error:", "GROQ_EMPTY_COMPLETION", {
+      model: "openai/gpt-oss-120b",
+      finishReason: "length",
+      promptTokens: 31,
+      completionTokens: 300,
+    });
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("confidencial");
+  });
+
+  it("does not log malformed completion text", async () => {
+    process.env.GROQ_API_KEY = "test-key";
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "malformed sensitive output" } }] }),
+    }) as jest.Mock;
+    const errorLog = jest.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await parseFinancialMessage("gasté 5000 en supermercado confidencial");
+
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("malformed sensitive output");
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("confidencial");
+  });
+
   it("should return parsed result when Groq returns valid JSON matching schema", async () => {
     process.env.GROQ_API_KEY = "test-key";
 

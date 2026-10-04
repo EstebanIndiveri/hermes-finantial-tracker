@@ -2,6 +2,52 @@ interface GroqClient {
   complete(systemPrompt: string, userPrompt: string): Promise<string>;
 }
 
+export interface GroqCompletionMetadata {
+  model?: string;
+  finishReason?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+}
+
+export class GroqCompletionError extends Error {
+  readonly code = "GROQ_EMPTY_COMPLETION" as const;
+
+  constructor(readonly metadata: GroqCompletionMetadata) {
+    super(`GROQ_EMPTY_COMPLETION ${JSON.stringify(metadata)}`);
+    this.name = "GroqCompletionError";
+  }
+}
+
+function safeProviderLabel(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^[\w./:-]{1,100}$/.test(value)) return undefined;
+  return value;
+}
+
+function safeTokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function getCompletionMetadata(data: unknown): GroqCompletionMetadata {
+  if (typeof data !== "object" || data === null) return {};
+  const response = data as Record<string, unknown>;
+  const choice = Array.isArray(response.choices) ? response.choices[0] : undefined;
+  const choiceRecord = typeof choice === "object" && choice !== null
+    ? choice as Record<string, unknown>
+    : undefined;
+  const usage = typeof response.usage === "object" && response.usage !== null
+    ? response.usage as Record<string, unknown>
+    : undefined;
+
+  return {
+    model: safeProviderLabel(response.model),
+    finishReason: safeProviderLabel(choiceRecord?.finish_reason),
+    promptTokens: safeTokenCount(usage?.prompt_tokens),
+    completionTokens: safeTokenCount(usage?.completion_tokens),
+  };
+}
+
 export type AiRuntimeMode = "live" | "stub" | "invalid";
 
 export type TranscriptionErrorCode =
@@ -69,8 +115,16 @@ export function getGroqClient(): GroqClient | null {
       }
 
       if (!res.ok) throw new Error(`Groq API error: ${res.status}`);
-      const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
-      return data.choices?.[0]?.message?.content ?? "";
+      const data: unknown = await res.json();
+      const metadata = getCompletionMetadata(data);
+      const response = typeof data === "object" && data !== null
+        ? data as { choices?: Array<{ message?: { content?: unknown } }> }
+        : undefined;
+      const content = response?.choices?.[0]?.message?.content;
+      if (typeof content !== "string" || content.trim().length === 0) {
+        throw new GroqCompletionError(metadata);
+      }
+      return content;
     },
   };
 }
