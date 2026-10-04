@@ -1326,3 +1326,44 @@ separados/credenciales propias o se autoriza expresamente activar este SHA en
 el target Production del *proyecto beta aislado* para el canary ACT-06. La
 decisión no autoriza tocar producción legacy. ACT-06/R-DELIVERY y Web Push
 durable siguen abiertos con los owners indicados arriba.
+
+### ACT-06/R-DELIVERY — activación beta aislada y H04d (04/10/2026)
+
+Esteban autorizó expresamente activar el código en el target `production`
+**del proyecto beta aislado**, sin tocar el proyecto legacy. Codex verificó
+remote, vínculo `.vercel/project.json`, cuenta/equipo CLI y árbol limpio antes
+del despliegue. El source SHA fue
+`138290a38a22e4dc9b4f2e82b1cff671d728e01e` (incluye el corte de código
+`2e4ef7e`). Se creó `dpl_GUd2a4q4kn3zaG5NF8mhyUKsLR8o` con
+`--prod --skip-domain`: quedó `READY` en el proyecto
+`prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`. El build emitió un único
+`beta_build_isolation_attested` con `passed:true`, diez checks esperados,
+`beta_secret_fingerprints_match:true` y ningún fallo. Antes de mover el alias,
+las probes pasivas al deployment devolvieron 200 en `/login` y 401 para el
+worker Telegram sin credencial. Después Codex promovió **solo** el alias
+`hermes-finantial-tracker-z2.vercel.app` al nuevo ID; el alias legacy siguió
+en `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. La pausa de autodeploy Git del
+proyecto beta sigue en `commandForIgnoringBuildStep: "exit 0"`.
+
+El paquete privado H04d actualizó los recibos redactados beta Vercel/runtime,
+SHA-256 y manifest para el nuevo ID/SHA; el runner devolvió `ok:true`,
+`postActivationRuntimeConsistent:true`,
+`providerMetadataComparison:"distinct-identities-declared"` e
+`isolationVerified:false` por diseño. Los recibos Turso y Telegram previos
+continúan dentro de su ventana de siete días; los de Telegram del 29/09
+requieren renovación antes de vencer alrededor del 06/10. Bajo la política
+beta acotada aceptada por Esteban, **H04d queda reatestado únicamente para
+este deployment**; no certifica URLs retiradas ni una release legacy.
+
+**ACT-06/R-DELIVERY aceptación funcional abierta, owner Codex + Esteban:**
+el código, las regresiones locales y el despliegue beta están cerrados; falta
+un canary consentido de reintegro iniciado desde la web en un grupo beta de
+prueba, conciliando transacción, solicitud, una entrega Telegram al miembro y
+callback de pago. Esteban ejecuta/observa el flujo en sus sesiones web y
+Telegram; Codex concilia evidencia y corrige cualquier hallazgo. No se creó
+ningún movimiento financiero ni se notificó a miembros como parte de este
+despliegue. **ACT-06/R-DELIVERY Web Push durable** permanece separado, owner
+Codex. **Preview** con URL de DB vacía permanece abierto, owner Codex, como
+deuda de entorno no bloqueante para este beta Production-target. H04d: Codex
+renueva recibos antes de expiración y reatesta en el siguiente deploy; Esteban
+solo redecide si cambia identidad, binding, fingerprint o falla un control.

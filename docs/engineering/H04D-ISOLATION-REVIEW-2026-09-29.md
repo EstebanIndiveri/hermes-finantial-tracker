@@ -228,3 +228,27 @@ digests and updated manifest then passed the hardened runner:
 under Esteban's 02/10 standing residual policy, **not** formal runtime or
 retired-URL certification. Codex owns renewal before Telegram evidence ages
 out, plus the pending OCR and audio-reimbursement functional canaries.
+
+## Addendum — beta deployment 04/10/2026, ACT-06 web delivery
+
+The beta-only source SHA `138290a38a22e4dc9b4f2e82b1cff671d728e01e`
+was deployed as `dpl_GUd2a4q4kn3zaG5NF8mhyUKsLR8o` to target `production`
+inside the separate beta Vercel project. The deployment was built and checked
+before promotion: its redacted build assertion reported `passed:true`, ten
+expected checks, six matching secret fingerprints and no failed checks.
+Passive direct-deployment probes returned 200 for `/login` and 401 for the
+unauthenticated Telegram outbox worker. Only then was the canonical beta
+alias promoted to this deployment; a read-only alias inspection confirmed the
+legacy project remained on `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+The private evidence package refreshed its beta Vercel/runtime receipts and
+digests for this exact ID/SHA. Turso and Telegram receipts remain within the
+seven-day freshness window; the 29/09 Telegram receipts must be refreshed
+before expiry around 06/10. The hardened runner returned `ok:true`,
+`postActivationRuntimeConsistent:true`,
+`providerMetadataComparison:"distinct-identities-declared"`, and the
+intentional `isolationVerified:false`. Under Esteban's standing beta-only
+residual policy, H04d is reattested for this exact deployment, not for old
+deployment URLs or a legacy release. ACT-06 web reimbursement delivery still
+needs a consented functional canary; no financial row or Telegram update was
+created by these checks.
