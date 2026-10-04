@@ -1161,6 +1161,26 @@ Codex para conciliación/corrección y Esteban para un único canary manual con
 captura del botón pulsado y respuesta. El follow-up Groq sigue a cargo de
 Codex, no bloquea esta detección OCR.
 
+### Reintegro por audio beta — canary 04/10 15:04 ART
+
+**Cerrado para solicitud y entrega del piloto; owner de regresión Codex.**
+Esteban eligió `Mi espacio` y envió un audio transcrito como «Gasté 103 en
+supermercado con reintegro». La propuesta mostró ARS 103, Supermercado y los
+botones «Sí, pedir reintegro» / «No, solo gasto». La respuesta confirmó el
+gasto y la solicitud. Lectura beta de solo consulta: exactamente una
+`transactions` activa de ARS 103 con `requires_reimbursement=1`, grupo
+`Mi espacio`; exactamente una `reimbursement_requests` pendiente de ARS 103
+referida a esa transacción; `payer_id=NULL` porque la solicitud queda abierta
+al miembro. `group_members` contiene un owner y una member Sabri, ambos
+vinculados a Telegram. El outbox de la operación tiene un `send_message`
+`sent` con ID de proveedor dirigido al Telegram de Sabri y un `edit_message`
+`sent` con ID de proveedor para la confirmación del usuario, ambos con un
+intento. No hay duplicado observado. Esto prueba aceptación del proveedor,
+no lectura humana de Sabri ni pago de esta solicitud. El pago grupal anterior
+ARS 137 ya cubrió ese tramo en otro canary. La anomalía histórica del audio
+ARS 102 queda documentada como no reproducida aquí; Codex conserva la
+regresión y el seguimiento de Groq y H04d. No se requiere repetir este gasto.
+
 **Despliegue y H04d (mismo día):** commit local de código y estado
 `e8790a2d6924c790554798a6602fba86470f3a41`, sin push. Deployment
 beta-only `dpl_AtyHSVU2H6dw4CpQi9yUUo6yPfdz` READY en proyecto
