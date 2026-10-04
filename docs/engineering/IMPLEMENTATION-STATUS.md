@@ -1367,3 +1367,27 @@ Codex. **Preview** con URL de DB vacía permanece abierto, owner Codex, como
 deuda de entorno no bloqueante para este beta Production-target. H04d: Codex
 renueva recibos antes de expiración y reatesta en el siguiente deploy; Esteban
 solo redecide si cambia identidad, binding, fingerprint o falla un control.
+
+### ACT-06/R-DELIVERY — canary Telegram del 04/10, web pendiente
+
+Esteban aportó capturas de la solicitud grupal ARS 100 en Supermercado,
+recepción por Sabri y aviso posterior de pago al solicitante. Codex concilió
+solo metadatos de las filas beta (sin texto de mensajes ni claves): una
+transacción `source=telegram`, `amount_ars=100`, `requires_reimbursement=1`
+y `active` creada a las 22:31:38 UTC; su solicitud está `paid` a las 22:33:00
+UTC. La operación `personal_transaction:expense` y el callback
+`reimbursement.pay` constan `committed`. El outbox de la operación de gasto
+tiene dos acciones previstas (`send_message` y `edit_message`), ambas `sent`
+en un intento sin error. Esto coincide con las capturas, pero la captura del
+mensaje reenviado no prueba por sí sola el botón ni el canal de origen; la
+fila `source=telegram` resuelve ese punto.
+
+**Cerrado:** este canary confirma el recorrido grupal financiero Telegram de
+este deployment beta y el pago/callback observado. **No cerrado:**
+ACT-06/R-DELIVERY *web*; todavía falta una solicitud originada desde el
+dashboard beta con `source=web`/operación `web.reimbursement.create`, una
+entrega `sent` al miembro y conciliación del callback. Owner Esteban para la
+única acción manual en sus sesiones web/Telegram; owner Codex para consultar
+los metadatos, verificar unicidad y cerrar o corregir. No se repite OCR,
+audio ni otro gasto Telegram para este gate. Web Push durable permanece
+abierto aparte, owner Codex.
