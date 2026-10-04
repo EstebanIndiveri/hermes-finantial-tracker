@@ -1284,3 +1284,45 @@ owner Codex** para reglas de destinatario/membresía, consentimiento por tipo
 de aviso y pruebas A/B/exmiembro; **Esteban** decide la activación de avisos
 proactivos solo después de esos gates. `NOTIFICATIONS_ENABLED=false` se
 mantiene en beta; este corte no envía mensajes ni cambia flags.
+
+### ACT-06/R-DELIVERY — commit, push y Preview aislado (04/10/2026)
+
+**Código publicado; aceptación beta todavía abierta.** Con autorización de
+Esteban, Codex publicó `2e4ef7e367b2a12476bbc66eef8a28fef13111cf` en
+`origin/codex/act05-currency-modes`. Preflight de secretos en el diff y la
+rama sin coincidencias; el árbol estaba limpio después del push. La puerta
+local completa pasó con Node 22: 100 suites/897 tests, typecheck, build y
+lint sin errores (67 warnings preexistentes). El primer deployment Git
+`dpl_DxQH1GtWtseyQTnb9PbiFUk64rwt` fue cancelado por el Ignored Build Step
+global (`exit 0`), sin build ni cambio de alias.
+
+Los ocho controles de Preview se agregaron y enumeraron **solo** para esta
+rama: `AI_MODE=stub`, `OCR_MODE=stub`, `NOTIFICATIONS_ENABLED=false`,
+`SESSION_COOKIE_NAME=hermes_beta_session`, las tres flags
+`TELEGRAM_*_ENABLED=false` y `NEXT_PUBLIC_APP_URL` beta. Desde el deployment
+Git cancelado se hizo un Redeploy del SHA exacto eligiendo Preview y
+desmarcando “Use project's Ignore Build Step” únicamente en ese redeploy. El
+resultado `dpl_7YmnBnUS99EpydR3U9gAkprqwTBw` está `READY`, target
+`preview`, URL
+`https://hermes-finantial-tracker-z2-99wmbit5o-eindi-acme.vercel.app`;
+el build compiló. El alias beta canónico sigue en
+`dpl_AtyHSVU2H6dw4CpQi9yUUo6yPfdz`; no hubo promoción, cambio de webhook,
+tráfico Telegram, SQL ni modificación de legacy. La pausa global de builds
+permanece en `exit 0`.
+
+**Preview no apto para prueba funcional todavía.** Un HEAD pasivo a `/login`
+respondió 500 `MIDDLEWARE_INVOCATION_FAILED`; el log de ese deployment indica
+`LibsqlError URL_INVALID` con URL vacía. La lista de Vercel muestra nombres
+de secretos Preview, pero los valores `sensitive` no se pueden recuperar por
+`env pull`/API; no se infiere su contenido de esa lista. El hecho observable
+es que `TURSO_DATABASE_URL` no llegó usable a ese runtime. El build Preview
+no ejecutó el contrato H04d de producción beta porque
+`HERMES_BETA_ISOLATION_ASSERT` solo está asociado al target Production. No se
+debe usar este Preview para canaries financieros ni atribuirle certificación
+H04d. **Owner Codex:** diagnosticar y preparar un binding de DB Preview
+verificable, repetir smoke pasivo, luego reatestar el deployment que realmente
+se active. **Owner Esteban:** decidir si se continúa con un Preview de datos
+separados/credenciales propias o se autoriza expresamente activar este SHA en
+el target Production del *proyecto beta aislado* para el canary ACT-06. La
+decisión no autoriza tocar producción legacy. ACT-06/R-DELIVERY y Web Push
+durable siguen abiertos con los owners indicados arriba.
