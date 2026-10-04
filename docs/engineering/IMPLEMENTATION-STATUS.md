@@ -1068,3 +1068,52 @@ Esteban: repetir QA de reintegro solo después del diagnóstico, idealmente
 en grupo beta con pagador para verificar solicitud y entrega. No declarar
 reintegro exitoso por el mensaje de gasto. No crear una solicitud retroactiva
 ni tocar producción.
+
+### ACT-05k OCR correctivo beta — 03/10/2026
+
+**Código y despliegue beta cerrados; aceptación funcional OCR abierta. Owners:
+Codex (implementación, evidencia y conciliación) y Esteban (un retest manual).**
+La comparación de solo lectura con el parser del commit legacy `7034107`
+confirmó que su regex de respaldo también podía escoger un precio parcial; en
+la prueba legacy el modelo sí había devuelto el total. No se cambió legacy.
+El nuevo parser beta exige un rótulo `TOTAL`/`TOIAL`, admite un único importe
+claro o reconcilia subtotal y descuentos. En el texto OCR redaccionado del
+ticket observado obtiene `28.154,71 - 601,98 - 2.003,96 = 25.548,77`;
+si no hay prueba suficiente, pide monto manual y no propone el precio de un
+producto. Una lectura de baja confianza no pasa al borrador financiero.
+El selector OCR ya no ofrece `Ingresos`, y el callback rechaza esa categoría
+aun si llega forzado. El cliente Groq usa `openai/gpt-oss-120b` por defecto
+y reintenta **una sola vez** con ese modelo cuando un modelo configurado
+recibe 404. No se cambió el binding sensible `GROQ_MODEL` ni ninguna clave.
+
+Primero se verificaron regresiones rojas para propuesta OCR de importe parcial,
+categoría de ingreso y modelo 404; luego Node 22 pasó 98 suites/868 tests,
+typecheck, build y lint con 0 errores/67 warnings preexistentes. El código
+quedó en el commit local `8729a7a491938edc4c1cb192950f968ffb2254b6`,
+sin push. Un primer despliegue CLI desde cambios locales fue supersedido por
+el mismo código ya commiteado. El deployment beta vigente
+`dpl_CKDXMSMZ9JeTH5LhdgJ1cureEFnj` está READY en el proyecto beta
+`prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`; el alias beta apunta a él.
+El build remoto informó `passed:true`, diez checks y seis fingerprints beta
+coincidentes. Beta `/login` respondió 200; el worker sin autenticación 401.
+El alias legacy conserva `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+Se renovaron los dos recibos privados beta Vercel/runtime y sus digests; los
+otros cinco recibos del 29/09 aún están dentro de los siete días permitidos.
+El runner H04d para este deployment y SHA devolvió `ok:true`,
+`postActivationRuntimeConsistent:true`, `isolationVerified:false` por diseño.
+El residual de snapshot de build/secretos en función y URLs retiradas sigue
+aceptado **solo para piloto beta** bajo la política del 02/10, porque no se
+alteró identidad, binding ni fingerprint. No es certificación de producción.
+
+**Próximo gate manual, owner Esteban:** enviar una sola vez el mismo ticket al
+bot beta y comunicar si propone ARS 25.548,77, pide monto manual o muestra
+otra cifra; cancelar cualquier propuesta incorrecta. Codex concilia el
+`receipt_imports` resultante y cierra o reabre OCR. **Reintegro del audio
+ARS 102 sigue abierto con owner Codex:** los tests de callback comprueban que
+`expense:confirm_reimbursement` escribe movimiento y solicitud de modo
+atómico, pero el callback elegido en esa prueba no quedó almacenado; el
+resultado durable no demuestra que se haya pulsado ese botón. Esteban hará
+un nuevo canary de audio con captura del botón y respuesta en un grupo beta
+con pagador, después de cerrar OCR; Codex conciliará transacción, solicitud y
+entrega. Ninguna solicitud retroactiva fue creada.

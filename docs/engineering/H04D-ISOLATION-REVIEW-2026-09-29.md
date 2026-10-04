@@ -171,3 +171,33 @@ level** for this deployment; the machine output remains
 decision does not cover a future deployment, provider/binding drift, legacy
 promotion or production release. Codex owns freshness and reattestation on
 the next beta change; Esteban retains any new residual/release decision.
+
+### Addendum — code-only OCR correction deployment 03/10/2026
+
+The beta alias now targets READY deployment
+`dpl_CKDXMSMZ9JeTH5LhdgJ1cureEFnj` from local commit
+`8729a7a491938edc4c1cb192950f968ffb2254b6`. The earlier uncommitted
+CLI deployment `dpl_GJ2SiiLibMGv6VkfPo2wd1vbUwtU` was immediately
+superseded by this commit-addressable deployment. Both were sent solely to
+the separate beta project `prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`; no push,
+binding, secret, webhook, DB or legacy change was made. The legacy alias
+still targets `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+The exact final build emitted `beta_build_isolation_attested` with
+`passed:true`, matching all six beta-secret fingerprints and all ten fixed
+checks. Authenticated Vercel inspection confirmed the distinct aliases,
+the existing Production binding-name inventory and READY state. Read-only
+beta `/login` and unauthenticated worker probes returned HTTP 200 and 401.
+The private beta Vercel/runtime receipts, digests and timestamps were
+refreshed for this ID and SHA; the other five provider receipts remain within
+the seven-day freshness window. The seven-receipt runner returned `ok:true`,
+`postActivationRuntimeConsistent:true`,
+`providerMetadataComparison:"distinct-identities-declared"` and the
+intentional `isolationVerified:false`.
+
+This is a **code-only** change with unchanged provider identities, bindings,
+fingerprints and controls. The owner's 02/10 standing beta-pilot residual
+acceptance therefore covers this exact deployment after the successful
+technical reattestation. It still does not certify running-function secret
+readback, retired URLs or any legacy release. Codex owns the next per-deploy
+reattestation and the separate OCR/reimbursement functional gates.
