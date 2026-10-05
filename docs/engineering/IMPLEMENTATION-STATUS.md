@@ -1391,3 +1391,49 @@ entrega `sent` al miembro y conciliación del callback. Owner Esteban para la
 los metadatos, verificar unicidad y cerrar o corregir. No se repite OCR,
 audio ni otro gasto Telegram para este gate. Web Push durable permanece
 abierto aparte, owner Codex.
+
+### ACT-06/R-DELIVERY — hallazgo web y corrección beta (04/10/2026)
+
+Esteban creó desde la web beta un gasto ARS 120 en Supermercado (Disco,
+19:43:59 ARG) con `requires_reimbursement=1`, pero Sabri no recibió Telegram.
+La conciliación read-only encontró una sola transacción `source=web`, una
+solicitud `pending` y `operation_id=NULL`, ninguna operación ni entrega
+outbox. El grupo tenía exactamente un miembro Telegram elegible. La causa
+estaba en `POST /api/transactions`: llamaba a
+`createReimbursementWithNotifications` (vía inline heredada), no a
+`createVerifiedWebReimbursement` (vía durable). Con
+`NOTIFICATIONS_ENABLED=false` en beta, la vía heredada omitía el envío sin
+fallar la creación de la solicitud. El endpoint independiente
+`POST /api/reimbursements` ya usaba la vía durable, pero el formulario de
+gasto no pasa por él.
+
+Codex cambió el endpoint del gasto para usar la vía durable y actualizó su
+regresión de ruta. Node 22: 100 suites/897 tests, typecheck, build y lint
+sin errores (67 warnings preexistentes); el typecheck que se lanzó en
+paralelo con build falló transitoriamente porque `.next/types` se estaba
+reescribiendo, y la repetición secuencial pasó. Código
+`e60d3fec095be77474037209da9f5bcca1805c14` publicado a la rama beta.
+El deployment beta-only `dpl_4r3KhNWKH5hrZ8ZkUMHb32zCKxDX` fue construido
+sin alias, quedó `READY`, pasó la aserción H04d con diez checks y seis
+fingerprints coincidentes, y las probes pasivas directas devolvieron
+`/login=200`, worker sin credencial `401`. Luego se promovió solo el alias
+beta; legacy sigue en `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El paquete
+privado H04d se renovó para el nuevo ID/SHA y el runner devolvió `ok:true`,
+`postActivationRuntimeConsistent:true`, `isolationVerified:false` por diseño.
+La pausa global de autodeploy Git beta continúa en `exit 0`.
+
+Para reparar el caso ya existente, Codex verificó nuevamente la única
+solicitud `pending`, el importe y origen, ausencia de operación/entrega y un
+solo destinatario vinculado. Una transacción SQL beta con guards exactos
+asoció **esa misma solicitud** a una operación de recuperación y una única
+entrega pendiente. La conciliación posterior dio 1 transacción, 1 solicitud,
+1 operación y 1 outbox; no hubo un segundo gasto ni una segunda solicitud.
+Un log del worker de las 21:30 ARG mostró un timeout de conexión Turso, pero
+la entrega concreta pasó después a `sent` a las 21:30:35 ARG, en un intento y
+sin error de esa fila. La conciliación final mantiene 1 transacción, 1
+solicitud `pending`, 1 entrega y 1 entrega `sent`; no hay duplicados.
+**Owner Codex:** verificar con Esteban/Sabri recepción única y, si se prueba,
+conciliar el pago/callback; vigilar si el timeout aislado se repite. **Owner
+Esteban:** confirmar recepción y, si decide probar pago, pulsar el botón una
+vez. ACT-06 web sigue abierto hasta esa aceptación humana y callback; Web
+Push durable sigue abierto aparte bajo Codex. No se modificó legacy.

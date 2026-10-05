@@ -252,3 +252,22 @@ residual policy, H04d is reattested for this exact deployment, not for old
 deployment URLs or a legacy release. ACT-06 web reimbursement delivery still
 needs a consented functional canary; no financial row or Telegram update was
 created by these checks.
+
+## Addendum — beta deployment 04/10/2026, web reimbursement route fix
+
+After a beta web reimbursement notification failed, the code-only route fix
+`e60d3fec095be77474037209da9f5bcca1805c14` was deployed as
+`dpl_4r3KhNWKH5hrZ8ZkUMHb32zCKxDX` to the separate beta project's
+Production target. The build assertion passed its ten identity/control checks
+and six secret fingerprints; direct passive probes returned 200 for `/login`
+and 401 for the unauthenticated outbox worker before beta-only promotion. The
+canonical beta alias resolves to the new READY deployment; the legacy alias
+remains on `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+Redacted private beta Vercel/runtime receipts, digests and release SHA were
+updated for this exact deployment. Turso/Telegram identity receipts remain
+within the seven-day window. The hardened runner returned `ok:true`,
+`postActivationRuntimeConsistent:true` and deliberately
+`isolationVerified:false`. Esteban's standing beta-only residual acceptance
+therefore covers this deployment after technical reattestation, not retired
+URLs or legacy. The functional ACT-06 web delivery remains a separate gate.
