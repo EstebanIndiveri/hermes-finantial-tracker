@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db/client";
 import * as datesUtil from "@/lib/utils/dates";
 import * as rulesUtil from "@/lib/finance/rules";
-import { createReimbursementWithNotifications } from "@/lib/reimbursements/requests";
+import { createVerifiedWebReimbursement } from "@/lib/reimbursements/requests";
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -44,7 +44,7 @@ jest.mock("@/lib/groups/permissions", () => ({
 }));
 
 jest.mock("@/lib/reimbursements/requests", () => ({
-  createReimbursementWithNotifications: jest.fn(),
+  createVerifiedWebReimbursement: jest.fn(),
 }));
 
 describe("GET /api/transactions", () => {
@@ -289,7 +289,7 @@ describe("POST /api/transactions", () => {
     (db.query.budgets.findFirst as jest.Mock).mockResolvedValue(null);
     const values = jest.fn().mockResolvedValue(undefined);
     (db.insert as jest.Mock).mockReturnValue({ values });
-    (createReimbursementWithNotifications as jest.Mock).mockResolvedValue({ id: "reimbursement-ars" });
+    (createVerifiedWebReimbursement as jest.Mock).mockResolvedValue({ id: "reimbursement-ars" });
 
     const req = new NextRequest("http://localhost:3000/api/transactions", {
       method: "POST",
@@ -309,7 +309,7 @@ describe("POST /api/transactions", () => {
       exchange_rate_snapshot: null,
       currency_mode: "ARS_ARS",
     }));
-    expect(createReimbursementWithNotifications).toHaveBeenCalledWith(
+    expect(createVerifiedWebReimbursement).toHaveBeenCalledWith(
       expect.any(String), "user-123", 5000, undefined,
     );
   });
@@ -346,7 +346,7 @@ describe("POST /api/transactions", () => {
       })),
     }));
 
-    (createReimbursementWithNotifications as jest.Mock).mockResolvedValue({ id: "reimb-1" });
+    (createVerifiedWebReimbursement as jest.Mock).mockResolvedValue({ id: "reimb-1" });
 
     const req = new NextRequest("http://localhost:3000/api/transactions", {
       method: "POST",
@@ -367,8 +367,8 @@ describe("POST /api/transactions", () => {
     const response = await POST(req);
 
     expect(response.status).toBe(201);
-    expect(createReimbursementWithNotifications).toHaveBeenCalledTimes(1);
-    expect(createReimbursementWithNotifications).toHaveBeenCalledWith(
+    expect(createVerifiedWebReimbursement).toHaveBeenCalledTimes(1);
+    expect(createVerifiedWebReimbursement).toHaveBeenCalledWith(
       expect.any(String),
       "user-123",
       5000,
@@ -411,7 +411,7 @@ describe("POST /api/transactions", () => {
     const response = await POST(req);
 
     expect(response.status).toBe(201);
-    expect(createReimbursementWithNotifications).not.toHaveBeenCalled();
+    expect(createVerifiedWebReimbursement).not.toHaveBeenCalled();
   });
 
   test("passes payerId to reimbursement creation when provided", async () => {
@@ -430,7 +430,7 @@ describe("POST /api/transactions", () => {
       })),
     }));
 
-    (createReimbursementWithNotifications as jest.Mock).mockResolvedValue({ id: "reimb-1" });
+    (createVerifiedWebReimbursement as jest.Mock).mockResolvedValue({ id: "reimb-1" });
 
     const req = new NextRequest("http://localhost:3000/api/transactions", {
       method: "POST",
@@ -452,7 +452,7 @@ describe("POST /api/transactions", () => {
     const response = await POST(req);
 
     expect(response.status).toBe(201);
-    expect(createReimbursementWithNotifications).toHaveBeenCalledWith(
+    expect(createVerifiedWebReimbursement).toHaveBeenCalledWith(
       expect.any(String),
       "user-123",
       5000,
@@ -1080,7 +1080,7 @@ describe("POST /api/transactions reimbursement integration", () => {
       })),
     }));
 
-    (createReimbursementWithNotifications as jest.Mock).mockResolvedValue({ id: "reimb-1" });
+    (createVerifiedWebReimbursement as jest.Mock).mockResolvedValue({ id: "reimb-1" });
 
     const req = new NextRequest("http://localhost:3000/api/transactions", {
       method: "POST",
@@ -1102,8 +1102,8 @@ describe("POST /api/transactions reimbursement integration", () => {
     const response = await POST(req);
 
     expect(response.status).toBe(201);
-    expect(createReimbursementWithNotifications).toHaveBeenCalledTimes(1);
-    expect(createReimbursementWithNotifications).toHaveBeenCalledWith(
+    expect(createVerifiedWebReimbursement).toHaveBeenCalledTimes(1);
+    expect(createVerifiedWebReimbursement).toHaveBeenCalledWith(
       expect.any(String),
       "user-123",
       5000,
@@ -1137,6 +1137,6 @@ describe("POST /api/transactions reimbursement integration", () => {
     const response = await POST(req);
 
     expect(response.status).toBe(201);
-    expect(createReimbursementWithNotifications).not.toHaveBeenCalled();
+    expect(createVerifiedWebReimbursement).not.toHaveBeenCalled();
   });
 });

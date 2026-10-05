@@ -7,7 +7,7 @@ import { randomUUID } from "crypto";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { calculateCategoryStatus } from "@/lib/finance/rules";
 import { getGroupMembership } from "@/lib/groups/permissions";
-import { createReimbursementWithNotifications } from "@/lib/reimbursements/requests";
+import { createVerifiedWebReimbursement } from "@/lib/reimbursements/requests";
 
 const isArsModeEnabled = () => process.env.ACT05_ARS_MODE_ENABLED === "true";
 
@@ -201,7 +201,7 @@ export async function POST(req: NextRequest) {
 
     // Create reimbursement after transaction is committed (so it can read the transaction)
     if (requiresReimbursement) {
-      const reimbResult = await createReimbursementWithNotifications(id, userId, amount_ars, payerId);
+      const reimbResult = await createVerifiedWebReimbursement(id, userId, amount_ars, payerId);
       if ("error" in reimbResult) {
         // Transaction was created but reimbursement failed - return warning
         return NextResponse.json({ 
