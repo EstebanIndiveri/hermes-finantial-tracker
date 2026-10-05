@@ -1437,3 +1437,39 @@ conciliar el pago/callback; vigilar si el timeout aislado se repite. **Owner
 Esteban:** confirmar recepción y, si decide probar pago, pulsar el botón una
 vez. ACT-06 web sigue abierto hasta esa aceptación humana y callback; Web
 Push durable sigue abierto aparte bajo Codex. No se modificó legacy.
+
+### ACT-06/R-DELIVERY — aceptación web beta cerrada (04/10/2026)
+
+Esteban confirmó que Sabri recibió exactamente las dos solicitudes esperadas:
+la recuperación del gasto web ARS 120 y la solicitud nueva del gasto web ARS
+130 en Supermercado. Sabri marcó pagada **solo** la de ARS 130 y Esteban
+recibió el aviso de pago. La captura del dashboard muestra ambos movimientos
+web (Disco, ARS 130 y ARS 120), pero no se usa por sí sola para inferir el
+estado del reintegro.
+
+Codex concilió metadatos de la DB beta sin leer textos ni credenciales. El
+gasto nuevo ARS 130 (`source=web`, `requires_reimbursement=1`) tiene una sola
+solicitud, `paid` a las 02:20:36 UTC del 05/10 (23:20:36 ARG del 04/10).
+Su operación `web.reimbursement.create` está `committed`; el `send_message`
+al miembro figura `sent` a las 02:19:37 UTC, en un intento y sin error.
+El callback `reimbursement.pay` está `committed` y sus dos entregas previstas
+(`send_message` al solicitante y `edit_message` al pagador) constan `sent`,
+ambas en un intento y sin error. Esto concuerda con la recepción y el pago
+reportados por Esteban. No hay evidencia de una segunda solicitud ni de un
+segundo pago para ese gasto.
+
+La solicitud recuperada ARS 120 conserva una sola transacción, una solicitud
+`pending` y su única entrega `sent` (02:30:35 UTC del 05/10); **no** se
+marcó pagada ni se volvió a enviar. Esteban decidió dejarla pendiente. Su
+resolución futura (pago o cancelación) queda bajo decisión de Esteban; Codex
+conciliará el resultado si se solicita. No es requisito para cerrar el canary
+del gasto nuevo.
+
+**Cerrado:** ACT-06/R-DELIVERY para reintegros web por Telegram en este
+deployment beta: creación automática, entrega durable al miembro, callback
+de pago y aviso al solicitante verificados con evidencia humana y DB.
+**Sigue abierto con owner Codex:** Web Push durable, separado del camino
+Telegram; Preview con DB vacía (deuda de entorno); vigilancia del timeout
+Turso aislado y renovación de recibos H04d antes de vencer. H04d mantiene
+su aceptación residual acotada a este deployment beta, no a legacy ni a una
+promoción de producción. No se modificó producción legacy.
