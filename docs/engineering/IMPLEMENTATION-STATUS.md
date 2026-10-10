@@ -1501,3 +1501,8 @@ Esteban decide esa política antes de fijar DDL/worker. La sesión Turso beta
 aislada consultada el 10/10 ya no está autenticada, por lo que Codex no
 finge haber renovado recibos ni desplegado este SHA. La reautenticación beta
 de Turso es el siguiente gate externo para H04d; Vercel sigue autenticado.
+La inspección Vercel read-only del 10/10 encontró el alias beta todavía en
+`dpl_4r3KhNWKH5hrZ8ZkUMHb32zCKxDX`, `READY`, target `production` del
+proyecto beta; este dato no reemplaza recibos Turso/Telegram frescos ni
+autoriza desplegar el parche. Codex inició un login CLI Turso en configuración
+aislada y espera que Esteban seleccione la cuenta beta `esteban-indiveri`.
