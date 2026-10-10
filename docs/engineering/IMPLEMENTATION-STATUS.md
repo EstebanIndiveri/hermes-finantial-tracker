@@ -1494,3 +1494,10 @@ su política de retención y su activación permanecen abiertos, owner Codex
 para diseño/implementación aislada y Esteban para decidir retención y
 activación. Antes de desplegar este SHA al beta, Codex debe renovar los
 recibos H04d vencidos y reatestar el deployment candidato; no se toca legacy.
+
+**Siguiente corte diseñado, no implementado:** [Web Push durable](WEB-PUSH-DURABLE-CUT.md).
+El contrato propone outbox sin contenido financiero y retención acotada;
+Esteban decide esa política antes de fijar DDL/worker. La sesión Turso beta
+aislada consultada el 10/10 ya no está autenticada, por lo que Codex no
+finge haber renovado recibos ni desplegado este SHA. La reautenticación beta
+de Turso es el siguiente gate externo para H04d; Vercel sigue autenticado.
