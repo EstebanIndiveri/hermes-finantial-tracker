@@ -1,5 +1,5 @@
 import webPush from "web-push";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import { pushSubscriptions } from "@/lib/db/schema";
@@ -96,6 +96,9 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
   }
 }
 
-export async function removeSubscription(endpoint: string): Promise<void> {
-  await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+export async function removeSubscription(userId: string, endpoint: string): Promise<void> {
+  await db.delete(pushSubscriptions).where(and(
+    eq(pushSubscriptions.userId, userId),
+    eq(pushSubscriptions.endpoint, endpoint),
+  ));
 }

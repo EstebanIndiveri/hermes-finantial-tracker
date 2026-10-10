@@ -103,6 +103,6 @@ describe("DELETE /api/push/subscribe", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true });
-    expect(removeSubscription).toHaveBeenCalledWith("https://example.test/subscription");
+    expect(removeSubscription).toHaveBeenCalledWith("user-1", "https://example.test/subscription");
   });
 });

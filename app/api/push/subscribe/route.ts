@@ -45,6 +45,6 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Endpoint required" }, { status: 400 });
   }
 
-  await removeSubscription(endpoint);
+  await removeSubscription(userId, endpoint);
   return NextResponse.json({ success: true });
 }

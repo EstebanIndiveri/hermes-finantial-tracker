@@ -189,7 +189,7 @@ describe("web push notifications", () => {
     },
   );
 
-  it("removes a subscription by endpoint", async () => {
+  it("removes only the authenticated user's subscription by endpoint", async () => {
     const deleteWhere = jest.fn().mockResolvedValue(undefined);
     mockDb.delete.mockReturnValue({
       where: deleteWhere,
@@ -197,7 +197,7 @@ describe("web push notifications", () => {
 
     const { removeSubscription } = await import("../web-push");
 
-    await removeSubscription("https://example.test/subscription");
+    await removeSubscription("user-1", "https://example.test/subscription");
 
     expect(deleteWhere).toHaveBeenCalled();
   });

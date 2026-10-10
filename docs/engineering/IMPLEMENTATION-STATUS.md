@@ -1473,3 +1473,24 @@ Telegram; Preview con DB vacía (deuda de entorno); vigilancia del timeout
 Turso aislado y renovación de recibos H04d antes de vencer. H04d mantiene
 su aceptación residual acotada a este deployment beta, no a legacy ni a una
 promoción de producción. No se modificó producción legacy.
+
+### Web Push — contención de baja ajena (10/10/2026)
+
+**Hallazgo de autorización, owner Codex.** `DELETE /api/push/subscribe`
+autenticaba al usuario, pero `removeSubscription` borraba por `endpoint` sin
+comprobar `user_id`. Conocer el endpoint de otra cuenta permitía dar de baja
+su suscripción. Una regresión nueva contra libSQL aislado se añadió primero
+y falló con el código anterior; ahora la ruta transmite la identidad
+autenticada y el `DELETE` exige simultáneamente `user_id` y `endpoint`.
+La prueba comprueba que A no borra el endpoint de B y sí borra el propio.
+
+**Corte local cerrado; despliegue beta pendiente, owner Codex.** Pasaron 101
+suites/898 tests, typecheck y build con Node 22; lint terminó sin errores y
+con 67 warnings preexistentes. No se consultaron ni modificaron suscripciones
+reales, ni se habilitó Web Push. El alta/reasignación de endpoint y la falta
+de índice único siguen bajo revisión como parte del diseño de Web Push
+durable; no se alteró su contrato sin un caso de producto. El outbox Push,
+su política de retención y su activación permanecen abiertos, owner Codex
+para diseño/implementación aislada y Esteban para decidir retención y
+activación. Antes de desplegar este SHA al beta, Codex debe renovar los
+recibos H04d vencidos y reatestar el deployment candidato; no se toca legacy.
