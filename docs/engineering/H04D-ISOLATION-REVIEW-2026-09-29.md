@@ -271,3 +271,29 @@ within the seven-day window. The hardened runner returned `ok:true`,
 `isolationVerified:false`. Esteban's standing beta-only residual acceptance
 therefore covers this deployment after technical reattestation, not retired
 URLs or legacy. The functional ACT-06 web delivery remains a separate gate.
+
+## Addendum — fresh legacy Telegram identity, 11/10/2026
+
+Esteban used the legacy bot token in a hidden local Terminal prompt to call
+Telegram's read-only `getMe` and `getWebhookInfo`. The resulting private JSON
+contains only `capturedAt`, `botId`, `username`, and `webhookUrl`; it is stored
+outside Git at `/private/tmp/hermes-legacy-bot-identity.json` with mode `0600`.
+Codex validated the exact field set and formats and checked its SHA-256
+`d3e88166029dd428e88b3fb562780fd91ed7d4167501f8afe75752ebd700c475`.
+At `2026-10-11T18:09:40.452Z`, it reports ID `8884948884`, username
+`HermesFinanceAssistBot`, and webhook
+`https://hermes-finantial-tracker.vercel.app/api/telegram/webhook`. This
+matches the documented legacy identity. The token was neither pasted into the
+conversation nor read by Codex; the JSON is operator-supplied, not an
+independent direct Bot API attestation by Codex.
+
+The candidate beta deployment `dpl_AACcct6M78ZCxgJ7kZgkLFe6jt6T` is
+`READY` but **not** on the canonical beta alias. Read-only Vercel inspection
+on 11/10 confirms that the canonical beta alias remains on
+`dpl_4r3KhNWKH5hrZ8ZkUMHb32zCKxDX` and the legacy alias remains on
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. The candidate build passed its H04d
+assertion, but this legacy receipt alone does not reattest the candidate.
+Codex still owns fresh beta Telegram evidence and the complete seven-receipt
+package, passive candidate smoke and alias promotion. `isolationVerified`
+remains `false`; there was no legacy bot, webhook, database or deployment
+mutation.
