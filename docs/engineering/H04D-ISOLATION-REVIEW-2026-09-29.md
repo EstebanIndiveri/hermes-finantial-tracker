@@ -297,3 +297,21 @@ Codex still owns fresh beta Telegram evidence and the complete seven-receipt
 package, passive candidate smoke and alias promotion. `isolationVerified`
 remains `false`; there was no legacy bot, webhook, database or deployment
 mutation.
+
+## Addendum — fresh beta Telegram identity, 11/10/2026
+
+Esteban repeated the hidden-token, read-only Bot API flow for beta. The private
+mode-`0600` receipt at `/private/tmp/hermes-beta-bot-identity.json` has the
+same exact four-field shape and SHA-256
+`45a09786fa66fcf86aaff118a7029df363702a6c2ed59da0161b121aeea6a114`.
+At `2026-10-11T18:17:36.837Z` it reports ID `8739389202`, username
+`Hermes_beta_finantial_bot`, and webhook
+`https://hermes-finantial-tracker-z2.vercel.app/api/telegram/webhook`.
+Codex compared both operator-supplied Telegram receipts, the authenticated
+Turso accounts and database IDs/hosts, and the separate Vercel project and
+alias IDs. The bot IDs, usernames, webhooks, DB IDs/hosts and projects are
+distinct. This removes the stale Telegram-identity gap but is **not** the
+complete H04d reattestation for the candidate: the seven-receipt consistency
+package, passive smoke and alias move remain Codex-owned. The beta webhook
+still points at the canonical alias, which presently serves the prior beta
+deployment. The machine result remains `isolationVerified:false`.
