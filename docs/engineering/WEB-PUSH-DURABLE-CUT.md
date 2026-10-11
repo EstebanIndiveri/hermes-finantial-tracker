@@ -94,3 +94,24 @@ binding nuevo exige reatestar H04d en el deployment siguiente.
 El corte no cambia OCR, audio, texto, CSV/XLSX, saldos ni Telegram. Sí toca
 los puntos de creación/pago de reintegros de web y Telegram, y por ello
 requiere regresiones de ambos canales y callbacks.
+
+## Candidato de despliegue 11/10/2026
+
+El commit beta `9642176` quedó en `origin/codex/act05-currency-modes`.
+Vercel creó `dpl_AACcct6M78ZCxgJ7kZgkLFe6jt6T` en el target Production
+**del proyecto beta aislado** `hermes-finantial-tracker-z2`, con
+`--skip-domain`. Está `READY`; el build emitió `passed:true`, los diez checks
+de aislamiento y los seis fingerprints beta coincidentes. La ruta
+`/api/cron/push-outbox` entró al build. La env beta
+`WEB_PUSH_ENABLED=false` y el flag del scheduler Push también están apagados.
+
+El alias canónico `hermes-finantial-tracker-z2.vercel.app` sigue en
+`dpl_4r3KhNWKH5hrZ8ZkUMHb32zCKxDX`; el alias legacy
+`hermes-finantial-tracker.vercel.app` sigue en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El CLI creó además un alias de equipo
+para el deployment nuevo; eso no mueve el alias canónico. **Owner Codex:**
+renovar el paquete de evidencia H04d (incluidos recibos provider vencidos),
+hacer smoke pasivo del candidato y solo entonces promover el alias beta.
+`isolationVerified:false` no cambia. **Owner Esteban:** consentir luego una
+suscripción de dispositivo y el canary con dos usuarios antes de autorizar
+encender Web Push. Ningún paso de este corte autoriza un despliegue legacy.
