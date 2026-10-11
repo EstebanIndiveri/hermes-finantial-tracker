@@ -1541,3 +1541,30 @@ y conciliar outbox/entrega, sin encender Push automáticamente. **Abierto con
 owner Esteban:** consentir una suscripción beta y ejecutar el canary con
 Sabri; decidir la activación solo con el resultado. No hay step sin owner ni
 autorización para tocar el proyecto legacy.
+
+### Web Push durable — promoción beta y H04d técnico (11/10/2026)
+
+El bloque anterior registra el estado **antes** de la promoción. Luego
+Esteban generó dos recibos Telegram frescos, beta y legacy, mediante Bot API
+de solo lectura y sin entregar tokens a Codex. Los bot IDs, usernames y
+webhooks corresponden a recursos distintos y a sus URLs respectivas. Codex
+renovó además los metadatos autenticados Turso y Vercel. Un paquete privado
+de siete recibos del candidato pasó el runner H04d con `ok:true`,
+`postActivationRuntimeConsistent:true` e `isolationVerified:false`.
+
+Las probes pasivas **autenticadas ante la protección Vercel** devolvieron
+`/login=200`, Push worker sin credencial `401` y Telegram worker sin
+credencial `401`; el `302` obtenido al consultar la URL protegida sin bypass
+no se consideró evidencia de la app. Codex asignó solo el alias canónico beta
+a `dpl_AACcct6M78ZCxgJ7kZgkLFe6jt6T`. El read-back confirma ese ID READY;
+el alias legacy sigue en `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El paquete
+post-promoción en `/private/tmp/hermes-h04d-2026-10-11-post/` volvió a pasar
+el runner. Web Push y su scheduler permanecen apagados.
+
+**Decisión abierta, owner Esteban:** ratificar el residual H04d para este
+deployment con el binding nuevo `WEB_PUSH_ENABLED=false`; la aceptación
+anterior no se extiende automáticamente ante cambios de bindings. Esto no
+autoriza activar Web Push ni afecta legacy. **Ejecución abierta, owner Codex:**
+mantener/renovar evidencia y, tras la ratificación, preparar canary de
+dispositivo con Esteban y Sabri. Activación del envío requiere decisión
+separada de Esteban. No hay corte abierto sin owner.

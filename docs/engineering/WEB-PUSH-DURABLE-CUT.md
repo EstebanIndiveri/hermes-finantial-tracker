@@ -115,3 +115,28 @@ hacer smoke pasivo del candidato y solo entonces promover el alias beta.
 `isolationVerified:false` no cambia. **Owner Esteban:** consentir luego una
 suscripción de dispositivo y el canary con dos usuarios antes de autorizar
 encender Web Push. Ningún paso de este corte autoriza un despliegue legacy.
+
+### Estado posterior a promoción beta
+
+Los recibos Telegram beta y legacy se renovaron el 11/10 mediante consultas
+Bot API de solo lectura ejecutadas por Esteban con entrada de token oculta;
+Codex recibió solo ID, username, webhook y hora. Los IDs y URLs son distintos
+y coinciden con la separación documentada. Se regeneraron siete recibos
+privados para el candidato y el verificador H04d devolvió
+`postActivationRuntimeConsistent:true`, `isolationVerified:false`. Las probes
+protegidas del candidato devolvieron `/login=200`, Push worker sin credencial
+`401` y Telegram worker sin credencial `401`.
+
+Codex promovió **solo** `hermes-finantial-tracker-z2.vercel.app` a
+`dpl_AACcct6M78ZCxgJ7kZgkLFe6jt6T`; el read-back confirma `READY` y el
+alias legacy continúa en `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El paquete
+post-promoción en `/private/tmp/hermes-h04d-2026-10-11-post/` pasó otra vez
+el runner con siete recibos. `WEB_PUSH_ENABLED=false` y
+`PUSH_SCHEDULER_ENABLED=false`: **no hay envío Web Push habilitado**.
+
+**Pendiente con owner Esteban:** ratificar explícitamente el residual H04d
+para este deployment, porque se agregó el binding beta `WEB_PUSH_ENABLED`.
+La aceptación no activa Push ni cambia legacy. **Pendiente con owner Codex:**
+tras esa ratificación, preparar la suscripción consentida y canary de dos
+usuarios, conciliar sus filas/entregas, y solicitar una decisión separada
+antes de activar el scheduler y el envío. No hay pasos abiertos sin owner.

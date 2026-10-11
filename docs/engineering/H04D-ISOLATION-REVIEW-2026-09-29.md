@@ -315,3 +315,32 @@ complete H04d reattestation for the candidate: the seven-receipt consistency
 package, passive smoke and alias move remain Codex-owned. The beta webhook
 still points at the canonical alias, which presently serves the prior beta
 deployment. The machine result remains `isolationVerified:false`.
+
+## Addendum — beta candidate promoted, 11/10/2026
+
+The beta candidate `dpl_AACcct6M78ZCxgJ7kZgkLFe6jt6T` was checked before
+promotion: the gated build passed ten fixed checks and six beta fingerprints;
+authenticated, passive probes of its protected deployment returned `/login`
+200 and unauthenticated `/api/cron/push-outbox` and
+`/api/cron/telegram-outbox` 401. The raw direct URL returned Vercel SSO 302
+without a protection bypass, so that initial response was **not** counted as
+an app smoke result. The Vercel CLI's authenticated protected-deployment
+request supplied the actual route results.
+
+Codex then assigned only `hermes-finantial-tracker-z2.vercel.app` to this
+deployment. Read-back confirms that alias resolves to the new READY beta
+deployment; `hermes-finantial-tracker.vercel.app` remains on legacy
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. The post-promotion private seven-receipt
+package is under `/private/tmp/hermes-h04d-2026-10-11-post/`, mode-restricted.
+Its hardened runner returned `ok:true`,
+`postActivationRuntimeConsistent:true`, and `isolationVerified:false` for
+release SHA `96421762531df56357ca845cbd82606c2ed267a8`. No financial row,
+legacy DB, legacy bot, legacy webhook or legacy deployment was changed.
+
+**Human decision still open, owner Esteban:** this release adds the separate
+beta Production binding `WEB_PUSH_ENABLED=false`. The standing residual
+policy requires a new owner decision after a binding change; do not call H04d
+closed for this exact deployment until Esteban explicitly ratifies the same
+beta-only limitation. Codex owns retaining the evidence and responding to
+any rejection. Web Push delivery and its scheduler remain off; H04d acceptance
+would not authorize turning them on or promoting to legacy.
