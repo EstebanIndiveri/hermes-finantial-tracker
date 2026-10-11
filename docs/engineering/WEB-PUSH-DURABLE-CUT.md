@@ -1,7 +1,10 @@
 # Web Push durable — contrato previo al corte beta
 
-Estado: diseño, 10/10/2026. Owner técnico: Codex. Decisión de retención y
-activación: Esteban. **No habilita envíos ni autoriza una migración legacy.**
+Estado: implementación beta y migración aditiva verificadas, 11/10/2026;
+despliegue y prueba de dispositivo pendientes. Owner técnico: Codex.
+Esteban aprobó solo metadatos, reintentos hasta 24 horas, purga a 7 días y
+activación apagada hasta la prueba beta. **No habilita envíos ni autoriza una
+migración legacy.**
 
 ## Situación observada
 
@@ -46,9 +49,31 @@ suscripción ahora exige la identidad del usuario autenticado y el endpoint.
 Propuesta conservadora: reintentar por hasta 24 horas y purgar metadatos de
 entrega a los 7 días; cero contenido financiero persistido en el outbox.
 La activación quedaría apagada hasta una prueba beta explícita con suscripción
-de prueba. **Pendiente de confirmación de Esteban** antes de fijar DDL,
-retención y worker. Si se prefiere no habilitar Web Push, mantenerlo apagado
-y cerrar solo la contención de autorización ya probada.
+de prueba. Esteban confirmó esta política el 11/10/2026. El DDL y el worker
+se construyen con esos límites; la activación sigue siendo un corte separado.
+
+## Seguimiento del corte
+
+| Paso | Estado | Owner y salida requerida |
+| --- | --- | --- |
+| Migración aditiva, outbox metadata-only, lease y retención | Implementado y verificado en beta el 11/10 | Codex: revisar el candidato desplegado; la migración `0100` conservó datos y tablas existentes. |
+| Cobertura transaccional de todos los writers de reintegros | Implementado; regresiones locales aprobadas | Codex: verificar web, Telegram directo/callback y rutas sin contexto durante el canary; no activar con un bypass. |
+| Worker, endpoint autenticado y scheduler free tier | Implementado y probado localmente; envío inactivo | Codex: desplegar y reatestar H04d; activar el scheduler beta solo tras prueba consentida. |
+| Duplicados/suscripciones en Turso beta | Lectura 11/10: 0 endpoints duplicados, 0 suscripciones | Codex: repetir antes de activar; Esteban: consentir la suscripción del dispositivo de prueba. |
+| Aislamiento beta/legacy | Metadata Turso comparada el 11/10; deploy nuevo aún no certificado | Codex: reatestar bindings/build/alias del deployment candidato; mantener `isolationVerified:false`. |
+| Canary Web Push con dos usuarios y decisión de activación | Abierto | Esteban: prueba real del dispositivo y aprobación; Codex: verificar entrega, idempotencia, exclusión y apagar ante fallo. |
+
+La comparación Turso del 11/10 fue read-only: `beta-hermes` pertenece a
+`esteban-indiveri` en `aws-us-east-2`, mientras `hermes-acme` pertenece a
+`eindiveri` en `aws-ap-northeast-1`; IDs y hosts son distintos. Esto no prueba
+por sí solo los secretos de una función Vercel en ejecución ni certifica URLs
+de deployments retirados. No se leyeron filas financieras ni se escribió en
+legacy. Después se exportó un respaldo beta, se compararon esquema, ledger e
+integridad y se aplicó únicamente `0100` en `beta-hermes`; el postflight
+verificó el fingerprint canónico, integridad y preservación de las 27 tablas
+anteriores. El harness pasó 94/94 y la app 933 pruebas. `WEB_PUSH_ENABLED`
+se configuró en `false` para el target Production del proyecto beta; este
+binding nuevo exige reatestar H04d en el deployment siguiente.
 
 ## Pruebas y condiciones de salida
 

@@ -43,6 +43,10 @@
       "id": "0090-currency-modes",
       "files": ["0011_currency_modes.sql"],
       "minimumSqliteVersion": "3.35.0"
+    },
+    {
+      "id": "0100-push-delivery-outbox",
+      "files": ["0012_push_delivery_outbox.sql"]
     }
   ],
   "excluded": [

@@ -42,22 +42,23 @@ async function executeMultiple(url, sql) {
 
 test("canonical manifest classifies every SQL file exactly once", async () => {
   const manifest = await loadMigrationManifest();
-  assert.equal(manifest.migrations.length, 10);
+  assert.equal(manifest.migrations.length, 11);
   assert.equal(manifest.excluded.length, 5);
-  assert.equal(new Set(manifest.migrations.map(({ id }) => id)).size, 10);
+  assert.equal(new Set(manifest.migrations.map(({ id }) => id)).size, 11);
 });
 
-test("fresh migration reaches the H04b schema and a second run is a no-op", async (t) => {
+test("fresh migration reaches the canonical schema and a second run is a no-op", async (t) => {
   const database = await temporaryDatabase(t);
 
   const first = await migrateDatabase({ url: database.url });
-  assert.equal(first.appliedMigrationIds.length, 10);
+  assert.equal(first.appliedMigrationIds.length, 11);
   assert.equal(first.inspection.state, "canonical");
   assert.equal(first.inspection.preflight.foreignKeysEnabled, true);
   assert.equal(first.inspection.preflight.foreignKeyViolationCount, 0);
 
   const requiredTables = [
     "hermes_schema_migrations",
+    "push_delivery_outbox",
     "reimbursement_requests",
     "recurring_executions",
     "telegram_delivery_outbox",
@@ -90,13 +91,35 @@ test("fresh migration reaches the H04b schema and a second run is a no-op", asyn
   const indexNames = new Set(indexes.rows.map((row) => String(row.name)));
   assert.equal(indexNames.has("execution_recurring_date_idx"), true);
   assert.equal(indexNames.has("telegram_delivery_outbox_delivery_key_idx"), true);
+  assert.equal(indexNames.has("push_delivery_outbox_due_idx"), true);
 
   const outboxForeignKeys = await query(database.url, "PRAGMA foreign_key_list(telegram_delivery_outbox)");
   assert.equal(outboxForeignKeys.rows.filter((row) => row.table === "telegram_operations").length, 3);
 
   const second = await migrateDatabase({ url: database.url });
   assert.deepEqual(second.appliedMigrationIds, []);
-  assert.equal(second.inspection.appliedMigrationIds.length, 10);
+  assert.equal(second.inspection.appliedMigrationIds.length, 11);
+});
+
+test("push outbox migration upgrades the prior canonical schema without changing existing subscriptions", async (t) => {
+  const database = await temporaryDatabase(t);
+  const canonical = await loadMigrationManifest();
+  const priorManifest = await writeManifestSnapshot(database.directory, canonical, 10);
+  const prior = await migrateDatabase({ url: database.url, manifestPath: priorManifest });
+  assert.equal(prior.inspection.state, "canonical");
+  await executeMultiple(database.url, `
+    INSERT INTO users (id, name, username) VALUES ('u1', 'User', 'user');
+    INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh_key, auth_key)
+      VALUES ('s1', 'u1', 'https://example.test/push', 'public-key', 'auth-key');
+  `);
+
+  const result = await migrateDatabase({ url: database.url });
+  assert.deepEqual(result.appliedMigrationIds, ["0100-push-delivery-outbox"]);
+  assert.equal(result.inspection.state, "canonical");
+  const subscriptions = await query(database.url, "SELECT id, user_id FROM push_subscriptions");
+  assert.deepEqual(subscriptions.rows.map((row) => [row.id, row.user_id]), [["s1", "u1"]]);
+  const outbox = await query(database.url, "SELECT COUNT(*) AS count FROM push_delivery_outbox");
+  assert.equal(Number(outbox.rows[0].count), 0);
 });
 
 async function writeManifestSnapshot(directory, manifest, migrationCount, { failCurrencyMigration = false } = {}) {
@@ -151,7 +174,7 @@ test("currency migration preserves existing records, incoming FKs, indexes and p
   `);
 
   const result = await migrateDatabase({ url: database.url });
-  assert.deepEqual(result.appliedMigrationIds, ["0090-currency-modes"]);
+  assert.deepEqual(result.appliedMigrationIds, ["0090-currency-modes", "0100-push-delivery-outbox"]);
   assert.equal(result.inspection.preflight.foreignKeysEnabled, true);
   assert.equal(result.inspection.preflight.foreignKeyViolationCount, 0);
 

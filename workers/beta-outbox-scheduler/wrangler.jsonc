@@ -8,6 +8,8 @@
   },
   "vars": {
     "OUTBOX_WORKER_URL": "https://hermes-finantial-tracker-z2.vercel.app/api/cron/telegram-outbox",
-    "SCHEDULER_ENABLED": "true"
+    "SCHEDULER_ENABLED": "true",
+    "PUSH_OUTBOX_WORKER_URL": "https://hermes-finantial-tracker-z2.vercel.app/api/cron/push-outbox",
+    "PUSH_SCHEDULER_ENABLED": "false"
   }
 }

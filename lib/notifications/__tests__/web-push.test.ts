@@ -189,6 +189,17 @@ describe("web push notifications", () => {
     },
   );
 
+  it("keeps the independent Web Push switch off before subscription reads", async () => {
+    process.env.NOTIFICATIONS_ENABLED = "true";
+    process.env.WEB_PUSH_ENABLED = "false";
+    const { sendPushToUser } = await import("../web-push");
+
+    await sendPushToUser("user-1", { title: "Hermes", body: "Nueva notificación" });
+
+    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(mockWebPush.sendNotification).not.toHaveBeenCalled();
+  });
+
   it("removes only the authenticated user's subscription by endpoint", async () => {
     const deleteWhere = jest.fn().mockResolvedValue(undefined);
     mockDb.delete.mockReturnValue({

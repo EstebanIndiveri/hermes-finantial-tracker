@@ -14,6 +14,7 @@ import {
   reimbursementRequests,
   userPaymentInfo,
   users,
+  pushSubscriptions,
 } from "@/lib/db/schema";
 import { eq, and, sum, desc, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -51,6 +52,8 @@ import type { ReimbursementIntent } from "./financial-draft";
 import { createTelegramDeliveryKey } from "./operation-context";
 import { buildReimbursementRequestNotification } from "@/lib/notifications/telegram";
 import { sendPushToUser } from "@/lib/notifications/web-push";
+import { enqueuePushDelivery } from "@/lib/notifications/push-outbox";
+import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 
 export interface PersonalCallbackResponse {
   text: string;
@@ -319,6 +322,8 @@ async function registerPersonalTransaction(
   receiptImportId?: string,
   requiresReimbursement = false,
 ): Promise<{ text: string; transactionId: string; operationId?: string; deliveryKey?: string }> {
+  const durablePushLaneActive = process.env.WEB_PUSH_ENABLED === "true" &&
+    getNotificationsRuntimeMode() === "enabled";
   if (requiresReimbursement && !operationContext) {
     return {
       text: "❌ No se pudo confirmar el reintegro de forma segura. Volvé a intentarlo.",
@@ -477,6 +482,27 @@ async function registerPersonalTransaction(
             .returning({ id: reimbursementRequests.id });
           reimbursementId = request.id;
 
+          if (durablePushLaneActive && reimbursementPayerId) {
+            const subscriptions = await transaction
+              .select({ id: pushSubscriptions.id })
+              .from(pushSubscriptions)
+              .where(eq(pushSubscriptions.userId, reimbursementPayerId));
+            for (const subscription of subscriptions) {
+              await enqueuePushDelivery(transaction, {
+                operationId: identity.operationId,
+                deliveryKey: createTelegramDeliveryKey(
+                  { operationId: identity.operationId },
+                  "reimbursement.push.requested",
+                  subscription.id,
+                ),
+                eventType: "reimbursement.requested",
+                reimbursementId,
+                userId: reimbursementPayerId,
+                subscriptionId: subscription.id,
+              });
+            }
+          }
+
           const [requester] = await transaction
             .select({ name: users.name })
             .from(users)
@@ -603,7 +629,7 @@ async function registerPersonalTransaction(
     if (!operation.result.transactionId || !operation.result.month || !operation.result.confirmation) {
       return operation.result;
     }
-    if (!operation.reused && operation.result.pushUserId) {
+    if (!durablePushLaneActive && !operation.reused && operation.result.pushUserId) {
       await sendPushToUser(operation.result.pushUserId, {
         title: "💸 Solicitud de Reintegro",
         body: `Te han solicitado $${amountArs.toLocaleString("es-AR")}`,

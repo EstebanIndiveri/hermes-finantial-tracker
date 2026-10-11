@@ -12,6 +12,7 @@ import { getAccountingMonthProjection, getMonthSummary } from "@/lib/finance/sum
 import { clearConversationState, getConversationState, setConversationState } from "../splits/conversation-state";
 import { createTelegramOperationContext } from "../operation-context";
 import * as telegramFinancialOperation from "../financial-operation";
+import { sendPushToUser } from "@/lib/notifications/web-push";
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -68,6 +69,7 @@ const mockGetReimbursementByTransactionId = getReimbursementByTransactionId as j
 const mockMarkPaid = markReimbursementAsPaidWithNotifications as jest.MockedFunction<typeof markReimbursementAsPaidWithNotifications>;
 const mockCreateReimbursement = createReimbursementWithNotifications as jest.MockedFunction<typeof createReimbursementWithNotifications>;
 const mockGetMonthSummary = getMonthSummary as jest.MockedFunction<typeof getMonthSummary>;
+const mockSendPushToUser = sendPushToUser as jest.MockedFunction<typeof sendPushToUser>;
 const mockGetAccountingMonthProjection = getAccountingMonthProjection as jest.MockedFunction<typeof getAccountingMonthProjection>;
 const mockGetConversationState = getConversationState as jest.MockedFunction<typeof getConversationState>;
 const mockSetConversationState = setConversationState as jest.MockedFunction<typeof setConversationState>;
@@ -78,6 +80,8 @@ describe("telegram reimbursements", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.ACT05_ARS_MODE_ENABLED;
+    delete process.env.WEB_PUSH_ENABLED;
+    delete process.env.NOTIFICATIONS_ENABLED;
     mockGetMonthSummary.mockResolvedValue({ ahorro_proyectado_usd: 1200 } as Awaited<ReturnType<typeof getMonthSummary>>);
     mockGetReimbursementByTransactionId.mockResolvedValue(null);
   });
@@ -315,6 +319,7 @@ describe("telegram reimbursements", () => {
   });
 
   it("persists a reimbursable expense, request, and group delivery in one durable transaction", async () => {
+    process.env.WEB_PUSH_ENABLED = "true";
     mockGetConversationState.mockResolvedValue({
       step: "expense_confirm",
       data: {
@@ -337,6 +342,7 @@ describe("telegram reimbursements", () => {
       [{ partnerId: "user-2" }],
       [{ slug: "supermercado" }],
       [{ partnerId: "user-2" }],
+      [{ id: "subscription-payer-1" }],
       [{ name: "QA" }],
       [],
       [{ name: "Supermercado" }],
@@ -445,6 +451,7 @@ describe("telegram reimbursements", () => {
       const groupDeliveries = deliveries.filter((delivery) =>
         typeof delivery.delivery_key === "string" && delivery.chat_id !== "chat-1",
       );
+      const pushDeliveries = deliveries.filter((delivery) => delivery.eventType === "reimbursement.requested");
       expect(groupDeliveries.map((delivery) => delivery.chat_id).sort()).toEqual([
         "telegram-2",
         "telegram-4",
@@ -454,10 +461,19 @@ describe("telegram reimbursements", () => {
         expect.any(String),
       ]);
       expect(new Set(groupDeliveries.map((delivery) => delivery.delivery_key)).size).toBe(2);
+      expect(pushDeliveries).toEqual([expect.objectContaining({
+        operationId: expect.any(String),
+        deliveryKey: expect.any(String),
+        eventType: "reimbursement.requested",
+        reimbursementId: reimbursementRow?.id,
+        userId: "user-2",
+        subscriptionId: "subscription-payer-1",
+      })]);
       expect(response.text).toContain("Reintegro solicitado. Ya avisamos al grupo.");
       expect(repeatedResponse.text).toBe(response.text);
+      expect(mockSendPushToUser).not.toHaveBeenCalled();
       expect(financialWriteCount).toBe(1);
-      expect(insertValues).toHaveLength(5);
+      expect(insertValues).toHaveLength(6);
       expect(mockCreateReimbursement).not.toHaveBeenCalled();
     } finally {
       operationSpy.mockRestore();

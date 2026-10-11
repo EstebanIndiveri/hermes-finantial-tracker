@@ -57,7 +57,9 @@ export async function saveSubscription(
 }
 
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
-  if (getNotificationsRuntimeMode() !== "enabled") return;
+  // An explicit beta off switch must also fence legacy best-effort call sites.
+  // Missing preserves historical behavior outside the beta rollout.
+  if (getNotificationsRuntimeMode() !== "enabled" || process.env.WEB_PUSH_ENABLED === "false") return;
 
   if (!vapidPublicKey || !vapidPrivateKey) {
     console.warn("VAPID keys not configured, skipping web push");
@@ -88,9 +90,14 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
         "statusCode" in error &&
         (error.statusCode === 404 || error.statusCode === 410)
       ) {
-        await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, subscription.id));
+        await db.delete(pushSubscriptions).where(and(
+          eq(pushSubscriptions.id, subscription.id),
+          eq(pushSubscriptions.userId, userId),
+          eq(pushSubscriptions.endpoint, subscription.endpoint),
+        ));
       } else {
-        console.error("Web push failed:", error);
+        // Provider errors can contain endpoint and request details. Keep logs redacted.
+        console.error("Web push failed", { code: "provider_error" });
       }
     }
   }

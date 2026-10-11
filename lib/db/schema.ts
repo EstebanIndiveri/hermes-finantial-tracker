@@ -358,6 +358,35 @@ export const pushSubscriptions = sqliteTable("push_subscriptions", {
   createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
 
+export const pushDeliveryOutbox = sqliteTable("push_delivery_outbox", {
+  id: text("id").primaryKey(),
+  operationId: text("operation_id").notNull(),
+  deliveryKey: text("delivery_key").notNull().unique(),
+  eventType: text("event_type", { enum: ["reimbursement.requested", "reimbursement.paid"] }).notNull(),
+  reimbursementId: text("reimbursement_id").notNull(),
+  userId: text("user_id").notNull(),
+  subscriptionId: text("subscription_id").notNull(),
+  status: text("status", { enum: ["pending", "processing", "retryable", "sent", "dead"] }).notNull(),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  nextAttemptAt: integer("next_attempt_at").notNull(),
+  leaseToken: text("lease_token"),
+  leaseExpiresAt: integer("lease_expires_at"),
+  lastErrorCode: text("last_error_code"),
+  lastHttpStatus: integer("last_http_status"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  sentAt: integer("sent_at"),
+  expiresAt: integer("expires_at").notNull(),
+  retentionUntil: integer("retention_until").notNull(),
+}, (t) => ({
+  dueIdx: index("push_delivery_outbox_due_idx").on(t.status, t.nextAttemptAt),
+  leaseIdx: index("push_delivery_outbox_lease_idx").on(t.status, t.leaseExpiresAt),
+  retentionIdx: index("push_delivery_outbox_retention_idx").on(t.retentionUntil),
+  eventTypeCheck: check("push_delivery_outbox_event_type_check", sql`${t.eventType} IN ('reimbursement.requested', 'reimbursement.paid')`),
+  statusCheck: check("push_delivery_outbox_status_check", sql`${t.status} IN ('pending', 'processing', 'retryable', 'sent', 'dead')`),
+  attemptCountCheck: check("push_delivery_outbox_attempt_count_check", sql`${t.attemptCount} >= 0`),
+}));
+
 // ── Recurring Expenses ──────────────────────────────────────
 export const recurringExpenses = sqliteTable("recurring_expenses", {
   id: text("id").primaryKey(),

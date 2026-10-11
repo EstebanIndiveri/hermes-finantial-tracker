@@ -6,7 +6,8 @@ import { createClient } from "@libsql/client";
 
 export const RUNNER_VERSION = "1";
 export const PRE_CURRENCY_SCHEMA_FINGERPRINT = "309646a60fcdfc1566e6110cc4e5ec8eb32cbfdb1ffa4ee03a3d838d54014701";
-export const CANONICAL_SCHEMA_FINGERPRINT = "db35d5ebe653dcbc135ca236b9ae83671ef00f2b63bcb57a5ca5b9b30f133de1";
+export const PRE_PUSH_SCHEMA_FINGERPRINT = "db35d5ebe653dcbc135ca236b9ae83671ef00f2b63bcb57a5ca5b9b30f133de1";
+export const CANONICAL_SCHEMA_FINGERPRINT = "ca9e3e5bfbddf0ca2a975f449fd2c8f354361140b38ef2b73b60bd6cfd2b4e38";
 export const DEFAULT_MANIFEST_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../lib/db/migrations/manifest.json",
@@ -100,6 +101,14 @@ const SCHEMA_REQUIREMENTS = {
     nullableColumns: {
       transactions: ["amount_usd"],
     },
+  },
+  "0100-push-delivery-outbox": {
+    tables: ["push_delivery_outbox"],
+    indexes: [
+      "push_delivery_outbox_due_idx",
+      "push_delivery_outbox_lease_idx",
+      "push_delivery_outbox_retention_idx",
+    ],
   },
 };
 
@@ -369,6 +378,11 @@ async function canonicalSchemaDrift(client, tables, appliedMigrationIds) {
       drift.push("schema-fingerprint-mismatch");
     }
   } else if (canonicalIds.slice(0, -1).every((migrationId) => appliedMigrationIds.has(migrationId))) {
+    const fingerprint = await computeSchemaFingerprint(client);
+    if (fingerprint !== PRE_PUSH_SCHEMA_FINGERPRINT) {
+      drift.push("pre-push-schema-fingerprint-mismatch");
+    }
+  } else if (canonicalIds.slice(0, -2).every((migrationId) => appliedMigrationIds.has(migrationId))) {
     const fingerprint = await computeSchemaFingerprint(client);
     if (fingerprint !== PRE_CURRENCY_SCHEMA_FINGERPRINT) {
       drift.push("pre-currency-schema-fingerprint-mismatch");

@@ -3,6 +3,7 @@ import {
   categories,
   groups,
   group_members,
+  pushSubscriptions,
   reimbursementRequests,
   telegram_delivery_outbox,
   telegram_operations,
@@ -19,6 +20,8 @@ import {
   notifyReimbursementPaid,
 } from "@/lib/notifications/telegram";
 import { sendPushToUser } from "@/lib/notifications/web-push";
+import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
+import { enqueuePushDelivery } from "@/lib/notifications/push-outbox";
 import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
@@ -108,6 +111,36 @@ export type ReimbursementCreationOperationResult =
 export interface ReimbursementOperationOptions {
   /** Disable when a parent financial operation owns the callback response. */
   enqueuePrimaryResponse?: boolean;
+}
+
+function durableWebPushEnabled(): boolean {
+  return process.env.WEB_PUSH_ENABLED === "true" && getNotificationsRuntimeMode() === "enabled";
+}
+
+/** Enqueues metadata-only push intents inside the caller's financial transaction. */
+export async function enqueueReimbursementPushDeliveries(
+  transaction: TelegramOperationTransaction,
+  operationId: string,
+  eventType: "reimbursement.requested" | "reimbursement.paid",
+  reimbursementId: string,
+  userId: string | undefined,
+): Promise<boolean> {
+  if (!userId || !durableWebPushEnabled()) return false;
+  const subscriptions = await transaction
+    .select({ id: pushSubscriptions.id })
+    .from(pushSubscriptions)
+    .where(eq(pushSubscriptions.userId, userId));
+  for (const subscription of subscriptions) {
+    await enqueuePushDelivery(transaction, {
+      operationId,
+      deliveryKey: `${operationId}:web-push:${eventType}:${subscription.id}`,
+      eventType,
+      reimbursementId,
+      userId,
+      subscriptionId: subscription.id,
+    });
+  }
+  return true;
 }
 
 async function enqueueReimbursementPrimaryResponse(
@@ -241,6 +274,9 @@ export async function createVerifiedWebReimbursement(
   const operationIdentity = outboxContext
     ? createTelegramOperationIdentity(outboxContext)
     : null;
+  const durablePushOperationId = durableWebPushEnabled()
+    ? operationIdentity?.operationId ?? `web.reimbursement.create:${requestId}`
+    : null;
 
   const outcome = await db.transaction(async (tx) => {
     const [expense] = await tx.select({
@@ -285,7 +321,7 @@ export async function createVerifiedWebReimbursement(
       .from(categories).where(eq(categories.id, expense.categoryId));
     const [row] = await tx.insert(reimbursementRequests).values({
       id: requestId,
-      ...(operationIdentity ? { operationId: operationIdentity.operationId } : {}),
+      ...(durablePushOperationId ? { operationId: durablePushOperationId } : {}),
       transactionId, requesterId, payerId: effectivePayerId ?? null,
       amount: expense.amountArs, status: "pending",
     }).returning();
@@ -329,6 +365,13 @@ export async function createVerifiedWebReimbursement(
         message,
       );
     }
+    await enqueueReimbursementPushDeliveries(
+      tx,
+      durablePushOperationId ?? operationIdentity?.operationId ?? `web.reimbursement.create:${requestId}`,
+      "reimbursement.requested",
+      requestId,
+      effectivePayerId,
+    );
     return {
       request,
       groupId: expense.groupId,
@@ -351,7 +394,7 @@ export async function createVerifiedWebReimbursement(
       outcome.categoryName, outcome.description,
     );
   }
-  if (outcome.payerId) {
+  if (outcome.payerId && !durableWebPushEnabled()) {
     try {
       await sendPushToUser(outcome.payerId, {
         title: "💸 Solicitud de Reintegro",
@@ -559,6 +602,13 @@ export async function createReimbursementWithNotifications(
             .map((member) => ({ telegramId: member.telegramId as string, message })),
           "reimbursement.request",
         );
+        await enqueueReimbursementPushDeliveries(
+          transaction,
+          identity.operationId,
+          "reimbursement.requested",
+          id,
+          effectivePayerId,
+        );
 
         return {
           resourceType: "reimbursement",
@@ -570,6 +620,7 @@ export async function createReimbursementWithNotifications(
     if (operation.kind === "busy") return { error: "⏳ Procesando solicitud de reintegro..." };
     if (
       !operation.reused &&
+      !durableWebPushEnabled() &&
       !(("error" in operation.result)) &&
       operation.result.pushUserId
     ) {
@@ -587,6 +638,50 @@ export async function createReimbursementWithNotifications(
           deliveryKey: operation.result.deliveryKey,
         }
       : operation.result.request;
+  }
+
+  if (durableWebPushEnabled()) {
+    const id = nanoid();
+    const operationId = `reimbursement.create:${id}`;
+    const durableOutcome = await db.transaction(async (transaction) => {
+      const [transactionRow] = await transaction
+        .select({ description: transactions.description, groupId: transactions.group_id, categoryId: transactions.category_id, userId: transactions.user_id, status: transactions.status, deletedAt: transactions.deleted_at })
+        .from(transactions).where(eq(transactions.id, transactionId));
+      if (!transactionRow || transactionRow.userId !== requesterId || transactionRow.status !== "active" || transactionRow.deletedAt !== null) return { error: "El gasto no está activo o no pertenece al solicitante." };
+
+      if (transactionRow.groupId) {
+        const [membership] = await transaction.select({ userId: group_members.user_id }).from(group_members).where(and(eq(group_members.group_id, transactionRow.groupId), eq(group_members.user_id, requesterId)));
+        if (!membership) return { error: "Ya no tenés acceso al grupo del gasto." };
+      } else if (payerId) {
+        return { error: "El pagador no pertenece al grupo del gasto." };
+      }
+
+      let effectivePayerId = payerId;
+      if (!effectivePayerId && transactionRow.groupId) {
+        const [group] = await transaction.select({ partnerId: groups.partner_id }).from(groups).where(eq(groups.id, transactionRow.groupId));
+        if (group?.partnerId && group.partnerId !== requesterId) effectivePayerId = group.partnerId;
+      }
+      if (effectivePayerId === requesterId) return { error: "No podés solicitar un reintegro a vos mismo." };
+      if (effectivePayerId && transactionRow.groupId) {
+        const [payerMembership] = await transaction.select({ userId: group_members.user_id }).from(group_members).where(and(eq(group_members.group_id, transactionRow.groupId), eq(group_members.user_id, effectivePayerId)));
+        if (!payerMembership) return { error: "El pagador no pertenece al grupo del gasto." };
+      }
+
+      const [row] = await transaction.insert(reimbursementRequests).values({
+        id, operationId, transactionId, requesterId, payerId: effectivePayerId ?? null, amount, status: "pending",
+      }).returning();
+      const request = mapReimbursementRequestRow(row);
+      await enqueueReimbursementPushDeliveries(transaction, operationId, "reimbursement.requested", id, effectivePayerId);
+      const [category] = transactionRow.groupId
+        ? await transaction.select({ name: categories.name }).from(categories).where(eq(categories.id, transactionRow.categoryId))
+        : [];
+      return { request, groupId: transactionRow.groupId, categoryName: category?.name ?? "Sin categoría", description: transactionRow.description ?? "", payerId: effectivePayerId };
+    }, { behavior: "immediate" });
+    if ("error" in durableOutcome && durableOutcome.error) return { error: durableOutcome.error };
+    if (durableOutcome.groupId) {
+      await notifyGroupOfReimbursementRequest(durableOutcome.groupId, requesterId, durableOutcome.request.id, amount, durableOutcome.categoryName, durableOutcome.description);
+    }
+    return durableOutcome.request!;
   }
 
   // First, get the transaction to find the groupId
@@ -883,6 +978,13 @@ export async function markReimbursementAsPaidWithNotifications(
             "reimbursement.paid",
           );
         }
+        await enqueueReimbursementPushDeliveries(
+          transaction,
+          identity.operationId,
+          "reimbursement.paid",
+          id,
+          reimbursement.requesterId,
+        );
         const deliveryKey = await enqueueReimbursementPrimaryResponse(
           transaction,
           context,
@@ -907,6 +1009,7 @@ export async function markReimbursementAsPaidWithNotifications(
     }
     if (
       !operation.reused &&
+      !durableWebPushEnabled() &&
       operation.result.pushUserId &&
       operation.result.pushTitle &&
       operation.result.pushBody
@@ -922,6 +1025,30 @@ export async function markReimbursementAsPaidWithNotifications(
       deliveryOperationId: operation.operationId,
       deliveryKey: operation.result.deliveryKey,
     };
+  }
+
+  if (durableWebPushEnabled()) {
+    const operationId = `reimbursement.pay:${id}`;
+    const durableOutcome = await db.transaction(async (transaction) => {
+      const [reimbursement] = await transaction.select().from(reimbursementRequests).where(eq(reimbursementRequests.id, id));
+      if (!reimbursement || reimbursement.status !== "pending") return { ok: false as const };
+      const [sourceTransaction] = await transaction.select({ groupId: transactions.group_id, status: transactions.status, deletedAt: transactions.deleted_at }).from(transactions).where(eq(transactions.id, reimbursement.transactionId));
+      if (!sourceTransaction?.groupId || sourceTransaction.status !== "active" || sourceTransaction.deletedAt !== null) return { ok: false as const };
+      const [payerMembership] = await transaction.select({ userId: group_members.user_id }).from(group_members).where(and(eq(group_members.group_id, sourceTransaction.groupId), eq(group_members.user_id, payerId)));
+      if (!payerMembership || reimbursement.requesterId === payerId) return { ok: false as const };
+      const paidAt = new Date().toISOString();
+      let updatedRows = await transaction.update(reimbursementRequests).set({ status: "paid", paidAt }).returning({ id: reimbursementRequests.id }).where(and(eq(reimbursementRequests.id, id), eq(reimbursementRequests.payerId, payerId), eq(reimbursementRequests.status, "pending")));
+      if (updatedRows.length === 0) {
+        updatedRows = await transaction.update(reimbursementRequests).set({ status: "paid", payerId, paidAt }).returning({ id: reimbursementRequests.id }).where(and(eq(reimbursementRequests.id, id), isNull(reimbursementRequests.payerId), eq(reimbursementRequests.status, "pending")));
+      }
+      if (updatedRows.length === 0) return { ok: false as const };
+      await enqueueReimbursementPushDeliveries(transaction, operationId, "reimbursement.paid", id, reimbursement.requesterId);
+      const [payer] = await transaction.select({ name: users.name }).from(users).where(eq(users.id, payerId));
+      return { ok: true as const, requesterId: reimbursement.requesterId, amount: reimbursement.amount, payerName: payer?.name ?? "Alguien" };
+    }, { behavior: "immediate" });
+    if (!durableOutcome.ok) return false;
+    await notifyReimbursementPaid(durableOutcome.requesterId, durableOutcome.payerName, durableOutcome.amount);
+    return true;
   }
 
   const reimbursement = await getReimbursementById(id);
