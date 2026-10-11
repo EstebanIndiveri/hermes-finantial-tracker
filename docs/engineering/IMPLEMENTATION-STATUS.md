@@ -1506,3 +1506,38 @@ La inspección Vercel read-only del 10/10 encontró el alias beta todavía en
 proyecto beta; este dato no reemplaza recibos Turso/Telegram frescos ni
 autoriza desplegar el parche. Codex inició un login CLI Turso en configuración
 aislada y espera que Esteban seleccione la cuenta beta `esteban-indiveri`.
+
+### Web Push durable — implementación y candidato beta (11/10/2026)
+
+La política acotada quedó aprobada por Esteban: outbox de solo metadatos,
+reintentos hasta 24 horas, purga a 7 días y envío apagado hasta un canary
+consentido. Codex implementó la migración aditiva `0100`, writers financieros
+transaccionales, worker con lease/fencing, endpoint autenticado y extensión
+inactiva del scheduler free tier. El historial de pruebas previo permanece
+arriba como corte de 10/10; no debe leerse como estado actual.
+
+Turso CLI beta está autenticado como `esteban-indiveri` y ve únicamente
+`beta-hermes`. Turso CLI legacy, en **otra configuración aislada**, quedó
+autenticado como `eindiveri` y ve `hermes-acme`. Se compararon IDs/hosts
+distintos y se consultaron solo metadatos legacy. En beta había cero endpoints
+Push duplicados y cero suscripciones. Un respaldo fresco, fingerprint,
+ledger, integridad y digests de las 27 tablas existentes sirvieron de guard
+para aplicar solo `0100` a `beta-hermes`; el postflight verificó preservación
+de datos y esquema canónico. No hubo escritura en legacy.
+
+El código `9642176` pasó 94/94 pruebas de harness y 933 pruebas Jest,
+typecheck y build. `WEB_PUSH_ENABLED=false` se añadió solo al target
+Production del proyecto beta. Vercel creó el deployment beta
+`dpl_AACcct6M78ZCxgJ7kZgkLFe6jt6T` con `--skip-domain`: `READY`, build
+H04d con diez checks y seis fingerprints coincidentes. El alias canónico beta
+permanece en `dpl_4r3KhNWKH5hrZ8ZkUMHb32zCKxDX` y el alias legacy en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. Documentación complementaria:
+[corte Web Push](WEB-PUSH-DURABLE-CUT.md).
+
+**Abierto con owner Codex:** renovar recibos provider H04d vencidos, probar
+pasivamente el candidato, reatestar y promover exclusivamente el alias beta;
+mantener `isolationVerified:false`. Después preparar la prueba de dispositivo
+y conciliar outbox/entrega, sin encender Push automáticamente. **Abierto con
+owner Esteban:** consentir una suscripción beta y ejecutar el canary con
+Sabri; decidir la activación solo con el resultado. No hay step sin owner ni
+autorización para tocar el proyecto legacy.
