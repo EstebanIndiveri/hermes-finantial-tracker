@@ -1568,3 +1568,30 @@ autoriza activar Web Push ni afecta legacy. **Ejecución abierta, owner Codex:**
 mantener/renovar evidencia y, tras la ratificación, preparar canary de
 dispositivo con Esteban y Sabri. Activación del envío requiere decisión
 separada de Esteban. No hay corte abierto sin owner.
+
+### Decisión H04d y siguiente corte — 11/10/2026
+
+Esteban ratificó expresamente «sí, solo para este beta» el residual H04d del
+deployment `dpl_AACcct6M78ZCxgJ7kZgkLFe6jt6T` con
+`WEB_PUSH_ENABLED=false`. El alcance humano del piloto beta queda cerrado
+para **ese ID**, con el paquete técnico ya verificado; el resultado del
+verificador sigue `isolationVerified:false`. No se extiende a URLs retiradas,
+legacy ni a una release futura con identidades/bindings distintos. Codex es
+owner de renovar la atestación en cada nuevo deployment.
+
+**En ejecución, owner Codex:** control opt-in de suscripción Web Push en «Mi
+cuenta», autenticación y reversión, con tests y sin habilitar envíos. El
+contrato, exclusiones y gates están en [Web Push durable](WEB-PUSH-DURABLE-CUT.md).
+**Siguiente gate real, owner Esteban:** consentir el dispositivo de prueba
+(y coordinar con Sabri el segundo usuario). Codex verificará el estado y las
+entregas antes de solicitar una **decisión separada** para activar Web Push y
+su scheduler. Hasta entonces ambos flags siguen apagados. No hay paso abierto
+sin owner ni cambio legacy.
+
+El control opt-in y la API de clave pública quedaron implementados
+localmente. Node 22: 107 suites/937 tests de app y harness verdes,
+typecheck y build local aprobados; lint 0 errores/67 avisos existentes.
+Una suscripción del navegador no se presume ligada a la cuenta actual al
+recargar; asociarla requiere clic. El próximo deployment beta será un ID
+nuevo y exige otra reatestación técnica H04d. Ningún canary de dispositivo
+ni envío Push se ha ejecutado por este corte.

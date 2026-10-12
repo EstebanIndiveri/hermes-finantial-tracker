@@ -1,7 +1,7 @@
 # Web Push durable — contrato previo al corte beta
 
-Estado: implementación beta y migración aditiva verificadas, 11/10/2026;
-despliegue y prueba de dispositivo pendientes. Owner técnico: Codex.
+Estado: implementación, migración aditiva y despliegue beta verificados,
+11/10/2026; prueba de dispositivo y activación pendientes. Owner técnico: Codex.
 Esteban aprobó solo metadatos, reintentos hasta 24 horas, purga a 7 días y
 activación apagada hasta la prueba beta. **No habilita envíos ni autoriza una
 migración legacy.**
@@ -58,9 +58,9 @@ se construyen con esos límites; la activación sigue siendo un corte separado.
 | --- | --- | --- |
 | Migración aditiva, outbox metadata-only, lease y retención | Implementado y verificado en beta el 11/10 | Codex: revisar el candidato desplegado; la migración `0100` conservó datos y tablas existentes. |
 | Cobertura transaccional de todos los writers de reintegros | Implementado; regresiones locales aprobadas | Codex: verificar web, Telegram directo/callback y rutas sin contexto durante el canary; no activar con un bypass. |
-| Worker, endpoint autenticado y scheduler free tier | Implementado y probado localmente; envío inactivo | Codex: desplegar y reatestar H04d; activar el scheduler beta solo tras prueba consentida. |
+| Worker, endpoint autenticado y scheduler free tier | Worker desplegado en beta; envío y scheduler Push inactivos | Codex: probar canary consentido y solicitar decisión separada antes de activar. |
 | Duplicados/suscripciones en Turso beta | Lectura 11/10: 0 endpoints duplicados, 0 suscripciones | Codex: repetir antes de activar; Esteban: consentir la suscripción del dispositivo de prueba. |
-| Aislamiento beta/legacy | Metadata Turso comparada el 11/10; deploy nuevo aún no certificado | Codex: reatestar bindings/build/alias del deployment candidato; mantener `isolationVerified:false`. |
+| Aislamiento beta/legacy | Paquete técnico del deployment actual aprobado; residual ratificado solo para este beta | Codex: reatestar cada deployment futuro; mantener `isolationVerified:false`. |
 | Canary Web Push con dos usuarios y decisión de activación | Abierto | Esteban: prueba real del dispositivo y aprobación; Codex: verificar entrega, idempotencia, exclusión y apagar ante fallo. |
 
 La comparación Turso del 11/10 fue read-only: `beta-hermes` pertenece a
@@ -95,7 +95,7 @@ El corte no cambia OCR, audio, texto, CSV/XLSX, saldos ni Telegram. Sí toca
 los puntos de creación/pago de reintegros de web y Telegram, y por ello
 requiere regresiones de ambos canales y callbacks.
 
-## Candidato de despliegue 11/10/2026
+## Candidato de despliegue 11/10/2026 (registro previo a la promoción)
 
 El commit beta `9642176` quedó en `origin/codex/act05-currency-modes`.
 Vercel creó `dpl_AACcct6M78ZCxgJ7kZgkLFe6jt6T` en el target Production
@@ -140,3 +140,47 @@ La aceptación no activa Push ni cambia legacy. **Pendiente con owner Codex:**
 tras esa ratificación, preparar la suscripción consentida y canary de dos
 usuarios, conciliar sus filas/entregas, y solicitar una decisión separada
 antes de activar el scheduler y el envío. No hay pasos abiertos sin owner.
+
+### Preparación de suscripción consentida — contrato de implementación
+
+Tras la ratificación de Esteban para este deployment, Codex prepara en
+«Mi cuenta» un control voluntario por dispositivo. El estado inicial no pide
+permiso ni registra service worker; solo un clic explícito inicia la solicitud.
+La API autenticada entrega únicamente la clave VAPID pública. El cliente
+detecta soporte, registra `/sw.js`, crea/reutiliza la suscripción y la guarda
+para el usuario autenticado; también permite revocarla. Fallos de navegador,
+permiso, clave o red se explican sin afirmar que hay envíos activos.
+
+Invariantes: no leer ni exponer la clave privada; no crear movimiento,
+reintegro ni notificación; no habilitar `WEB_PUSH_ENABLED`,
+`NOTIFICATIONS_ENABLED` o el scheduler; no tocar legacy. Verificar con tests
+la autenticación de la API y las ramas de alta/baja. Esta preparación no es
+el canary real: Esteban consiente cada dispositivo y Codex concilia usuarios,
+suscripciones y entregas antes de pedir una decisión separada de activación.
+
+**Owners:** Codex implementa y verifica el control, despliega solo en beta
+tras gates y reatesta H04d; Esteban consiente la prueba de dispositivo y
+decide después si autoriza habilitar envíos. El caso de navegador compartido,
+permisos bloqueados y plataformas sin Push queda explícito en la UI. Ningún
+step abierto queda sin owner.
+
+El corte local quedó implementado en la página «Mi cuenta» y en
+`GET /api/push/subscribe` autenticado: no se pide permiso al montar la
+página, una suscripción preexistente no se atribuye automáticamente a la
+cuenta actual y la revocación es explícita. El GET entrega solo la clave
+pública con `Cache-Control: no-store`; si falta, responde 503. La clave
+privada no pasa al cliente. Verificación con Node 22: 107 suites/937 tests de
+app y harness aprobaron, TypeScript y build local aprobaron; lint cerró con
+0 errores y 67 warnings existentes. Esto no es prueba de entrega real ni
+autoriza encender flags. **Owner Codex:** commit, despliegue beta con H04d
+renovado y prueba de dispositivo; **owner Esteban:** consentimiento del
+dispositivo y decisión separada de activación.
+
+### Decisión H04d recibida
+
+Esteban ratificó «sí, solo para este beta» para el deployment
+`dpl_AACcct6M78ZCxgJ7kZgkLFe6jt6T` con el binding nuevo apagado. El
+alcance humano H04d de ese deployment queda cerrado, aunque el resultado
+automático sigue `isolationVerified:false`. La preparación del control de
+suscripción será un nuevo cambio de código; cualquier nuevo deployment se
+reatesta por separado. Esta decisión no enciende Push ni toca legacy.

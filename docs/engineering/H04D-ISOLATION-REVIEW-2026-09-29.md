@@ -344,3 +344,20 @@ closed for this exact deployment until Esteban explicitly ratifies the same
 beta-only limitation. Codex owns retaining the evidence and responding to
 any rejection. Web Push delivery and its scheduler remain off; H04d acceptance
 would not authorize turning them on or promoting to legacy.
+
+## Owner decision — 11/10/2026, current beta Push-inactive deployment
+
+Esteban respondió explícitamente «sí, solo para este beta» a la pregunta de
+ratificar el residual H04d del deployment
+`dpl_AACcct6M78ZCxgJ7kZgkLFe6jt6T`, cuyo binding nuevo
+`WEB_PUSH_ENABLED=false` estaba declarado en la evidencia anterior. Con el
+paquete privado de siete recibos y las probes autenticadas ya aprobados,
+queda **cerrado el alcance humano H04d únicamente para este deployment del
+piloto beta**. La conclusión automatizada sigue siendo
+`isolationVerified:false`: no es una lectura independiente de todos los
+secretos de cada función en ejecución ni certificación de URLs retiradas.
+
+Este consentimiento no habilita Web Push ni su scheduler, no promueve código
+a legacy y no sustituye una autorización de release productivo. Codex debe
+repetir la atestación técnica por deployment exacto y pedir nueva decisión
+si cambian proyecto, DB, bot, webhook, bindings o falla un control.

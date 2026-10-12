@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Skel } from "@/components/ui/Skeleton";
 import { PaymentInfoForm } from "@/components/settings/payment-info-form";
+import { PushNotificationsSection } from "./push-notifications";
 
 // ── Change name ─────────────────────────────────────────────────
 function ChangeNameSection({ initialName, onSaved }: { initialName: string; onSaved: (name: string) => void }) {
@@ -340,6 +341,7 @@ export function AccountPageClient() {
         <p style={{ fontSize: 13, color: "var(--htext3)" }}>Perfil, contraseña y conexiones</p>
       </div>
       <MiCuenta />
+      <PushNotificationsSection />
       <ConectarTelegram />
       <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
         <PaymentInfoForm />

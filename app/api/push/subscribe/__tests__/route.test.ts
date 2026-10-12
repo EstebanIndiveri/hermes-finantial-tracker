@@ -1,4 +1,4 @@
-import { DELETE, POST } from "../route";
+import { DELETE, GET, POST } from "../route";
 import { NextRequest } from "next/server";
 
 jest.mock("@/lib/auth/session", () => ({
@@ -23,6 +23,56 @@ function makeReq(method: "POST" | "DELETE", body?: object, session?: string): Ne
     body: body ? JSON.stringify(body) : undefined,
   });
 }
+
+function makeGetReq(session?: string): NextRequest {
+  return new NextRequest("http://localhost/api/push/subscribe", {
+    method: "GET",
+    headers: session ? { Cookie: `hermes_session=${session}` } : undefined,
+  });
+}
+
+describe("GET /api/push/subscribe", () => {
+  const originalPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public-vapid-key";
+  });
+
+  afterAll(() => {
+    if (originalPublicKey === undefined) delete process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    else process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = originalPublicKey;
+  });
+
+  it("returns 401 when the user is not authenticated", async () => {
+    verifySession.mockResolvedValue(null);
+
+    const response = await GET(makeGetReq());
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
+  });
+
+  it("returns 503 when the public key is missing", async () => {
+    verifySession.mockResolvedValue("user-1");
+    delete process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+    const response = await GET(makeGetReq("session-token"));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "Push notifications are not configured" });
+  });
+
+  it("returns only the configured public key", async () => {
+    verifySession.mockResolvedValue("user-1");
+
+    const response = await GET(makeGetReq("session-token"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual({ publicKey: "public-vapid-key" });
+  });
+});
 
 describe("POST /api/push/subscribe", () => {
   beforeEach(() => {
