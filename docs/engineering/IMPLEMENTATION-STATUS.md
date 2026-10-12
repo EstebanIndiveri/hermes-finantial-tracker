@@ -1761,3 +1761,25 @@ este borde. **Cerrado en código/despliegue beta, owner Codex:** aislamiento
 de recurrentes. **Siguiente, owner Codex:** prueba funcional controlada de
 grupos homónimos y categorías idénticas entre cuentas; revisar el gasto
 sintético de ARS 1 y cerrar/retirar el canary Push cuando corresponda.
+
+### Verificación funcional de grupos homónimos y categorías — 12/10/2026
+
+En Safari, `esteban_beta_qa2` mostró simultáneamente `Mi espacio · propio`
+y `Mi espacio · compartido por @esteban_beta_qa`. Codex cambió de uno a
+otro y verificó el rótulo activo y la lista de categorías: el compartido
+tenía `Supermercado` e `Ingresos`, mientras el propio estaba vacío. En el
+propio creó `Supermercado` desde la web sin error. La conciliación read-only
+de `beta-hermes` mostró el slug `supermercado` en tres grupos distintos,
+incluidos los dos `Mi espacio` de owners diferentes, sin alterar la
+categoría compartida. **Cerrada la prueba web entre cuentas**. La categoría
+QA2 queda como dato de prueba en su espacio personal; owner Codex para su
+eventual limpieza cuando termine la validación beta.
+
+Telegram `/grupo ID` y rechazo de nombre ambiguo tienen regresiones de
+código aprobadas, pero QA2 no vinculó Telegram por decisión de Esteban.
+No se exige esa vinculación para este corte; owner Codex conserva la
+verificación técnica y Esteban solo decidiría si desea una prueba manual
+adicional en otro usuario vinculado. La pantalla «Mi cuenta» todavía decía
+que no se enviaban avisos pese al canary activo; Codex corrigió el copy
+para expresar el alcance de cuentas/grupos habilitados, con despliegue
+beta y H04d pendientes en un corte separado.

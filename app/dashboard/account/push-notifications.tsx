@@ -86,7 +86,7 @@ export function PushNotificationsSection() {
       const saveData = await saveResponse.json().catch(() => null);
       if (!saveResponse.ok) throw new Error(saveData?.error ?? "No se pudo guardar la suscripción.");
       setState("subscribed");
-      setMessage({ type: "ok", text: "Dispositivo preparado. Los envíos beta siguen apagados." });
+      setMessage({ type: "ok", text: "Dispositivo preparado. Vas a recibir avisos solo si tu cuenta y grupo están habilitados para el piloto beta." });
     } catch (error) {
       const removedNewSubscription = createdSubscription
         ? await createdSubscription.unsubscribe().catch(() => false)
@@ -131,7 +131,7 @@ export function PushNotificationsSection() {
     <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
       <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--htext1)", marginBottom: 4 }}>Notificaciones del navegador</h2>
       <p style={{ fontSize: "0.85rem", color: "var(--htext2)", margin: "0 0 16px" }}>
-        Prepará este navegador para una futura prueba beta. Todavía no se envían avisos; el permiso solo se pide cuando tocás el botón.
+        Prepará este navegador para recibir avisos del piloto beta. Los envíos se limitan a cuentas y grupos habilitados; el permiso se pide solo cuando tocás el botón.
       </p>
       {state === "unsupported" ? (
         <p role="status" style={{ fontSize: "0.82rem", color: "var(--htext3)", margin: 0 }}>Este navegador no admite notificaciones web.</p>
