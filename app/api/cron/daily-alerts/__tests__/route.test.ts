@@ -6,6 +6,7 @@ import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
+import { getGroupMembership } from "@/lib/groups/permissions";
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -24,11 +25,15 @@ jest.mock("@/lib/telegram/send-message", () => ({ sendTelegramMessage: jest.fn()
 jest.mock("@/lib/telegram/alerts", () => ({ buildDailyAlert: jest.fn() }));
 jest.mock("@/lib/telegram/authorized-group-context", () => ({ resolveAuthorizedTelegramGroup: jest.fn() }));
 jest.mock("@/lib/notifications/telegram", () => ({ notifyReimbursementReminder: jest.fn(), getUserById: jest.fn() }));
+jest.mock("@/lib/groups/permissions", () => ({ getGroupMembership: jest.fn() }));
 
 describe("GET /api/cron/daily-alerts authorization", () => {
   const originalEnv = process.env;
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (db.select as jest.Mock).mockReset();
+  });
   afterEach(() => { process.env = originalEnv; });
 
   it.each([
@@ -91,6 +96,56 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(db.select).not.toHaveBeenCalled();
     expect(sendTelegramMessage).not.toHaveBeenCalled();
     expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+  });
+
+  it("does not remind a former payer about another group's reimbursement", async () => {
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "true" };
+    (db.select as jest.Mock)
+      .mockReturnValueOnce({ from: jest.fn().mockResolvedValue([]) })
+      .mockReturnValueOnce({ from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([{
+        id: "reimb-old", transactionId: "transaction-old", payerId: "former-member",
+        requesterId: "requester", amount: 137, createdAt: Date.now() - 4 * 24 * 60 * 60 * 1000,
+      }]) })) })
+      .mockReturnValueOnce({ from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([{
+        groupId: "group-old", status: "active", deletedAt: null,
+      }]) })) })) });
+    (db.query.split_sessions.findMany as jest.Mock).mockResolvedValue([]);
+    (getGroupMembership as jest.Mock).mockResolvedValue(null);
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(getGroupMembership).toHaveBeenCalledWith("former-member", "group-old");
+    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+  });
+
+  it("reminds a current payer only when the requester still belongs to the source group", async () => {
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "true" };
+    (db.select as jest.Mock)
+      .mockReturnValueOnce({ from: jest.fn().mockResolvedValue([]) })
+      .mockReturnValueOnce({ from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([{
+        id: "reimb-current", transactionId: "transaction-current", payerId: "payer",
+        requesterId: "requester", amount: 130, createdAt: Date.now() - 4 * 24 * 60 * 60 * 1000,
+      }]) })) })
+      .mockReturnValueOnce({ from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([{
+        groupId: "group-current", status: "active", deletedAt: null,
+      }]) })) })) });
+    (db.query.split_sessions.findMany as jest.Mock).mockResolvedValue([]);
+    (getGroupMembership as jest.Mock)
+      .mockResolvedValueOnce({ group_id: "group-current", user_id: "payer", role: "member" })
+      .mockResolvedValueOnce({ group_id: "group-current", user_id: "requester", role: "owner" });
+    (getUserById as jest.Mock).mockResolvedValue({ name: "Requester" });
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(getGroupMembership).toHaveBeenCalledWith("payer", "group-current");
+    expect(getGroupMembership).toHaveBeenCalledWith("requester", "group-current");
+    expect(notifyReimbursementReminder).toHaveBeenCalledWith("payer", "Requester", 130, expect.any(Number));
   });
 
   it("fails closed on an invalid notifications setting before database work", async () => {

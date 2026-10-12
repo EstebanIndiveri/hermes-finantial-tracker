@@ -12,6 +12,7 @@ import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-
 import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
+import { getGroupMembership } from "@/lib/groups/permissions";
 
 /**
  * Daily cron job for proactive Telegram alerts.
@@ -205,6 +206,7 @@ export async function GET(req: NextRequest) {
     const pendingOldReimbursements = await db
       .select({
         id: reimbursementRequests.id,
+        transactionId: reimbursementRequests.transactionId,
         payerId: reimbursementRequests.payerId,
         requesterId: reimbursementRequests.requesterId,
         amount: reimbursementRequests.amount,
@@ -221,6 +223,20 @@ export async function GET(req: NextRequest) {
     for (const reimbursement of pendingOldReimbursements) {
       // Only send to assigned payers (not open reimbursements)
       if (!reimbursement.payerId) continue;
+
+      // A pending request may outlive group membership. Never disclose its
+      // details to a removed payer or for a deleted/cancelled source expense.
+      const [source] = await db.select({
+        groupId: transactions.group_id,
+        status: transactions.status,
+        deletedAt: transactions.deleted_at,
+      }).from(transactions).where(eq(transactions.id, reimbursement.transactionId)).limit(1);
+      if (!source?.groupId || source.status !== "active" || source.deletedAt !== null) continue;
+      const [payerMembership, requesterMembership] = await Promise.all([
+        getGroupMembership(reimbursement.payerId, source.groupId),
+        getGroupMembership(reimbursement.requesterId, source.groupId),
+      ]);
+      if (!payerMembership || !requesterMembership) continue;
 
       const daysPending = Math.floor((Date.now() - reimbursement.createdAt) / (24 * 60 * 60 * 1000));
       
