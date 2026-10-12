@@ -402,8 +402,9 @@ lectura independiente de todos los secretos del runtime. Se conserva
 Esteban preparó Web Push en otro navegador como `esteban_beta_qa2`, sin
 conectar Telegram. La conciliación read-only de `beta-hermes` observó una
 suscripción para cada uno de `esteban_beta_qa` y `esteban_beta_qa2`, con
-2 endpoints distintos, 0 duplicados y 0 filas de outbox Push. Ambos usuarios
-son miembros del grupo beta `test`. El segundo opt-in cierra el gate de
+2 endpoints distintos, 0 duplicados y 0 filas de outbox Push. Una revisión
+posterior confirmó que `qa2` es miembro de `Mi espacio`, no de `test`; la
+afirmación inicial de que ambos pertenecían a `test` fue incorrecta. El segundo opt-in cierra el gate de
 suscripción de dos usuarios sin reatribuir la primera; no cambia el SHA,
 deployment, bindings ni la aceptación residual H04d. Tampoco prueba la
 entrega real o la lectura independiente de los secretos en ejecución.

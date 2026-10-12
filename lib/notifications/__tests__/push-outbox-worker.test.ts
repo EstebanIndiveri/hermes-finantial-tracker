@@ -29,7 +29,13 @@ describe("push outbox worker", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env = { ...originalEnv, NOTIFICATIONS_ENABLED: "false", WEB_PUSH_ENABLED: "true" };
+    process.env = {
+      ...originalEnv,
+      NOTIFICATIONS_ENABLED: "false",
+      WEB_PUSH_ENABLED: "true",
+      WEB_PUSH_CANARY_GROUP_ID: "g",
+      WEB_PUSH_CANARY_USER_IDS: "payer,owner",
+    };
     claim.mockResolvedValue(null);
     markSent.mockResolvedValue(true);
     markRetryable.mockResolvedValue(true);
@@ -41,15 +47,23 @@ describe("push outbox worker", () => {
 
   afterAll(() => { process.env = originalEnv; });
 
-  it("does not claim or call the provider while either flag is disabled", async () => {
+  it("does not claim or call the provider while Web Push is disabled", async () => {
+    process.env.WEB_PUSH_ENABLED = "false";
     const { processPushOutbox } = await import("../push-outbox-worker");
     await processPushOutbox();
     expect(claim).not.toHaveBeenCalled();
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
-  it("fences an unauthorized or stale reimbursement without sending", async () => {
+  it("does not claim if broad notifications are enabled on the isolated canary", async () => {
     process.env.NOTIFICATIONS_ENABLED = "true";
+    const { processPushOutbox } = await import("../push-outbox-worker");
+    expect((await processPushOutbox()).skipped).toBe(true);
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it("fences an unauthorized or stale reimbursement without sending", async () => {
+    process.env.NOTIFICATIONS_ENABLED = "false";
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public";
     process.env.VAPID_PRIVATE_KEY = "private";
     claim.mockResolvedValue({ id: "d1", reimbursementId: "r1", operationId: "op", eventType: "reimbursement.requested", userId: "payer", subscriptionId: "s1", attemptCount: 1, leaseToken: "lease" });
@@ -62,8 +76,38 @@ describe("push outbox worker", () => {
     expect(result.dead).toBe(1);
   });
 
+  it.each([
+    ["wrong group", { groupId: "other-group", payerId: "payer" }],
+    ["wrong user", { groupId: "g", payerId: "outsider" }],
+  ] as const)("fences a canary %s before provider delivery", async (_label, scope) => {
+    process.env.NOTIFICATIONS_ENABLED = "false";
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public";
+    process.env.VAPID_PRIVATE_KEY = "private";
+    claim.mockResolvedValue({ id: "d1", reimbursementId: "r1", operationId: "op", eventType: "reimbursement.requested", userId: scope.payerId, subscriptionId: "s1", attemptCount: 1, leaseToken: "lease" });
+    dbSelect.mockImplementationOnce(() => query([{ status: "pending", requesterId: "owner", payerId: scope.payerId, groupId: scope.groupId, transactionStatus: "active", deletedAt: null }]));
+
+    const { processPushOutbox } = await import("../push-outbox-worker");
+    const result = await processPushOutbox({ maxClaims: 1 });
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect(markDead).toHaveBeenCalledWith(expect.objectContaining({ errorCode: "ineligible", leaseToken: "lease" }));
+    expect(result.dead).toBe(1);
+  });
+
+  it("does not claim when the enabled canary scope is missing", async () => {
+    process.env.NOTIFICATIONS_ENABLED = "false";
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public";
+    process.env.VAPID_PRIVATE_KEY = "private";
+    delete process.env.WEB_PUSH_CANARY_GROUP_ID;
+
+    const { processPushOutbox } = await import("../push-outbox-worker");
+    const result = await processPushOutbox();
+    expect(result.skipped).toBe(true);
+    expect(claim).not.toHaveBeenCalled();
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
   it("does not report delivery after a newer worker fences the lease", async () => {
-    process.env.NOTIFICATIONS_ENABLED = "true";
+    process.env.NOTIFICATIONS_ENABLED = "false";
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public";
     process.env.VAPID_PRIVATE_KEY = "private";
     claim.mockResolvedValue({ id: "d1", reimbursementId: "r1", operationId: "op", eventType: "reimbursement.requested", userId: "payer", subscriptionId: "s1", attemptCount: 1, leaseToken: "lease" });
@@ -80,7 +124,7 @@ describe("push outbox worker", () => {
   });
 
   it("retries provider throttling without marking the intent sent", async () => {
-    process.env.NOTIFICATIONS_ENABLED = "true";
+    process.env.NOTIFICATIONS_ENABLED = "false";
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public";
     process.env.VAPID_PRIVATE_KEY = "private";
     claim.mockResolvedValue({ id: "d1", reimbursementId: "r1", operationId: "op", eventType: "reimbursement.requested", userId: "payer", subscriptionId: "s1", attemptCount: 1, leaseToken: "lease" });
@@ -96,7 +140,7 @@ describe("push outbox worker", () => {
   });
 
   it("does not deliver when the subscription was reassigned", async () => {
-    process.env.NOTIFICATIONS_ENABLED = "true";
+    process.env.NOTIFICATIONS_ENABLED = "false";
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public";
     process.env.VAPID_PRIVATE_KEY = "private";
     claim.mockResolvedValue({ id: "d1", reimbursementId: "r1", operationId: "op", eventType: "reimbursement.requested", userId: "payer", subscriptionId: "s1", attemptCount: 1, leaseToken: "lease" });
@@ -112,7 +156,7 @@ describe("push outbox worker", () => {
   });
 
   it("validates numeric bounds and fences exhausted attempts", async () => {
-    process.env.NOTIFICATIONS_ENABLED = "true";
+    process.env.NOTIFICATIONS_ENABLED = "false";
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public";
     process.env.VAPID_PRIVATE_KEY = "private";
     const { processPushOutbox } = await import("../push-outbox-worker");

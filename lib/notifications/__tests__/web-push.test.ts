@@ -200,6 +200,21 @@ describe("web push notifications", () => {
     expect(mockWebPush.sendNotification).not.toHaveBeenCalled();
   });
 
+  it("does not let direct best-effort delivery bypass the enabled canary durable lane", async () => {
+    process.env.NOTIFICATIONS_ENABLED = "true";
+    process.env.WEB_PUSH_ENABLED = "true";
+    delete process.env.WEB_PUSH_CANARY_GROUP_ID;
+    delete process.env.WEB_PUSH_CANARY_USER_IDS;
+    const { sendPushToUser } = await import("../web-push");
+
+    await expect(
+      sendPushToUser("user-1", { title: "Hermes", body: "Nueva notificación" }),
+    ).resolves.toBeUndefined();
+
+    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(mockWebPush.sendNotification).not.toHaveBeenCalled();
+  });
+
   it("removes only the authenticated user's subscription by endpoint", async () => {
     const deleteWhere = jest.fn().mockResolvedValue(undefined);
     mockDb.delete.mockReturnValue({

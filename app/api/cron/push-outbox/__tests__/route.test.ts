@@ -20,11 +20,13 @@ beforeEach(() => {
     ...originalEnv,
     PUSH_OUTBOX_SCHEDULER_SECRET: "push-secret",
     WEB_PUSH_ENABLED: "true",
-    NOTIFICATIONS_ENABLED: "true",
+    NOTIFICATIONS_ENABLED: "false",
     TURSO_DATABASE_URL: "libsql://example.turso.io",
     TURSO_AUTH_TOKEN: "db-token",
     NEXT_PUBLIC_VAPID_PUBLIC_KEY: "public-key",
     VAPID_PRIVATE_KEY: "private-key",
+    WEB_PUSH_CANARY_GROUP_ID: "group-beta",
+    WEB_PUSH_CANARY_USER_IDS: "user-a,user-b",
   };
   worker.mockResolvedValue({ claimed: 1, sent: 1, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: false });
 });
@@ -38,8 +40,6 @@ it("rejects unauthorized requests without loading the worker", async () => {
 
 it.each([
   ["Web Push", "WEB_PUSH_ENABLED", "false"],
-  ["global notifications", "NOTIFICATIONS_ENABLED", "false"],
-  ["invalid global flag", "NOTIFICATIONS_ENABLED", "off"],
 ])("skips when %s is disabled", async (_label, key, value) => {
   process.env[key] = value;
   const response = await GET(request());
@@ -48,8 +48,23 @@ it.each([
   expect(worker).not.toHaveBeenCalled();
 });
 
+it.each(["true", "off"]) ("rejects broad notifications mode %s", async (value) => {
+  process.env.NOTIFICATIONS_ENABLED = value;
+  expect((await GET(request())).status).toBe(503);
+  expect(worker).not.toHaveBeenCalled();
+});
+
 it.each(["TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN", "NEXT_PUBLIC_VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"])(
   "fails closed when %s is missing", async (key) => {
+    delete process.env[key];
+    expect((await GET(request())).status).toBe(503);
+    expect(worker).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["WEB_PUSH_CANARY_GROUP_ID", "WEB_PUSH_CANARY_USER_IDS"])(
+  "fails closed when %s is missing",
+  async (key) => {
     delete process.env[key];
     expect((await GET(request())).status).toBe(503);
     expect(worker).not.toHaveBeenCalled();

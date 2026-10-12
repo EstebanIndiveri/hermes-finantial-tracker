@@ -53,7 +53,7 @@ import { createTelegramDeliveryKey } from "./operation-context";
 import { buildReimbursementRequestNotification } from "@/lib/notifications/telegram";
 import { sendPushToUser } from "@/lib/notifications/web-push";
 import { enqueuePushDelivery } from "@/lib/notifications/push-outbox";
-import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
+import { isPushCanaryEnabled, isPushCanaryTarget } from "@/lib/notifications/push-canary";
 
 export interface PersonalCallbackResponse {
   text: string;
@@ -322,8 +322,7 @@ async function registerPersonalTransaction(
   receiptImportId?: string,
   requiresReimbursement = false,
 ): Promise<{ text: string; transactionId: string; operationId?: string; deliveryKey?: string }> {
-  const durablePushLaneActive = process.env.WEB_PUSH_ENABLED === "true" &&
-    getNotificationsRuntimeMode() === "enabled";
+  const durablePushLaneActive = isPushCanaryEnabled();
   if (requiresReimbursement && !operationContext) {
     return {
       text: "❌ No se pudo confirmar el reintegro de forma segura. Volvé a intentarlo.",
@@ -482,7 +481,7 @@ async function registerPersonalTransaction(
             .returning({ id: reimbursementRequests.id });
           reimbursementId = request.id;
 
-          if (durablePushLaneActive && reimbursementPayerId) {
+          if (durablePushLaneActive && reimbursementPayerId && isPushCanaryTarget(groupId, reimbursementPayerId)) {
             const subscriptions = await transaction
               .select({ id: pushSubscriptions.id })
               .from(pushSubscriptions)

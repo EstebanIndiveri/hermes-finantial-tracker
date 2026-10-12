@@ -1636,17 +1636,41 @@ aceptó las notificaciones desde otro navegador y no vinculó Telegram.
 Consulta read-only en la DB `beta-hermes`: **2 suscripciones, 2 usuarios y
 2 endpoints distintos**, exactamente una suscripción para
 `esteban_beta_qa` y una para `esteban_beta_qa2`, **0 grupos de endpoints
-duplicados** y **0 filas de `push_delivery_outbox`**. Ambos usuarios son
-miembros del grupo beta `test` (owner/member). No se leyeron endpoints ni
+duplicados** y **0 filas de `push_delivery_outbox`**. La conciliación de
+membresías posterior corrigió un dato: `qa2` pertenece a `Mi espacio`, no
+todavía a `test`. La afirmación anterior sobre `test` fue errónea. No se leyeron endpoints ni
 claves. **Cerrado:** consentimiento de dos navegadores y verificación de que
 el alta de `qa2` no reasignó el endpoint de `qa`.
 
-**Abierto, owner Codex:** preparar un canary de entrega limitado al grupo de
-prueba, verificar destinatario, recepción, idempotencia y exclusión y apagar
-ante fallo. El worker solo procesa eventos de reintegro elegibles; no hubo
-prueba de entrega ni movimiento de prueba. **Abierto, owner Esteban:** decidir
-separadamente si autoriza la activación beta acotada de los flags de envío y
-un evento de reintegro de prueba. `WEB_PUSH_ENABLED`,
-`NOTIFICATIONS_ENABLED` y el scheduler Push siguen apagados. El estado H04d
+**Abierto, owner Codex:** incorporar `qa2` por invitación a `test`, desplegar
+el cerco beta, reatestar H04d y ejecutar el canary de entrega con prueba de
+recepción, idempotencia y exclusión; apagar ante fallo. Esteban autorizó el
+12/10 movimientos de prueba y la activación acotada en beta. Hasta esa
+activación, `WEB_PUSH_ENABLED=false`, `NOTIFICATIONS_ENABLED=false` y el
+scheduler Push siguen apagados. El estado H04d
 permanece `isolationVerified:false` bajo la aceptación residual solo beta;
 legacy no se tocó.
+
+### Hallazgos de aislamiento multiusuario en legacy — 12/10/2026
+
+**Categorías:** consulta read-only de `hermes-acme` confirmó que el índice
+activo sigue siendo `categories_slug_unique` sobre `slug`, global a todos
+los grupos. `beta-hermes` ya tiene `categories_slug_group_idx` y la API
+beta valida grupo; no se aplicó ninguna migración a legacy. **Beta: causa
+corregida en esquema y writer; owner Codex para la regresión/validación
+funcional.** Esteban decidió expresamente no arreglar legacy en este plan;
+la migración legacy queda fuera de alcance, no como corte abierto de beta.
+
+**Alertas Telegram:** el código del deployment legacy prioriza
+`TELEGRAM_CHAT_ID` para cada usuario en `/api/cron/daily-alerts`, y la
+variable existe en el proyecto legacy Production (solo se leyó su nombre,
+no su valor). Esto explica de forma directa la recepción de resúmenes ajenos
+en un mismo chat. La ruta beta ya usa el Telegram privado vinculado por
+usuario y revalida la membresía antes de leer finanzas. **Beta: causa
+principal corregida; owner Codex para la validación de regresión.** Queda
+**abierto, owner Codex**, el endurecimiento beta de recordatorios recurrentes
+y reintegros ante exmiembros, como corte separado antes de habilitar esos
+avisos. Esteban decidió expresamente no arreglar legacy en este plan; no se
+alteró cron, webhook, env, bot ni despliegue productivo. Hasta ese corte,
+`NOTIFICATIONS_ENABLED` sigue `false` en beta y el canary Web Push se limita
+a un grupo y dos usuarios.

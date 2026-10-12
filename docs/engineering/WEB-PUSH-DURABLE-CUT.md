@@ -59,10 +59,10 @@ se construyen con esos límites; la activación sigue siendo un corte separado.
 | --- | --- | --- |
 | Migración aditiva, outbox metadata-only, lease y retención | Implementado y verificado en beta el 11/10 | Codex: revisar el candidato desplegado; la migración `0100` conservó datos y tablas existentes. |
 | Cobertura transaccional de todos los writers de reintegros | Implementado; regresiones locales aprobadas | Codex: verificar web, Telegram directo/callback y rutas sin contexto durante el canary; no activar con un bypass. |
-| Worker, endpoint autenticado y scheduler free tier | Worker desplegado en beta; envío y scheduler Push inactivos | Codex: probar canary consentido y solicitar decisión separada antes de activar. |
+| Worker, endpoint autenticado y scheduler free tier | Worker desplegado en beta; envío y scheduler Push inactivos | Codex: probar canary consentido bajo la autorización beta del 12/10; mantener el scheduler apagado hasta conciliar la entrega manual. |
 | Duplicados/suscripciones en Turso beta | Lectura 12/10: 2 suscripciones, 2 usuarios, 2 endpoints distintos y 0 grupos de endpoints duplicados | Codex: repetir antes del canary de entrega; no leer endpoint ni claves. |
 | Aislamiento beta/legacy | Paquete técnico del deployment actual aprobado; residual ratificado solo para este beta | Codex: reatestar cada deployment futuro; mantener `isolationVerified:false`. |
-| Canary Web Push con dos usuarios y decisión de activación | Alta de dos usuarios cerrada; entrega aún abierta | Esteban: decidir activación beta acotada y consentir un evento de prueba; Codex: limitar alcance, verificar entrega/idempotencia/exclusión y apagar ante fallo. |
+| Canary Web Push con dos usuarios y decisión de activación | Alta de dos usuarios cerrada; `qa2` aún fuera de `test`; entrega abierta | Esteban autorizó activación y movimientos sintéticos solo beta el 12/10; Codex: incorporar por invitación, limitar alcance, verificar entrega/idempotencia/exclusión y apagar ante fallo. |
 
 La comparación Turso del 11/10 fue read-only: `beta-hermes` pertenece a
 `esteban-indiveri` en `aws-us-east-2`, mientras `hermes-acme` pertenece a
@@ -215,19 +215,32 @@ para este gate; esa cuenta aceptó el permiso y preparó Push desde otro
 navegador. La consulta read-only de `beta-hermes` confirmó **2 suscripciones,
 2 usuarios distintos y 2 endpoints distintos**, uno para
 `esteban_beta_qa` y otro para `esteban_beta_qa2`; hay **0 grupos de endpoints
-duplicados** y **0 filas de outbox Push**. Ambos pertenecen al grupo de
-prueba `test` (owner/member); `qa2` no necesita Telegram para recibir Web
-Push. No se leyeron endpoints ni claves. Esto cierra el gate de opt-in y
+duplicados** y **0 filas de outbox Push**. Una conciliación posterior de
+membresías precisó que `qa2` pertenece a `Mi espacio`, pero **todavía no** al
+grupo `test`; la afirmación anterior de membresía en `test` fue errónea.
+`qa2` no necesita Telegram para recibir Web Push. No se leyeron endpoints ni claves. Esto cierra el gate de opt-in y
 ausencia de reasignación observada; no demuestra entrega, retry ni
 aislamiento de avisos en los dispositivos.
 
-**Abierto, owner Codex:** diseñar y ejecutar un canary de entrega limitado
-a los dos usuarios del grupo `test`, sin tocar movimientos existentes ni
+**Abierto, owner Codex:** incorporar `qa2` al grupo `test` por invitación
+normal y ejecutar un canary de entrega limitado a esos dos usuarios, sin tocar movimientos existentes ni
 legacy; conciliar outbox, destinatario y recepción en cada navegador.
-**Abierto, owner Esteban:** aprobar por separado la activación beta acotada
-de `WEB_PUSH_ENABLED`/`NOTIFICATIONS_ENABLED` y un evento de prueba real.
+**Autorizado por Esteban el 12/10:** crear movimientos de prueba solo en
+`test` y activar el canary beta acotado. Codex conserva el owner de la
+implementación, atestación y conciliación antes de habilitar envíos.
+El cerco candidato exige `WEB_PUSH_ENABLED=true`,
+`NOTIFICATIONS_ENABLED=false`, `WEB_PUSH_CANARY_GROUP_ID` igual al UUID de
+`test` y `WEB_PUSH_CANARY_USER_IDS` igual a los dos UUID de QA. Con el
+interruptor global apagado, **solo** el carril durable Web Push obtiene una
+excepción explícita y revalida grupo, destinatario, membresía, estado del
+reintegro y propiedad de la suscripción al enviar. Telegram y los avisos
+proactivos siguen su política previa; no se activa el interruptor global.
+Sin scope válido, el writer no encola y el worker no reclama entregas.
+El envío best-effort antiguo queda apagado cuando `WEB_PUSH_ENABLED` está
+declarado, evitando un bypass del outbox. La ruta cron con Push activado y
+scope inválido responde 503, no importa el worker ni lee la DB.
 El worker actual solo envía eventos `reimbursement.requested` o
 `reimbursement.paid` ligados a un reintegro vigente; no existe una prueba
 real de entrega sin evento elegible. El scheduler Push sigue apagado hasta
-esa decisión. Una activación global sin limitar destinatarios afectaría
+verificar el canary manual. Una activación global sin limitar destinatarios afectaría
 otros eventos del piloto beta y no se infiere de la autorización de opt-in.

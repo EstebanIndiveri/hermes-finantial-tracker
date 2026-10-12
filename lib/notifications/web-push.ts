@@ -58,8 +58,9 @@ export async function saveSubscription(
 
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
   // An explicit beta off switch must also fence legacy best-effort call sites.
+  // The enabled durable lane owns all sends; never bypass its canary fence.
   // Missing preserves historical behavior outside the beta rollout.
-  if (getNotificationsRuntimeMode() !== "enabled" || process.env.WEB_PUSH_ENABLED === "false") return;
+  if (getNotificationsRuntimeMode() !== "enabled" || process.env.WEB_PUSH_ENABLED !== undefined) return;
 
   if (!vapidPublicKey || !vapidPrivateKey) {
     console.warn("VAPID keys not configured, skipping web push");

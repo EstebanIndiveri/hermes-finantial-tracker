@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
-import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
+import { isPushCanaryConfigured, isPushCanaryEnabled } from "@/lib/notifications/push-canary";
 
 export const maxDuration = 30;
 
@@ -15,12 +15,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // No worker import or DB access until both independent delivery gates are on.
-  if (process.env.WEB_PUSH_ENABLED !== "true" || getNotificationsRuntimeMode() !== "enabled") {
+  // No worker import or DB access until the scoped beta push lane is on.
+  if (process.env.WEB_PUSH_ENABLED !== "true") {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
-  if (!configured(process.env.TURSO_DATABASE_URL) || !configured(process.env.TURSO_AUTH_TOKEN) ||
+  if (!isPushCanaryConfigured() || !isPushCanaryEnabled() || !configured(process.env.TURSO_DATABASE_URL) || !configured(process.env.TURSO_AUTH_TOKEN) ||
       !configured(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) || !configured(process.env.VAPID_PRIVATE_KEY)) {
     return NextResponse.json({ error: "Push outbox unavailable" }, { status: 503 });
   }

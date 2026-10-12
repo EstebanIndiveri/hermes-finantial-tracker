@@ -17,12 +17,23 @@ jest.mock("@/lib/notifications/push-outbox", () => ({
 
 const originalWebPush = process.env.WEB_PUSH_ENABLED;
 const originalNotifications = process.env.NOTIFICATIONS_ENABLED;
+const originalCanaryGroup = process.env.WEB_PUSH_CANARY_GROUP_ID;
+const originalCanaryUsers = process.env.WEB_PUSH_CANARY_USER_IDS;
+
+beforeEach(() => {
+  process.env.WEB_PUSH_CANARY_GROUP_ID = "group-1";
+  process.env.WEB_PUSH_CANARY_USER_IDS = "payer-1,requester-1";
+});
 
 afterEach(() => {
   if (originalWebPush === undefined) delete process.env.WEB_PUSH_ENABLED;
   else process.env.WEB_PUSH_ENABLED = originalWebPush;
   if (originalNotifications === undefined) delete process.env.NOTIFICATIONS_ENABLED;
   else process.env.NOTIFICATIONS_ENABLED = originalNotifications;
+  if (originalCanaryGroup === undefined) delete process.env.WEB_PUSH_CANARY_GROUP_ID;
+  else process.env.WEB_PUSH_CANARY_GROUP_ID = originalCanaryGroup;
+  if (originalCanaryUsers === undefined) delete process.env.WEB_PUSH_CANARY_USER_IDS;
+  else process.env.WEB_PUSH_CANARY_USER_IDS = originalCanaryUsers;
   jest.clearAllMocks();
 });
 
@@ -57,7 +68,7 @@ function durableTransactionMock(selectResults: unknown[][], insertedRequest?: un
 
 it("requires both gates and does not read subscriptions when disabled", async () => {
   process.env.WEB_PUSH_ENABLED = "false";
-  process.env.NOTIFICATIONS_ENABLED = "true";
+  process.env.NOTIFICATIONS_ENABLED = "false";
   const transaction = transactionWithSubscriptions(["sub-1"]);
 
   await expect(enqueueReimbursementPushDeliveries(
@@ -66,6 +77,7 @@ it("requires both gates and does not read subscriptions when disabled", async ()
     "reimbursement.requested",
     "request-1",
     "payer-1",
+    "group-1",
   )).resolves.toBe(false);
   expect(transaction.select).not.toHaveBeenCalled();
   expect(enqueuePushDelivery).not.toHaveBeenCalled();
@@ -73,7 +85,7 @@ it("requires both gates and does not read subscriptions when disabled", async ()
 
 it("enqueues one deterministic metadata-only intent per subscription", async () => {
   process.env.WEB_PUSH_ENABLED = "true";
-  process.env.NOTIFICATIONS_ENABLED = "true";
+  process.env.NOTIFICATIONS_ENABLED = "false";
   const transaction = transactionWithSubscriptions(["sub-1", "sub-2"]);
 
   await expect(enqueueReimbursementPushDeliveries(
@@ -82,6 +94,7 @@ it("enqueues one deterministic metadata-only intent per subscription", async () 
     "reimbursement.paid",
     "request-1",
     "requester-1",
+    "group-1",
   )).resolves.toBe(true);
 
   expect(enqueuePushDelivery).toHaveBeenNthCalledWith(1, transaction, {
@@ -97,9 +110,47 @@ it("enqueues one deterministic metadata-only intent per subscription", async () 
   }));
 });
 
+it.each([
+  ["wrong group", "other-group", "payer-1"],
+  ["wrong user", "group-1", "outsider"],
+] as const)("does not read subscriptions for a canary %s", async (_label, groupId, userId) => {
+  process.env.WEB_PUSH_ENABLED = "true";
+  process.env.NOTIFICATIONS_ENABLED = "false";
+  const transaction = transactionWithSubscriptions(["sub-1"]);
+
+  await expect(enqueueReimbursementPushDeliveries(
+    transaction as never,
+    "operation-1",
+    "reimbursement.paid",
+    "request-1",
+    userId,
+    groupId,
+  )).resolves.toBe(false);
+  expect(transaction.select).not.toHaveBeenCalled();
+  expect(enqueuePushDelivery).not.toHaveBeenCalled();
+});
+
+it("fails closed when the enabled canary scope is missing", async () => {
+  process.env.WEB_PUSH_ENABLED = "true";
+  process.env.NOTIFICATIONS_ENABLED = "false";
+  delete process.env.WEB_PUSH_CANARY_GROUP_ID;
+  const transaction = transactionWithSubscriptions(["sub-1"]);
+
+  await expect(enqueueReimbursementPushDeliveries(
+    transaction as never,
+    "operation-1",
+    "reimbursement.paid",
+    "request-1",
+    "requester-1",
+    "group-1",
+  )).resolves.toBe(false);
+  expect(transaction.select).not.toHaveBeenCalled();
+  expect(enqueuePushDelivery).not.toHaveBeenCalled();
+});
+
 it("uses the durable transaction for no-context create and suppresses inline push", async () => {
   process.env.WEB_PUSH_ENABLED = "true";
-  process.env.NOTIFICATIONS_ENABLED = "true";
+  process.env.NOTIFICATIONS_ENABLED = "false";
   const transaction = durableTransactionMock(
     [[{ description: "Cena", groupId: "group-1", categoryId: "cat-1", userId: "requester-1", status: "active", deletedAt: null }], [{ userId: "requester-1" }], [{ userId: "payer-1" }], [{ id: "sub-payer" }]],
     { id: "r-1", transactionId: "tx-1", requesterId: "requester-1", payerId: "payer-1", amount: 2500, status: "pending", paidAt: null, createdAt: 1 },
@@ -114,7 +165,7 @@ it("uses the durable transaction for no-context create and suppresses inline pus
 
 it("uses the durable transaction for no-context pay", async () => {
   process.env.WEB_PUSH_ENABLED = "true";
-  process.env.NOTIFICATIONS_ENABLED = "true";
+  process.env.NOTIFICATIONS_ENABLED = "false";
   const transaction = durableTransactionMock(
     [[{ id: "r-1", transactionId: "tx-1", requesterId: "requester-1", payerId: "payer-1", amount: 2500, status: "pending" }], [{ groupId: "group-1", status: "active", deletedAt: null }], [{ userId: "payer-1" }], [{ id: "sub-requester" }], [{ name: "Payer" }]],
   );
@@ -130,7 +181,7 @@ it.each([
   ["groupless expense with explicit payer", { status: "active", deletedAt: null, groupId: null }, ["payer-1"]],
 ] as const)("rejects durable create for %s", async (_label, state, payerIds) => {
   process.env.WEB_PUSH_ENABLED = "true";
-  process.env.NOTIFICATIONS_ENABLED = "true";
+  process.env.NOTIFICATIONS_ENABLED = "false";
   const transaction = durableTransactionMock([[{
     description: "Cena", groupId: "group-1", categoryId: "cat-1", userId: "requester-1", ...state,
   }], ...([] as unknown[][])]);
@@ -142,7 +193,7 @@ it.each([
 
 it("rejects durable create when the payer is not a current group member", async () => {
   process.env.WEB_PUSH_ENABLED = "true";
-  process.env.NOTIFICATIONS_ENABLED = "true";
+  process.env.NOTIFICATIONS_ENABLED = "false";
   const transaction = durableTransactionMock([
     [{ description: "Cena", groupId: "group-1", categoryId: "cat-1", userId: "requester-1", status: "active", deletedAt: null }],
     [{ userId: "requester-1" }],
@@ -159,7 +210,7 @@ it.each([
   ["deleted", { groupId: "group-1", status: "active", deletedAt: 123 }],
 ] as const)("rejects durable pay for %s source transaction", async (_label, sourceState) => {
   process.env.WEB_PUSH_ENABLED = "true";
-  process.env.NOTIFICATIONS_ENABLED = "true";
+  process.env.NOTIFICATIONS_ENABLED = "false";
   const transaction = durableTransactionMock([
     [{ id: "r-1", transactionId: "tx-1", requesterId: "requester-1", payerId: "payer-1", amount: 2500, status: "pending" }],
     [sourceState],

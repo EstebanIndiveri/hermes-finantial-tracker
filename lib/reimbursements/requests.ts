@@ -20,8 +20,8 @@ import {
   notifyReimbursementPaid,
 } from "@/lib/notifications/telegram";
 import { sendPushToUser } from "@/lib/notifications/web-push";
-import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 import { enqueuePushDelivery } from "@/lib/notifications/push-outbox";
+import { isPushCanaryEnabled, isPushCanaryTarget } from "@/lib/notifications/push-canary";
 import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
@@ -114,7 +114,7 @@ export interface ReimbursementOperationOptions {
 }
 
 function durableWebPushEnabled(): boolean {
-  return process.env.WEB_PUSH_ENABLED === "true" && getNotificationsRuntimeMode() === "enabled";
+  return isPushCanaryEnabled();
 }
 
 /** Enqueues metadata-only push intents inside the caller's financial transaction. */
@@ -124,8 +124,9 @@ export async function enqueueReimbursementPushDeliveries(
   eventType: "reimbursement.requested" | "reimbursement.paid",
   reimbursementId: string,
   userId: string | undefined,
+  groupId: string | null | undefined,
 ): Promise<boolean> {
-  if (!userId || !durableWebPushEnabled()) return false;
+  if (!userId || !durableWebPushEnabled() || !isPushCanaryTarget(groupId, userId)) return false;
   const subscriptions = await transaction
     .select({ id: pushSubscriptions.id })
     .from(pushSubscriptions)
@@ -371,6 +372,7 @@ export async function createVerifiedWebReimbursement(
       "reimbursement.requested",
       requestId,
       effectivePayerId,
+      expense.groupId,
     );
     return {
       request,
@@ -608,6 +610,7 @@ export async function createReimbursementWithNotifications(
           "reimbursement.requested",
           id,
           effectivePayerId,
+          transactionRow.groupId,
         );
 
         return {
@@ -671,7 +674,7 @@ export async function createReimbursementWithNotifications(
         id, operationId, transactionId, requesterId, payerId: effectivePayerId ?? null, amount, status: "pending",
       }).returning();
       const request = mapReimbursementRequestRow(row);
-      await enqueueReimbursementPushDeliveries(transaction, operationId, "reimbursement.requested", id, effectivePayerId);
+      await enqueueReimbursementPushDeliveries(transaction, operationId, "reimbursement.requested", id, effectivePayerId, transactionRow.groupId);
       const [category] = transactionRow.groupId
         ? await transaction.select({ name: categories.name }).from(categories).where(eq(categories.id, transactionRow.categoryId))
         : [];
@@ -984,6 +987,7 @@ export async function markReimbursementAsPaidWithNotifications(
           "reimbursement.paid",
           id,
           reimbursement.requesterId,
+          sourceTransaction.groupId,
         );
         const deliveryKey = await enqueueReimbursementPrimaryResponse(
           transaction,
@@ -1042,7 +1046,7 @@ export async function markReimbursementAsPaidWithNotifications(
         updatedRows = await transaction.update(reimbursementRequests).set({ status: "paid", payerId, paidAt }).returning({ id: reimbursementRequests.id }).where(and(eq(reimbursementRequests.id, id), isNull(reimbursementRequests.payerId), eq(reimbursementRequests.status, "pending")));
       }
       if (updatedRows.length === 0) return { ok: false as const };
-      await enqueueReimbursementPushDeliveries(transaction, operationId, "reimbursement.paid", id, reimbursement.requesterId);
+      await enqueueReimbursementPushDeliveries(transaction, operationId, "reimbursement.paid", id, reimbursement.requesterId, sourceTransaction.groupId);
       const [payer] = await transaction.select({ name: users.name }).from(users).where(eq(users.id, payerId));
       return { ok: true as const, requesterId: reimbursement.requesterId, amount: reimbursement.amount, payerName: payer?.name ?? "Alguien" };
     }, { behavior: "immediate" });

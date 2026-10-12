@@ -2,7 +2,7 @@ import webPush from "web-push";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { group_members, pushSubscriptions, reimbursementRequests, transactions } from "@/lib/db/schema";
-import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
+import { isPushCanaryEnabled, isPushCanaryTarget } from "@/lib/notifications/push-canary";
 import {
   claimPushDelivery,
   markPushDeliveryDead,
@@ -71,7 +71,8 @@ async function isEligible(row: PushDeliveryRow): Promise<boolean> {
   }).from(reimbursementRequests)
     .innerJoin(transactions, eq(reimbursementRequests.transactionId, transactions.id))
     .where(eq(reimbursementRequests.id, row.reimbursementId)).limit(1);
-  if (!reimbursement || !reimbursement.groupId || reimbursement.transactionStatus !== "active" || reimbursement.deletedAt !== null) return false;
+  if (!reimbursement || !isPushCanaryTarget(reimbursement.groupId, row.userId) ||
+      reimbursement.transactionStatus !== "active" || reimbursement.deletedAt !== null) return false;
 
   const recipientIsCurrentMember = async (userId: string): Promise<boolean> => {
     const [membership] = await db.select({ userId: group_members.user_id })
@@ -148,7 +149,7 @@ async function sendClaimed(row: PushDeliveryRow, now: number): Promise<"sent" | 
 }
 
 export async function processPushOutbox(options: PushOutboxWorkerOptions = {}): Promise<PushOutboxWorkerResult> {
-  if (getNotificationsRuntimeMode() !== "enabled" || process.env.WEB_PUSH_ENABLED !== "true") {
+  if (!isPushCanaryEnabled()) {
     return { claimed: 0, sent: 0, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: true };
   }
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;

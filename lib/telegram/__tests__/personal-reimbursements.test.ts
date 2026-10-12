@@ -82,6 +82,8 @@ describe("telegram reimbursements", () => {
     delete process.env.ACT05_ARS_MODE_ENABLED;
     delete process.env.WEB_PUSH_ENABLED;
     delete process.env.NOTIFICATIONS_ENABLED;
+    delete process.env.WEB_PUSH_CANARY_GROUP_ID;
+    delete process.env.WEB_PUSH_CANARY_USER_IDS;
     mockGetMonthSummary.mockResolvedValue({ ahorro_proyectado_usd: 1200 } as Awaited<ReturnType<typeof getMonthSummary>>);
     mockGetReimbursementByTransactionId.mockResolvedValue(null);
   });
@@ -320,6 +322,9 @@ describe("telegram reimbursements", () => {
 
   it("persists a reimbursable expense, request, and group delivery in one durable transaction", async () => {
     process.env.WEB_PUSH_ENABLED = "true";
+    process.env.NOTIFICATIONS_ENABLED = "false";
+    process.env.WEB_PUSH_CANARY_GROUP_ID = "group-1";
+    process.env.WEB_PUSH_CANARY_USER_IDS = "user-1,user-2";
     mockGetConversationState.mockResolvedValue({
       step: "expense_confirm",
       data: {
