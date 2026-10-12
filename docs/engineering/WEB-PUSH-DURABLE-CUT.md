@@ -197,3 +197,22 @@ desde «Mi cuenta» la preparación de un dispositivo y reportar el resultado.
 **Abierto, owner Codex:** reconciliar en beta la suscripción sin exponer
 endpoint ni claves, verificar comportamiento de la UI y documentar el canary
 antes de pedir una autorización aparte para encender envíos.
+
+### Primer dispositivo consentido — 12/10/2026
+
+Esteban probó la web beta autenticado como `esteban_beta_qa`. Sus capturas
+de las 01:46 ART muestran que el navegador pidió permiso después del clic
+y que «Mi cuenta» devolvió «Dispositivo preparado. Los envíos beta siguen
+apagados». La conciliación read-only de `beta-hermes` a las 01:48 ART
+encontró **1 suscripción / 1 usuario**, asociada a
+`esteban_beta_qa`, frente a 0 antes de la prueba; el outbox Push conserva
+**0 filas**. No se consultaron ni publicaron endpoint, claves ni payload.
+
+**Cerrado:** alta voluntaria del primer dispositivo y respuesta de la UI.
+**Abierto, owner Esteban/Sabri:** consentimiento independiente de Sabri en
+su dispositivo/cuenta beta. **Abierto, owner Codex:** conciliar que haya dos
+usuarios distintos, verificar que no se reasignó la suscripción de Esteban,
+preparar el canary de entrega sin tocar movimientos existentes y pedir una
+decisión explícita antes de activar `WEB_PUSH_ENABLED`, notificaciones o el
+scheduler. La prueba actual no demuestra entrega, retry ni aislamiento A/B
+en un dispositivo real.

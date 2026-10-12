@@ -1616,3 +1616,15 @@ canary de dos usuarios. No se hizo smoke HTTP automático por el procedimiento
 de despliegue. `WEB_PUSH_ENABLED=false`, `NOTIFICATIONS_ENABLED=false` y el
 scheduler Push siguen apagados. Activar cualquier envío es una decisión
 separada de Esteban; no hay corte sin owner ni cambio legacy.
+
+### Web Push opt-in — primer dispositivo verificado (12/10/2026)
+
+Las capturas de Esteban a las 01:46 ART prueban prompt de permiso tras el
+clic y éxito de «Dispositivo preparado» en la web beta para
+`esteban_beta_qa`. Turso beta confirmó read-only 1 suscripción/1 usuario
+(`esteban_beta_qa`) frente a 0 antes; `push_delivery_outbox` tiene 0 filas.
+No se leyeron endpoint ni claves. **Cerrado:** alta voluntaria del primer
+dispositivo y smoke manual de la UI. **Abierto, owner Esteban/Sabri:** alta
+voluntaria de Sabri en su propia cuenta/dispositivo beta. **Abierto, owner
+Codex:** conciliación de dos destinatarios, prueba controlada de entrega y
+decisión de activación separada. No hay gastos de prueba ni envíos habilitados.

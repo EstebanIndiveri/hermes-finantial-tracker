@@ -385,3 +385,14 @@ queda **abierta con owner Codex** la confirmación funcional del control en la
 web beta mediante la prueba consentida de Esteban. Hasta esa prueba, no se
 declara cerrado el gate funcional del nuevo código. Web Push y su scheduler
 siguen apagados; legacy no recibió cambios.
+
+### Resultado de smoke manual del opt-in — 12/10/2026
+
+Esteban abrió el alias beta activo con `esteban_beta_qa` y mostró el prompt
+de permiso del navegador posterior al clic y la confirmación visual
+«Dispositivo preparado». Una consulta read-only a `beta-hermes` verificó
+1 suscripción ligada a ese usuario frente a 0 antes, y 0 filas de outbox
+Push. Esto cierra el smoke funcional **del alta de ese dispositivo** para el
+deployment actual; no prueba entrega Push, reintento, otro usuario ni la
+lectura independiente de todos los secretos del runtime. Se conserva
+`isolationVerified:false` y el alcance exclusivo del piloto beta.
