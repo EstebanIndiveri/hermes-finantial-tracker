@@ -51,4 +51,16 @@ describe("web push subscription ownership", () => {
     const own = await client.execute("SELECT id FROM push_subscriptions WHERE id = 'a'");
     expect(own.rows).toHaveLength(0);
   });
+
+  it("reports ownership only for exactly one endpoint belonging to the current user", async () => {
+    const { isSubscriptionOwnedByUser } = await import("../web-push");
+
+    await expect(isSubscriptionOwnedByUser("user-a", "https://example.test/a")).resolves.toBe(true);
+    await expect(isSubscriptionOwnedByUser("user-b", "https://example.test/a")).resolves.toBe(false);
+    await expect(isSubscriptionOwnedByUser("user-a", "https://example.test/missing")).resolves.toBe(false);
+
+    await client.execute(`INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh_key, auth_key)
+      VALUES ('duplicate', 'user-b', 'https://example.test/a', 'key', 'auth')`);
+    await expect(isSubscriptionOwnedByUser("user-a", "https://example.test/a")).resolves.toBe(false);
+  });
 });

@@ -40,11 +40,23 @@ export function PushNotificationsSection() {
 
     navigator.serviceWorker.getRegistration("/")
       .then((registration) => registration?.pushManager.getSubscription())
-      .then((subscription) => {
-        if (!cancelled) setState(subscription ? "existing" : "available");
+      .then(async (subscription) => {
+        if (!subscription) return "available" as const;
+        const response = await fetch("/api/push/subscribe/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+          cache: "no-store",
+        });
+        if (!response.ok) return "existing" as const;
+        const data = await response.json().catch(() => null);
+        return data?.ownedByCurrentUser === true ? "subscribed" as const : "existing" as const;
+      })
+      .then((nextState) => {
+        if (!cancelled) setState(nextState);
       })
       .catch(() => {
-        if (!cancelled) setState("available");
+        if (!cancelled) setState("existing");
       });
     return () => { cancelled = true; };
   }, []);

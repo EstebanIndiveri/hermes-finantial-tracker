@@ -26,6 +26,17 @@ export interface PushPayload {
   url?: string;
 }
 
+/** Fail closed if an endpoint is absent or has ambiguous ownership. */
+export async function isSubscriptionOwnedByUser(userId: string, endpoint: string): Promise<boolean> {
+  const matches = await db
+    .select({ userId: pushSubscriptions.userId })
+    .from(pushSubscriptions)
+    .where(eq(pushSubscriptions.endpoint, endpoint))
+    .limit(2);
+
+  return matches.length === 1 && matches[0].userId === userId;
+}
+
 export async function saveSubscription(
   userId: string,
   subscription: PushSubscriptionInput,
