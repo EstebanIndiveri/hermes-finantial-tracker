@@ -1953,3 +1953,35 @@ reatestación H04d en el siguiente corte. Siguen pendientes, también con
 owner Codex, consentimiento por tipo de aviso, destinatarios de sesiones,
 canary Push y limpieza QA. `NOTIFICATIONS_ENABLED=false` permanece en beta;
 Esteban decidirá una activación proactiva solo tras esos gates.
+
+### Selector aceptado y ACT-17 HTML recurrentes — 12/10/2026
+
+Esteban confirmó que `/grupos` muestra botones y ✓ para el grupo activo en
+el bot beta. Se cierra la aceptación funcional del selector sin pedir IDs ni
+crear movimientos. El parche previo de escape HTML para el resumen diario y
+sesiones (`8456a71835d81e333f9d2d518faebe924677bf82`) fue publicado
+solo en el alias beta como `dpl_LPcnzc3i2x2ADpUkFEAHMuNYkMdj`. El build
+pasó diez checks H04d y la reatestación privada
+`/private/tmp/hermes-h04d-alert-html.UyL59W/` devolvió `ok:true` y
+`postActivationRuntimeConsistent:true` tras promoverlo.
+
+El siguiente subcorte reprodujo con pruebas fallidas otro texto dinámico sin
+escape en avisos de recurrentes. `recurring-reminders` ahora usa HTML en vez
+de Markdown y escapa el nombre y emoji configurables; el aviso de inicio de
+mes también escapa ambos campos. El commit
+`16e8df81c9265dbb23d546ba9ace2bc4bc8bcb24` pasó 983 tests de app,
+harness, TypeScript, build y lint dirigido. Se publicó exclusivamente en el
+proyecto beta separado como `dpl_Bio129wkVmMZCehMQigRUtRjgGeA` y se
+promovió el alias canónico beta a ese ID. La relectura del alias legacy lo
+mantuvo en `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El paquete privado
+`/private/tmp/hermes-h04d-recurring.mbhJ7Q/` pasó antes y después de la
+promoción (`ok:true`, `postActivationRuntimeConsistent:true`). En ambos
+deployments `isolationVerified:false`: sigue siendo la aceptación acotada del
+piloto, no una certificación independiente de todos los secretos en ejecución.
+
+**Cerrado, owner Codex:** selector Telegram y saneamiento de estos mensajes
+proactivos, con alias beta y H04d reatestados. **Abierto, owner Codex:**
+consentimiento específico por tipo de aviso, destinatarios y pertenencia
+vigente de chats de sesiones, canary Push, seguimiento de outbox y limpieza
+diferida de QA. `NOTIFICATIONS_ENABLED=false` permanece apagado; Codex no
+habilitará avisos proactivos sin cerrar esas puertas y decisión de Esteban.
