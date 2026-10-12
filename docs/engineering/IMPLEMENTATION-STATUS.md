@@ -1595,3 +1595,24 @@ Una suscripción del navegador no se presume ligada a la cuenta actual al
 recargar; asociarla requiere clic. El próximo deployment beta será un ID
 nuevo y exige otra reatestación técnica H04d. Ningún canary de dispositivo
 ni envío Push se ha ejecutado por este corte.
+
+### Web Push opt-in — deployment beta y siguiente gate (11/10/2026)
+
+Commit `8f98a00` está en origin y deployment
+`dpl_HSBMb77a9M77RK3hisbxkT9ZtNJb` READY en el proyecto beta aislado.
+El build pasó diez checks de identidad/control y seis fingerprints; el alias
+beta apunta al nuevo ID y el alias legacy conserva
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El paquete privado de siete recibos
+pasó el verificador H04d (`ok:true`,
+`postActivationRuntimeConsistent:true`, `isolationVerified:false`). Ningún
+binding cambió, por lo que aplica la política residual beta limitada ya
+ratificada, sin convertirla en certificación de ejecución independiente.
+
+**Abierto, owner Esteban:** abrir la web beta en un dispositivo compatible,
+entrar en «Mi cuenta» y decidir si pulsa «Preparar este dispositivo»; informar
+el resultado. **Abierto, owner Codex:** conciliar la suscripción beta y el
+estado de UI sin leer endpoint/llaves, resolver defectos y luego diseñar el
+canary de dos usuarios. No se hizo smoke HTTP automático por el procedimiento
+de despliegue. `WEB_PUSH_ENABLED=false`, `NOTIFICATIONS_ENABLED=false` y el
+scheduler Push siguen apagados. Activar cualquier envío es una decisión
+separada de Esteban; no hay corte sin owner ni cambio legacy.

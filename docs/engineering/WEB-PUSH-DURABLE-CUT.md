@@ -184,3 +184,16 @@ alcance humano H04d de ese deployment queda cerrado, aunque el resultado
 automático sigue `isolationVerified:false`. La preparación del control de
 suscripción será un nuevo cambio de código; cualquier nuevo deployment se
 reatesta por separado. Esta decisión no enciende Push ni toca legacy.
+
+### Deployment beta del opt-in — 11/10/2026
+
+Commit `8f98a00`, deployment beta `dpl_HSBMb77a9M77RK3hisbxkT9ZtNJb`
+READY. Su build pasó la aserción H04d y el alias canónico beta apunta al ID
+nuevo; el alias legacy no se movió. Los siete recibos privados del deployment
+nuevo pasaron el runner de consistencia con `isolationVerified:false`, como
+corresponde al residual beta aceptado. No se cambió ninguna variable de
+entorno ni se activó envío/scheduler. **Abierto, owner Esteban:** consentir
+desde «Mi cuenta» la preparación de un dispositivo y reportar el resultado.
+**Abierto, owner Codex:** reconciliar en beta la suscripción sin exponer
+endpoint ni claves, verificar comportamiento de la UI y documentar el canary
+antes de pedir una autorización aparte para encender envíos.

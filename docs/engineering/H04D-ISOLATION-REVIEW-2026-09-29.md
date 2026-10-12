@@ -361,3 +361,27 @@ Este consentimiento no habilita Web Push ni su scheduler, no promueve código
 a legacy y no sustituye una autorización de release productivo. Codex debe
 repetir la atestación técnica por deployment exacto y pedir nueva decisión
 si cambian proyecto, DB, bot, webhook, bindings o falla un control.
+
+## Addendum — beta opt-in deployment, 11/10/2026
+
+El corte de alta voluntaria del dispositivo se publicó desde el SHA
+`8f98a0099c53c462ada4ffa9d3d79fae5b8c7d84` como
+`dpl_HSBMb77a9M77RK3hisbxkT9ZtNJb`, target Production **solo del
+proyecto beta**. El build dio READY y su aserción de aislamiento pasó diez
+checks y seis fingerprints. El alias canónico beta se movió a ese ID;
+read-back confirmó que el alias legacy sigue en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. No se modificaron bindings, DB, bot,
+webhook ni proyecto respecto del deployment beta previamente aceptado.
+
+El paquete privado `/private/tmp/hermes-h04d-2026-10-11-optin/` contiene siete
+recibos frescos/revalidados de Vercel, Turso, Telegram y runtime; el runner
+devolvió `ok:true`, `postActivationRuntimeConsistent:true`,
+`providerMetadataComparison:"distinct-identities-declared"` e
+`isolationVerified:false`. La política residual de Esteban del 11/10 se
+mantiene acotada al piloto beta: este resultado no prueba todos los secretos
+en las funciones activas ni las URLs retiradas. Por la regla del procedimiento
+de despliegue, no se hizo una solicitud HTTP de smoke al deployment nuevo;
+queda **abierta con owner Codex** la confirmación funcional del control en la
+web beta mediante la prueba consentida de Esteban. Hasta esa prueba, no se
+declara cerrado el gate funcional del nuevo código. Web Push y su scheduler
+siguen apagados; legacy no recibió cambios.
