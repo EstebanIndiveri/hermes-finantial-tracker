@@ -43,3 +43,15 @@ it("reports only supplied expenses in ARS while the month totals remain USD", ()
   expect(result.message).toContain("Gastado: USD $74.23 | Ahorro: USD $928.27");
   expect(result.message).not.toContain("Ingresos:");
 });
+
+it("escapes category names and emojis before inserting them into Telegram HTML", () => {
+  const result = buildDailyAlert({
+    ...base,
+    todayTransactions: [{ amount_ars: 100, category: "A < B & C", emoji: "<🛒>" }],
+    categories: [{ name: "Food <script>&", emoji: "<🍽>", gastado_ars: 90, budget_ars: 100, status: "WARNING" }],
+  });
+
+  expect(result.message).toContain("&lt;🛒&gt; A &lt; B &amp; C");
+  expect(result.message).toContain("&lt;🍽&gt; Food &lt;script&gt;&amp;");
+  expect(result.message).not.toContain("<script>");
+});

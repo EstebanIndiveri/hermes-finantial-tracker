@@ -1912,3 +1912,44 @@ destinatarios), supervisión del canary Push y limpieza diferida de datos QA.
 `NOTIFICATIONS_ENABLED` permanece apagado. **Owner Esteban:** no se necesita
 otra validación para este subcorte; la activación proactiva requerirá su
 decisión después de las puertas técnicas pendientes.
+
+### Telegram selector de grupos + siguiente subcorte ACT-17 (12/10/2026)
+
+**Selector, código y beta publicados; aceptación funcional pendiente.**
+`/grupos` y `/grupo` sin argumento ofrecen un botón por grupo, con nombre,
+titularidad (`propio` o `de @usuario`) y marca del activo. Los nombres
+duplicados muestran los botones correspondientes; el ID viaja solo en el
+callback, no se pide copiarlo. Si dos etiquetas siguen siendo idénticas,
+se numeran visualmente. El callback comprueba la membresía del usuario que
+lo tocó y refresca el teclado; un exmiembro no cambia su grupo activo.
+Los comandos por nombre único o ID siguen disponibles. No se crea ni mueve
+ningún movimiento al cambiar de grupo.
+
+El commit `308eb001da600e0de64f273b6f75d29184c701db` pasó 979 tests de
+app, harness, TypeScript, build y lint sin errores (advertencias anteriores).
+El deployment beta `dpl_DhcS7BzmzYq6RhAkm3QNhFCMe8JC` quedó READY y pasó
+los diez checks H04d con fingerprints coincidentes. Solo el alias beta
+`https://hermes-finantial-tracker-z2.vercel.app` pasó a ese ID; la relectura
+del alias legacy mantuvo `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El paquete
+privado `/private/tmp/hermes-h04d-picker.CAAOYg/` pasó antes y después de
+promover el alias (`ok:true`, `postActivationRuntimeConsistent:true`), pero
+`isolationVerified:false` sigue expresando el residual aceptado únicamente
+para el piloto beta. No se tocó el webhook ni se activaron avisos proactivos.
+
+**Owner Esteban, validación real ahora:** en el bot beta, enviar `/grupos`,
+tocar `test`, luego volver a `/grupos` y tocar `Mi espacio`; confirmar que
+la marca ✓ y el grupo activo se actualizan sin escribir IDs. No crear gastos.
+**Owner Codex:** registrar esa evidencia, corregir cualquier hallazgo y
+cerrar la aceptación del selector. El despliegue de este corte no queda
+certificado funcionalmente hasta ese recorrido.
+
+**ACT-17, próximo subcorte local owner Codex:** los nombres/emoji de
+categorías en el resumen diario y el nombre de la sesión en su recordatorio
+se insertaban sin escape en HTML de Telegram. La regresión reprodujo ambos
+casos; el parche local escapa `&`, `<`, `>` y comillas. Pasaron 981 tests de
+app, harness, TypeScript, build y lint dirigido. Este parche todavía no está
+en el alias beta; Codex conserva owner de despliegue aislado y
+reatestación H04d en el siguiente corte. Siguen pendientes, también con
+owner Codex, consentimiento por tipo de aviso, destinatarios de sesiones,
+canary Push y limpieza QA. `NOTIFICATIONS_ENABLED=false` permanece en beta;
+Esteban decidirá una activación proactiva solo tras esos gates.

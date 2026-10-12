@@ -8,6 +8,7 @@ import { calculateMonthStatus } from "@/lib/finance/rules";
 import { isIncomeCategory } from "@/lib/finance/income";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
+import { escapeTelegramHtml } from "@/lib/telegram/html";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
@@ -186,7 +187,7 @@ export async function GET(req: NextRequest) {
       try {
         await sendTelegramMessage(
           session.telegram_chat_id,
-          `⏰ <b>Recordatorio — ${session.name}</b>\n\nHay deudas pendientes en este grupo. Usá /balances para ver el estado actual.`
+          `⏰ <b>Recordatorio — ${escapeTelegramHtml(session.name)}</b>\n\nHay deudas pendientes en este grupo. Usá /balances para ver el estado actual.`
         );
         await db.update(split_sessions)
           .set({ last_alert_at: Date.now() })

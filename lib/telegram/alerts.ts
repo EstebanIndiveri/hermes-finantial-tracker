@@ -1,4 +1,5 @@
 import { formatARS, formatUSD } from "@/lib/finance/formatters";
+import { escapeTelegramHtml } from "./html";
 
 interface CategoryAlert {
   name: string;
@@ -68,7 +69,7 @@ export function buildDailyAlert(ctx: AlertContext): AlertDecision {
     const totalHoy = ctx.todayTransactions.reduce((s, t) => s + t.amount_ars, 0);
     lines.push(`<b>Gastos de hoy (${ctx.todayTransactions.length}):</b>`);
     ctx.todayTransactions.forEach(t => {
-      lines.push(`  ${t.emoji} ${t.category}: ${formatARS(t.amount_ars)}`);
+      lines.push(`  ${escapeTelegramHtml(t.emoji)} ${escapeTelegramHtml(t.category)}: ${formatARS(t.amount_ars)}`);
     });
     lines.push(`  <b>Total: ${formatARS(totalHoy)}</b>`);
     lines.push("");
@@ -91,14 +92,14 @@ export function buildDailyAlert(ctx: AlertContext): AlertDecision {
     lines.push("<b>Categorías a revisar:</b>");
     closedCats.forEach(c => {
       const pct = c.budget_ars > 0 ? Math.round((c.gastado_ars / c.budget_ars) * 100) : 100;
-      lines.push(`  🔴 ${c.emoji} ${c.name}: ${formatARS(c.gastado_ars)} / ${formatARS(c.budget_ars)} (${pct}%) — CERRADA`);
+      lines.push(`  🔴 ${escapeTelegramHtml(c.emoji)} ${escapeTelegramHtml(c.name)}: ${formatARS(c.gastado_ars)} / ${formatARS(c.budget_ars)} (${pct}%) — CERRADA`);
     });
     warningCats
       .filter(c => c.status !== "CLOSED")
       .forEach(c => {
         const pct = Math.round((c.gastado_ars / c.budget_ars) * 100);
         const disp = c.budget_ars - c.gastado_ars;
-        lines.push(`  🟡 ${c.emoji} ${c.name}: ${formatARS(c.gastado_ars)} / ${formatARS(c.budget_ars)} (${pct}%) — quedan ${formatARS(disp)}`);
+        lines.push(`  🟡 ${escapeTelegramHtml(c.emoji)} ${escapeTelegramHtml(c.name)}: ${formatARS(c.gastado_ars)} / ${formatARS(c.budget_ars)} (${pct}%) — quedan ${formatARS(disp)}`);
       });
   }
 

@@ -11,6 +11,7 @@ import { getGroupMembership } from "@/lib/groups/permissions";
 jest.mock("@/lib/db/client", () => ({
   db: {
     select: jest.fn(),
+    update: jest.fn(() => ({ set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })) })),
     query: {
       bot_messages: { findFirst: jest.fn() },
       transactions: { findMany: jest.fn() },
@@ -73,6 +74,25 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, results: [] });
     expect(db.select).toHaveBeenCalled();
+  });
+
+  it("escapes a split session name before sending Telegram HTML", async () => {
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "true" };
+    const from = jest.fn(() => ({ where: jest.fn().mockResolvedValue([]) }));
+    (db.select as jest.Mock)
+      .mockReturnValueOnce({ from: jest.fn().mockResolvedValue([]) })
+      .mockReturnValue({ from });
+    (db.query.split_sessions.findMany as jest.Mock).mockResolvedValue([{
+      id: "session-1", name: "Viaje <script>&", telegram_chat_id: "chat-1", last_alert_at: null,
+    }]);
+    (db.query.splits.findFirst as jest.Mock).mockResolvedValue({ id: "split-1" });
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(sendTelegramMessage).toHaveBeenCalledWith("chat-1", expect.stringContaining("Viaje &lt;script&gt;&amp;"));
   });
 
   it("skips disabled notifications before database or provider work", async () => {
