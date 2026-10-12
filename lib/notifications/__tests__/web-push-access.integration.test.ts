@@ -63,4 +63,20 @@ describe("web push subscription ownership", () => {
       VALUES ('duplicate', 'user-b', 'https://example.test/a', 'key', 'auth')`);
     await expect(isSubscriptionOwnedByUser("user-a", "https://example.test/a")).resolves.toBe(false);
   });
+
+  it("does not create two rows for concurrent subscriptions to one browser endpoint", async () => {
+    const { saveSubscription } = await import("../web-push");
+    const endpoint = "https://example.test/concurrent";
+    const outcomes = await Promise.allSettled([
+      saveSubscription("user-a", { endpoint, keys: { p256dh: "a", auth: "a" } }),
+      saveSubscription("user-b", { endpoint, keys: { p256dh: "b", auth: "b" } }),
+    ]);
+    expect(outcomes.some((result) => result.status === "fulfilled")).toBe(true);
+    const rows = await client.execute({
+      sql: "SELECT user_id FROM push_subscriptions WHERE endpoint = ?",
+      args: [endpoint],
+    });
+    expect(rows.rows).toHaveLength(1);
+    expect(["user-a", "user-b"]).toContain(rows.rows[0].user_id);
+  });
 });

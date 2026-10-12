@@ -7,6 +7,7 @@ describe("web push notifications", () => {
     insert: jest.Mock;
     update: jest.Mock;
     delete: jest.Mock;
+    transaction: jest.Mock;
   };
   let mockWebPush: {
     setVapidDetails: jest.Mock;
@@ -32,6 +33,7 @@ describe("web push notifications", () => {
       insert: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      transaction: jest.fn((callback) => callback(mockDb)),
     };
     jest.doMock("@/lib/db/client", () => ({
       db: mockDb,
@@ -52,11 +54,11 @@ describe("web push notifications", () => {
   });
 
   it("creates a subscription when the endpoint does not exist yet", async () => {
-    const selectWhere = jest.fn().mockResolvedValue([]);
+    const selectLimit = jest.fn().mockResolvedValue([]);
     const insertValues = jest.fn().mockResolvedValue(undefined);
 
     mockDb.select.mockReturnValue({
-      from: jest.fn(() => ({ where: selectWhere })),
+      from: jest.fn(() => ({ where: jest.fn(() => ({ limit: selectLimit })) })),
     });
     mockDb.insert.mockReturnValue({
       values: insertValues,
@@ -76,15 +78,16 @@ describe("web push notifications", () => {
       p256dhKey: "p256dh-key",
       authKey: "auth-key",
     });
+    expect(mockDb.transaction).toHaveBeenCalledWith(expect.any(Function), { behavior: "immediate" });
   });
 
   it("updates an existing subscription when the endpoint is already stored", async () => {
-    const selectWhere = jest.fn().mockResolvedValue([{ id: "existing-subscription" }]);
+    const selectLimit = jest.fn().mockResolvedValue([{ id: "existing-subscription" }]);
     const updateWhere = jest.fn().mockResolvedValue(undefined);
     const updateSet = jest.fn(() => ({ where: updateWhere }));
 
     mockDb.select.mockReturnValue({
-      from: jest.fn(() => ({ where: selectWhere })),
+      from: jest.fn(() => ({ where: jest.fn(() => ({ limit: selectLimit })) })),
     });
     mockDb.update.mockReturnValue({
       set: updateSet,
@@ -103,6 +106,23 @@ describe("web push notifications", () => {
       authKey: "next-auth",
     });
     expect(updateWhere).toHaveBeenCalled();
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate endpoint ownership without reassigning or inserting", async () => {
+    mockDb.select.mockReturnValue({
+      from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([
+        { id: "subscription-a" }, { id: "subscription-b" },
+      ]) })) })),
+    });
+
+    const { saveSubscription } = await import("../web-push");
+    await expect(saveSubscription("user-2", {
+      endpoint: "https://example.test/subscription",
+      keys: { p256dh: "key", auth: "auth" },
+    })).rejects.toThrow("Ambiguous push subscription endpoint");
+    expect(mockDb.update).not.toHaveBeenCalled();
+    expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
   it("sends push notifications and removes expired subscriptions", async () => {

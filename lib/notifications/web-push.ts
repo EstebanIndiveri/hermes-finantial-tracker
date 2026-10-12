@@ -41,30 +41,39 @@ export async function saveSubscription(
   userId: string,
   subscription: PushSubscriptionInput,
 ): Promise<void> {
-  const [existing] = await db
-    .select()
-    .from(pushSubscriptions)
-    .where(eq(pushSubscriptions.endpoint, subscription.endpoint));
+  // Serialize the read/write pair across concurrent requests. Without a
+  // unique endpoint index, an ordinary read followed by insert can create
+  // duplicate browser subscriptions and ambiguous ownership.
+  await db.transaction(async (tx) => {
+    const existing = await tx
+      .select({ id: pushSubscriptions.id })
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.endpoint, subscription.endpoint))
+      .limit(2);
 
-  if (existing) {
-    await db
-      .update(pushSubscriptions)
-      .set({
-        userId,
-        p256dhKey: subscription.keys.p256dh,
-        authKey: subscription.keys.auth,
-      })
-      .where(eq(pushSubscriptions.endpoint, subscription.endpoint));
-    return;
-  }
+    if (existing.length > 1) {
+      throw new Error("Ambiguous push subscription endpoint");
+    }
+    if (existing.length === 1) {
+      await tx
+        .update(pushSubscriptions)
+        .set({
+          userId,
+          p256dhKey: subscription.keys.p256dh,
+          authKey: subscription.keys.auth,
+        })
+        .where(eq(pushSubscriptions.id, existing[0].id));
+      return;
+    }
 
-  await db.insert(pushSubscriptions).values({
-    id: nanoid(),
-    userId,
-    endpoint: subscription.endpoint,
-    p256dhKey: subscription.keys.p256dh,
-    authKey: subscription.keys.auth,
-  });
+    await tx.insert(pushSubscriptions).values({
+      id: nanoid(),
+      userId,
+      endpoint: subscription.endpoint,
+      p256dhKey: subscription.keys.p256dh,
+      authKey: subscription.keys.auth,
+    });
+  }, { behavior: "immediate" });
 }
 
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
