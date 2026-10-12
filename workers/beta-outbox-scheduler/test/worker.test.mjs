@@ -29,7 +29,7 @@ test("Wrangler config pins the active beta worker schedule", () => {
   assert.equal(config.vars.OUTBOX_WORKER_URL, BETA_OUTBOX_URL);
   assert.equal(config.vars.SCHEDULER_ENABLED, "true");
   assert.equal(config.vars.PUSH_OUTBOX_WORKER_URL, BETA_PUSH_OUTBOX_URL);
-  assert.equal(config.vars.PUSH_SCHEDULER_ENABLED, "false");
+  assert.equal(config.vars.PUSH_SCHEDULER_ENABLED, "true");
 });
 
 test("targets only the pinned beta endpoint and sends bearer authentication", async () => {
