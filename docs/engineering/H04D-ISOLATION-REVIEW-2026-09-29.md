@@ -481,3 +481,20 @@ Resultado `ok:true`, `postActivationRuntimeConsistent:true`,
 `isolationVerified:false`. La aceptación residual sigue limitada al piloto
 beta; esta reatestación no prueba lectura independiente de todos los secretos
 de cada función ni certifica URLs antiguas. No se cambió legacy.
+
+### Reatestación de alta Push serializada — 12/10/2026
+
+El commit `ab5c77bfe23546ce8ab4df4222419de578387247` se publicó
+únicamente en el proyecto beta como `dpl_14jnXpA9N5QNyFjgjATvYgcAGaZD`.
+El build aprobó diez checks de identidad/fingerprints; `/login` respondió
+`200` y la ruta POST de suscripción devolvió `401` sin sesión. El paquete
+privado `/private/tmp/hermes-h04d-push-active.cawr90/` concilió los siete
+recibos antes y después de mover solo el alias beta, con `ok:true` y
+`postActivationRuntimeConsistent:true`. El alias legacy sigue en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. La DB beta conservó dos endpoints
+distintos, cero duplicados y una fila Push enviada.
+
+`isolationVerified:false` permanece: el gate técnico no demuestra lectura
+independiente de cada secreto en cada función ni certifica URLs antiguas.
+El residual aceptado se mantiene solo para el piloto beta. No hubo cambio
+de bindings, migración, escritura ni despliegue legacy.

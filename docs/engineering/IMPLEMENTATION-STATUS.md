@@ -1815,3 +1815,35 @@ vinculada apta; las regresiones de código ya pasan y no se exige a QA2 vincular
 Telegram. **Owner Esteban:** solo avisar si retira el consentimiento Push o si
 quiere ejecutar esa prueba manual de Telegram; no hay validación requerida para
 el corte de hoy.
+
+### Alta Push concurrente y seguimiento — 12/10/2026
+
+El único writer activo de `push_subscriptions` era `saveSubscription`: antes
+consultaba el endpoint y luego insertaba fuera de una transacción, permitiendo
+dos filas para un mismo navegador ante altas simultáneas. La lectura previa
+de `beta-hermes` encontró 2 suscripciones, 2 endpoints distintos, 0 grupos
+duplicados y una sola fila de outbox (`sent`). El commit `ab5c77b` hizo
+atómica la lectura/escritura mediante transacción inmediata y rechaza
+endpoints con titularidad ya ambigua sin reasignarlos. La integración libSQL
+comprueba que dos altas concurrentes dejan exactamente una fila; no hubo
+escrituras en la base real para esta prueba. Pasaron 970 tests de app, 94 del
+harness, TypeScript, lint de archivos tocados y build.
+
+El deployment beta `dpl_14jnXpA9N5QNyFjgjATvYgcAGaZD` quedó READY y pasó
+los diez checks de build, `/login=200`, `POST /api/push/subscribe` sin sesión
+`401` y H04d antes/después de mover solo el alias beta. La relectura del
+alias legacy mantuvo `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El paquete
+privado `/private/tmp/hermes-h04d-push-active.cawr90/` devolvió `ok:true`,
+`postActivationRuntimeConsistent:true`, `isolationVerified:false` bajo la
+política residual aceptada solo para beta. La conciliación Turso posterior
+repitió 2 endpoints distintos, 0 duplicados y una fila `sent`.
+
+**Cerrado, owner Codex:** carrera del writer de alta Push en beta, sin
+migración ni cambio de flags; el canary permanece cercado a `test` y dos
+cuentas QA. **Abierto, owner Codex:** estudiar un índice único de endpoint a
+nivel DB para defender también escrituras ajenas al writer, con preflight de
+duplicados, backup/restore y migración aditiva; no es un requisito para este
+corte, y no se aplicará a legacy. Continúan con owner Codex la supervisión de
+fallos del outbox, la limpieza diferida de datos QA y ACT-17 de consentimiento
+y destinatarios antes de habilitar avisos proactivos. No se necesita una
+validación humana nueva para la corrección de concurrencia.
