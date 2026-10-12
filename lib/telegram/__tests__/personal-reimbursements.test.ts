@@ -60,6 +60,7 @@ jest.mock("../splits/conversation-state", () => ({
 
 jest.mock("@/lib/groups/permissions", () => ({
   getGroupMembership: jest.fn().mockResolvedValue({ group_id: "group-1", user_id: "user-1", role: "member" }),
+  getUserGroups: jest.fn(),
   isAdminOrAbove: jest.fn(),
 }));
 
@@ -74,7 +75,7 @@ const mockGetAccountingMonthProjection = getAccountingMonthProjection as jest.Mo
 const mockGetConversationState = getConversationState as jest.MockedFunction<typeof getConversationState>;
 const mockSetConversationState = setConversationState as jest.MockedFunction<typeof setConversationState>;
 const mockClearConversationState = clearConversationState as jest.MockedFunction<typeof clearConversationState>;
-const { getGroupMembership } = jest.requireMock("@/lib/groups/permissions") as { getGroupMembership: jest.Mock };
+const { getGroupMembership, getUserGroups } = jest.requireMock("@/lib/groups/permissions") as { getGroupMembership: jest.Mock; getUserGroups: jest.Mock };
 
 describe("telegram reimbursements", () => {
   beforeEach(() => {
@@ -1022,5 +1023,43 @@ describe("telegram reimbursements", () => {
     expect(outboxValues[0]).toEqual(expect.objectContaining({ text: expect.not.stringContaining("Ahorro proyectado") }));
     expect(response.text).toContain("95.000");
     expect(response.deliveryOperationId).toMatch(/^tgop_v1_/);
+  });
+});
+
+describe("Telegram group picker callback", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("changes to a selected group only after checking current membership", async () => {
+    getGroupMembership.mockResolvedValue({ group_id: "target-group", user_id: "user-1", role: "member" });
+    getUserGroups.mockResolvedValue([{ group_id: "target-group", role: "member", group: { id: "target-group", name: "Mi espacio", owner: { username: "sabri" } } }]);
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "current-group", "group:select:target-group");
+
+    expect(response.text).toContain("Mi espacio");
+    expect(response.text).toContain("compartido");
+    expect(response.replyMarkup?.inline_keyboard[0][0].callback_data).toBe("group:select:target-group");
+    expect(getGroupMembership).toHaveBeenCalledWith("user-1", "target-group");
+    expect(mockDb.update).toHaveBeenCalled();
+  });
+
+  it("rejects a removed member and never writes the group switch", async () => {
+    getGroupMembership.mockResolvedValue(null);
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "current-group", "group:select:former-group");
+
+    expect(response.text).toMatch(/pertenec|acceso|disponible/i);
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
+  it("does not rewrite the already active group", async () => {
+    getGroupMembership.mockResolvedValue({ group_id: "current-group", user_id: "user-1", role: "owner" });
+    getUserGroups.mockResolvedValue([{ group_id: "current-group", role: "owner", group: { id: "current-group", name: "Mi espacio" } }]);
+
+    const response = await handlePersonalCallback("chat-1", "telegram-1", "user-1", "current-group", "group:select:current-group");
+
+    expect(response.text).toContain("propio");
+    expect(mockDb.update).not.toHaveBeenCalled();
   });
 });

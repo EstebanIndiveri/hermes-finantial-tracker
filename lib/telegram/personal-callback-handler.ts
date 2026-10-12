@@ -28,7 +28,8 @@ import type { InlineKeyboardMarkup } from "./send-message";
 import { buildPersonalKeyboard } from "./send-message";
 import { buildReceiptProposalMessage, buildRecurringSuggestionsMessage } from "./handlers";
 import { createReimbursementWithNotifications, markReimbursementAsPaidWithNotifications, cancelReimbursementWithNotifications, getReimbursementByTransactionId } from "@/lib/reimbursements/requests";
-import { getGroupMembership, isAdminOrAbove } from "@/lib/groups/permissions";
+import { getGroupMembership, getUserGroups, isAdminOrAbove } from "@/lib/groups/permissions";
+import { buildGroupPicker } from "./group-picker";
 import {
   getUserRecurringExpenses,
   createRecurringExpense,
@@ -743,6 +744,30 @@ export async function handlePersonalCallback(
   operationContext?: TelegramOperationContext,
 ): Promise<PersonalCallbackResponse> {
   try {
+    if (data.startsWith("group:select:")) {
+      const selectedGroupId = data.slice("group:select:".length);
+      if (!selectedGroupId || !(await getGroupMembership(userId, selectedGroupId))) {
+        return { text: "⚠️ Ya no pertenecés a ese grupo. Enviá /grupos para ver los disponibles.", edit: true };
+      }
+      const availableGroups = await getUserGroups(userId);
+      const selected = availableGroups.find((entry) => entry.group.id === selectedGroupId);
+      if (!selected) {
+        return { text: "⚠️ Ese grupo ya no está disponible. Enviá /grupos para actualizar la lista.", edit: true };
+      }
+      if (selectedGroupId !== groupId) {
+        await db.update(users)
+          .set({ active_telegram_group_id: selectedGroupId })
+          .where(eq(users.id, userId));
+      }
+      const picker = buildGroupPicker(availableGroups, selectedGroupId);
+      const owner = selected.role === "owner" ? "propio" : "compartido";
+      return {
+        text: `✅ Grupo activo: <b>${escapeHtml(selected.group.name)}</b> (${owner})\n\n${picker.text}`,
+        replyMarkup: picker.replyMarkup,
+        edit: true,
+      };
+    }
+
     // ── receipt:* — OCR ticket callbacks ──────────────────────────────
     if (data === "receipt:confirm" || data === "receipt:confirm_reimbursement") {
       const requiresReimbursement = data === "receipt:confirm_reimbursement";
