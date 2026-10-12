@@ -1783,3 +1783,35 @@ adicional en otro usuario vinculado. La pantalla «Mi cuenta» todavía decía
 que no se enviaban avisos pese al canary activo; Codex corrigió el copy
 para expresar el alcance de cuentas/grupos habilitados, con despliegue
 beta y H04d pendientes en un corte separado.
+
+### Estado de suscripción Push por cuenta — 12/10/2026
+
+El copy del piloto se desplegó en beta (`dpl_5kzvrBVFM9xM1g6cDms25ogQsc9U`). Se
+detectó además que «Mi cuenta» trataba toda suscripción local como potencialmente
+ajena, incluso si ya pertenecía a la cuenta activa. El commit `13d8de1`
+añadió una consulta autenticada y de solo lectura del endpoint: devuelve
+únicamente un booleano, falla cerrada ante duplicados y no reasigna la
+suscripción. Pasaron 968 tests de app, 94 del harness, TypeScript, lint de
+archivos tocados y build.
+
+El candidato beta `dpl_Dws4UDCWFYDaVYcqEQuFH1QjA5bA` pasó diez checks de
+aislamiento en build, `/login=200` y `401` sin sesión para la ruta nueva.
+H04d pasó antes y después de mover solo el alias beta con
+`postActivationRuntimeConsistent:true` e `isolationVerified:false` bajo el
+residual ya aceptado. Legacy conserva `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+En Safari, QA2 recargó «Mi cuenta» y ahora ve «Desactivar notificaciones»,
+confirmando que la suscripción existente corresponde a esa cuenta sin un
+nuevo opt-in. El canary sigue limitado a `test` y a las dos cuentas QA;
+`NOTIFICATIONS_ENABLED=false` permanece.
+
+**Cerrado, owner Codex:** prueba de entrega de un evento a QA2 (una notificación,
+dos capturas), identidad de grupos homónimos en web, categoría del mismo nombre
+en espacios distintos y estado Push de QA2. **Abierto, owner Codex:** decidir
+el cierre/limpieza del gasto y reintegro sintéticos de ARS 1 y de la categoría
+QA2 de prueba al terminar el piloto; mantener el cerco, supervisar fallos del
+worker y documentar cualquier ampliación antes de aplicarla. La prueba de
+`/grupo ID` con dos nombres homónimos en Telegram sigue pendiente de una cuenta
+vinculada apta; las regresiones de código ya pasan y no se exige a QA2 vincular
+Telegram. **Owner Esteban:** solo avisar si retira el consentimiento Push o si
+quiere ejecutar esa prueba manual de Telegram; no hay validación requerida para
+el corte de hoy.

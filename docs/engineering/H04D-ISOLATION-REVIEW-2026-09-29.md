@@ -466,3 +466,18 @@ Resultado: `ok:true`, `postActivationRuntimeConsistent:true` e
 piloto beta bajo la política residual ya aceptada, no una certificación
 de secretos de todas las funciones en ejecución ni de URLs retiradas.
 No hubo despliegue, cambio de configuración ni escritura en legacy.
+
+### Reatestación de estado Push autenticado — 12/10/2026
+
+El commit `13d8de1fac78ce465ac83b007d701b55d617b4fc` se desplegó solo
+en beta como `dpl_Dws4UDCWFYDaVYcqEQuFH1QjA5bA`. El build registró diez
+checks de identidad/fingerprints aprobados; el candidato respondió
+`/login=200` y la ruta nueva de estado Push devolvió `401` sin sesión.
+El paquete privado `/private/tmp/hermes-h04d-push-active.tliy1r/` concilió
+siete recibos antes y después del cambio de alias. El alias beta apunta al
+ID nuevo y el alias legacy sigue en `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+Resultado `ok:true`, `postActivationRuntimeConsistent:true`,
+`isolationVerified:false`. La aceptación residual sigue limitada al piloto
+beta; esta reatestación no prueba lectura independiente de todos los secretos
+de cada función ni certifica URLs antiguas. No se cambió legacy.
