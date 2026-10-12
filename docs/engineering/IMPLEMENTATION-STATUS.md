@@ -1847,3 +1847,28 @@ corte, y no se aplicará a legacy. Continúan con owner Codex la supervisión de
 fallos del outbox, la limpieza diferida de datos QA y ACT-17 de consentimiento
 y destinatarios antes de habilitar avisos proactivos. No se necesita una
 validación humana nueva para la corrección de concurrencia.
+
+### ACT-17 — identidad web antes de avisos proactivos (12/10/2026)
+
+La revisión de destinatarios encontró un contrato implícito en el middleware:
+escribía `x-user-id` y `x-group-id` en headers de respuesta mientras las rutas
+leen headers de request. La auditoría histórica indicaba que la versión local
+de Next podía copiarlos internamente, por lo que no se afirma explotación
+confirmada; aun así, faltaba sanear IDs aportados por el cliente y declarar
+el forwarding verificado. Esteban aprobó la corrección solo en beta.
+
+El corte de código elimina ambos headers entrantes, deriva el usuario de la
+sesión firmada y reenvía usuario/grupo autorizado con `NextResponse.next({
+request: { headers } })`. Deja de publicar esos IDs en la respuesta. La
+regresión falló antes del parche y ahora cubre ID de usuario/grupo falsificados,
+membresía revocada sin grupo personal y cookies de onboarding/grupo. Pasaron
+972 tests de app y el harness, TypeScript, lint sin errores y build aislado.
+
+**Owner Codex, abierto:** commit, publicación exclusivamente beta y smoke de
+middleware→ruta con sesión/cuenta QA y headers falsificados; reatestar H04d
+antes y después del alias beta. Ningún despliegue o flag cambió en este corte
+local. **ACT-17 permanece abierto, owner Codex:** consentimiento separado para
+resumen diario, recordatorios de recurrentes, reintegros y sesiones; resolver
+destinatarios de chats de sesiones con pertenencia vigente, sanear texto HTML
+y ampliar pruebas A/B/exmiembro antes de activar `NOTIFICATIONS_ENABLED`.
+**Owner Esteban:** decidir la activación proactiva solo tras esas puertas.

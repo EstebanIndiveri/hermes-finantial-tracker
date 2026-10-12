@@ -17,9 +17,14 @@ jest.mock("@/lib/db/client", () => ({
 
 import { getPersonalGroup, getGroupMembership } from "@/lib/groups/permissions";
 
+function forwardedHeader(res: NextResponse, name: string): string | null {
+  const names = res.headers.get("x-middleware-override-headers")?.split(",").map((value) => value.trim()) ?? [];
+  if (!names.includes(name)) return null;
+  return res.headers.get(`x-middleware-request-${name}`);
+}
+
 // Helper: configure the db.select mock chain to resolve with given rows
 function mockDbChainWith(rows: object[]) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { db } = jest.requireMock("@/lib/db/client") as { db: { select: jest.Mock } };
   const chain = {
     from: jest.fn().mockReturnThis(),
@@ -103,13 +108,13 @@ describe("middleware", () => {
       const res = await middleware(req);
 
       expect(res.status).toBe(200);
-      expect(res.headers.get("x-user-id")).toBe("user-staging");
+      expect(forwardedHeader(res, "x-user-id")).toBe("user-staging");
     } finally {
       delete process.env.SESSION_COOKIE_NAME;
     }
   });
 
-  test("sets x-user-id header when session is valid", async () => {
+  test("forwards the verified x-user-id to the route without exposing it in the response", async () => {
     const sessionValue = await signSession("user-abc");
     const req = new NextRequest("http://localhost:3000/dashboard", {
       headers: {
@@ -117,7 +122,26 @@ describe("middleware", () => {
       },
     });
     const res = await middleware(req);
-    expect(res.headers.get("x-user-id")).toBe("user-abc");
+    expect(forwardedHeader(res, "x-user-id")).toBe("user-abc");
+    expect(res.headers.get("x-user-id")).toBeNull();
+  });
+
+  test("overrides forged user and group headers from an authenticated client", async () => {
+    const sessionValue = await signSession("user-123");
+    (getPersonalGroup as jest.Mock).mockResolvedValueOnce("group-personal-123");
+    const req = new NextRequest("http://localhost:3000/api/transactions", {
+      headers: {
+        cookie: `hermes_session=${sessionValue}`,
+        "x-user-id": "victim-user",
+        "x-group-id": "victim-group",
+      },
+    });
+
+    const res = await middleware(req);
+    expect(forwardedHeader(res, "x-user-id")).toBe("user-123");
+    expect(forwardedHeader(res, "x-group-id")).toBe("group-personal-123");
+    expect(res.headers.get("x-user-id")).toBeNull();
+    expect(res.headers.get("x-group-id")).toBeNull();
   });
 
   test("redirects to /login when session cookie is invalid", async () => {
@@ -140,7 +164,7 @@ describe("middleware", () => {
     });
     const res = await middleware(req);
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-user-id")).toBe("user-456");
+    expect(forwardedHeader(res, "x-user-id")).toBe("user-456");
   });
 
   test("does not block _next/static paths", async () => {
@@ -191,8 +215,8 @@ describe("middleware", () => {
     });
     const res = await middleware(req);
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-group-id")).toBe("group-abc");
-    expect(res.headers.get("x-user-id")).toBe("user-123");
+    expect(forwardedHeader(res, "x-group-id")).toBe("group-abc");
+    expect(forwardedHeader(res, "x-user-id")).toBe("user-123");
   });
 
   test("clears stale active_group_id cookie when user is no longer a member", async () => {
@@ -206,10 +230,28 @@ describe("middleware", () => {
     });
     const res = await middleware(req);
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-group-id")).toBeNull();
+    expect(forwardedHeader(res, "x-group-id")).toBeNull();
     const setCookieHeader = res.headers.get("set-cookie");
     // Cookie should be cleared (max-age=0 or expires in the past)
     expect(setCookieHeader).toMatch(/active_group_id=;|active_group_id=%3B|Max-Age=0/i);
+  });
+
+  test("does not forward a forged group when the active membership was revoked", async () => {
+    (getGroupMembership as jest.Mock).mockResolvedValueOnce(null);
+    (getPersonalGroup as jest.Mock).mockResolvedValueOnce(null);
+    const sessionValue = await signSession("user-removed");
+    const req = new NextRequest("http://localhost:3000/api/transactions", {
+      headers: {
+        cookie: `hermes_session=${sessionValue}; active_group_id=group-old`,
+        "x-user-id": "victim-user",
+        "x-group-id": "group-old",
+      },
+    });
+
+    const res = await middleware(req);
+    expect(forwardedHeader(res, "x-user-id")).toBe("user-removed");
+    expect(forwardedHeader(res, "x-group-id")).toBeNull();
+    expect(res.headers.get("set-cookie")).toMatch(/active_group_id=;|active_group_id=%3B|Max-Age=0/i);
   });
 
   test("resolves personal group and sets cookie when active_group_id is missing", async () => {
@@ -224,8 +266,8 @@ describe("middleware", () => {
     const res = await middleware(req);
     
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-group-id")).toBe("group-personal-456");
-    expect(res.headers.get("x-user-id")).toBe("user-456");
+    expect(forwardedHeader(res, "x-group-id")).toBe("group-personal-456");
+    expect(forwardedHeader(res, "x-user-id")).toBe("user-456");
     expect(getPersonalGroup).toHaveBeenCalledWith("user-456");
     
     // Check that the cookie was set
@@ -246,8 +288,8 @@ describe("middleware", () => {
     const res = await middleware(req);
     
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-user-id")).toBe("user-nomigration");
-    expect(res.headers.get("x-group-id")).toBeNull();
+    expect(forwardedHeader(res, "x-user-id")).toBe("user-nomigration");
+    expect(forwardedHeader(res, "x-group-id")).toBeNull();
   });
 
   test("proceeds without x-group-id when getPersonalGroup throws (pre-migration)", async () => {
@@ -262,8 +304,8 @@ describe("middleware", () => {
     const res = await middleware(req);
     
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-user-id")).toBe("user-error");
-    expect(res.headers.get("x-group-id")).toBeNull();
+    expect(forwardedHeader(res, "x-user-id")).toBe("user-error");
+    expect(forwardedHeader(res, "x-group-id")).toBeNull();
   });
 
   test("redirects to /onboarding when user has not completed onboarding and visits /dashboard", async () => {
