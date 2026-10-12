@@ -275,3 +275,9 @@ notificación. Queda validada la entrega end-to-end de este evento del
 canary, no la promesa de exactamente una visualización bajo todos los
 reintentos. No hace falta pagar el reintegro de prueba. No se leyeron
 endpoints ni claves.
+
+El siguiente corte de código (aislamiento de recurrentes) movió el alias
+beta a `dpl_5hHoZNyCynKA3wWyJao547ZDFQCY` tras nueva atestación H04d;
+no alteró el cerco Push ni el Worker Cloudflare. El canary de entrega
+anterior sigue siendo evidencia del evento probado, no una prueba nueva
+de entrega para ese deployment.

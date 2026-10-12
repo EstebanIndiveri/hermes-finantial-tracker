@@ -1735,3 +1735,29 @@ quedan con owner Codex los tests funcionales de grupos homónimos y creación
 de categoría con el mismo nombre en dos grupos. **Owner Esteban:** ninguna
 validación adicional requerida para este canary; avisar si revoca el
 consentimiento Push en QA. Legacy permanece fuera de alcance.
+
+### Recurrentes por membresía actual — deployment beta 12/10/2026
+
+El commit `cd8dc5a160080ca73ab843131af53378e5483c9c` filtra
+definiciones, ejecuciones pendientes y recordatorios próximos/vencidos por
+membresía actual. La confirmación revalida la membresía dentro de la
+transacción antes de escribir dinero; la consulta de ejecución también
+bloquea confirmar o saltear una ejecución antigua tras la baja. La nueva
+regresión comprueba filtro y rechazo de exmiembro sin escritura. Cerraron
+110 suites y 963 tests de app, 94 tests del harness, TypeScript, build y
+lint de archivos tocados sin errores (4 warnings preexistentes).
+
+Vercel creó `dpl_5hHoZNyCynKA3wWyJao547ZDFQCY` en el proyecto beta,
+READY. El build pasó los diez checks H04d y los fingerprints; el smoke
+protegido del candidato devolvió `/login=200`, Push sin credencial `401`
+y Telegram outbox sin credencial `401`. El alias canónico beta apunta al
+nuevo ID; el legacy sigue en `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+El paquete privado renovado para el nuevo SHA/deployment pasó el runner
+antes y después del alias con `postActivationRuntimeConsistent:true` e
+`isolationVerified:false`, bajo el residual aceptado solo para piloto beta.
+La lectura de Turso beta encontró 0 recurrentes sin membresía y 0
+ejecuciones pendientes de exmiembros; no se escribieron filas para probar
+este borde. **Cerrado en código/despliegue beta, owner Codex:** aislamiento
+de recurrentes. **Siguiente, owner Codex:** prueba funcional controlada de
+grupos homónimos y categorías idénticas entre cuentas; revisar el gasto
+sintético de ARS 1 y cerrar/retirar el canary Push cuando corresponda.

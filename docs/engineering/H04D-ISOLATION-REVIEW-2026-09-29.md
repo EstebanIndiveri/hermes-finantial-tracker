@@ -448,3 +448,21 @@ visualmente una sola notificación. Esto valida el carril funcional, **no**
 el aislamiento completo de todos los secretos en cada función ni las URLs
 de despliegues antiguos. `isolationVerified:false` sigue siendo el resultado
 correcto bajo la aceptación residual acotada al piloto beta.
+
+### Reatestación después del aislamiento de recurrentes — 12/10/2026
+
+El commit beta `cd8dc5a160080ca73ab843131af53378e5483c9c` se desplegó
+como `dpl_5hHoZNyCynKA3wWyJao547ZDFQCY`, READY. El build informó diez
+checks aprobados, fingerprints beta coincidentes y cero fallos. Las rutas
+del candidato respondieron `/login=200` y `401` para los dos workers sin
+credencial. El paquete privado renovado
+`/private/tmp/hermes-h04d-push-active.5Arhnr/` pasó el runner de siete
+recibos antes y después de mover solo el alias canónico beta. El read-back
+de alias beta confirmó el ID nuevo; el alias legacy continúa en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+Resultado: `ok:true`, `postActivationRuntimeConsistent:true` e
+`isolationVerified:false`. Sigue siendo una atestación técnica acotada al
+piloto beta bajo la política residual ya aceptada, no una certificación
+de secretos de todas las funciones en ejecución ni de URLs retiradas.
+No hubo despliegue, cambio de configuración ni escritura en legacy.
