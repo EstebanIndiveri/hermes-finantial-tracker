@@ -1882,3 +1882,33 @@ resumen diario, recordatorios de recurrentes, reintegros y sesiones; resolver
 destinatarios de chats de sesiones con pertenencia vigente, sanear texto HTML
 y ampliar pruebas A/B/exmiembro antes de activar `NOTIFICATIONS_ENABLED`.
 **Owner Esteban:** decidir la activación proactiva solo tras esas puertas.
+
+### ACT-17 — cierre del subcorte de identidad beta (12/10/2026)
+
+Esteban abrió el candidato con su sesión y envió capturas de `test · propio`
+y `Mi espacio · propio`: el cambio de grupo terminó y cada dashboard mostró
+sus propios importes. No hizo falta crear otro movimiento. Esto valida el
+recorrido funcional de cambio de grupo; no demuestra que existiera una
+explotación del contrato anterior de headers. El caso de IDs falsificados
+queda cubierto por la regresión local del middleware.
+
+Codex promovió únicamente el alias beta al deployment READY
+`dpl_CmesjbMCAh3M7fToJ6pHZnDNtYcd`, target Production **dentro del proyecto
+beta separado** `prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`, desde el SHA
+`17addb75c1cf0386a9f6460f3281e569d4696947`. La relectura de Vercel
+confirmó el alias beta en ese ID y el alias legacy sin cambios en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El build remoto pasó los diez checks
+H04d y la comparación de fingerprints. El paquete privado
+`/private/tmp/hermes-h04d-auth.quuZEN/` pasó con `ok:true` y
+`postActivationRuntimeConsistent:true`; conserva `isolationVerified:false`:
+la limitación aceptada se aplica solo al piloto beta, sin certificar lectura
+directa de todos los secretos en ejecución ni URLs retiradas. No se cambió
+ningún flag, webhook, esquema o dato financiero por parte de Codex.
+
+**Cerrado, owner Codex:** forwarding explícito de identidad verificada,
+validación funcional de cambio de grupo y promoción aislada del alias beta.
+**Abierto, owner Codex:** el resto de ACT-17 (consentimiento por evento y
+destinatarios), supervisión del canary Push y limpieza diferida de datos QA.
+`NOTIFICATIONS_ENABLED` permanece apagado. **Owner Esteban:** no se necesita
+otra validación para este subcorte; la activación proactiva requerirá su
+decisión después de las puertas técnicas pendientes.
