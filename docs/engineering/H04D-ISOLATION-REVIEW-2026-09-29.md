@@ -396,3 +396,15 @@ Push. Esto cierra el smoke funcional **del alta de ese dispositivo** para el
 deployment actual; no prueba entrega Push, reintento, otro usuario ni la
 lectura independiente de todos los secretos del runtime. Se conserva
 `isolationVerified:false` y el alcance exclusivo del piloto beta.
+
+### Segundo opt-in sin cambio de deployment — 12/10/2026
+
+Esteban preparó Web Push en otro navegador como `esteban_beta_qa2`, sin
+conectar Telegram. La conciliación read-only de `beta-hermes` observó una
+suscripción para cada uno de `esteban_beta_qa` y `esteban_beta_qa2`, con
+2 endpoints distintos, 0 duplicados y 0 filas de outbox Push. Ambos usuarios
+son miembros del grupo beta `test`. El segundo opt-in cierra el gate de
+suscripción de dos usuarios sin reatribuir la primera; no cambia el SHA,
+deployment, bindings ni la aceptación residual H04d. Tampoco prueba la
+entrega real o la lectura independiente de los secretos en ejecución.
+`isolationVerified:false` permanece correcto y el envío Push sigue apagado.

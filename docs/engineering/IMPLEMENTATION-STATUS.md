@@ -1628,3 +1628,25 @@ dispositivo y smoke manual de la UI. **Abierto, owner Esteban/Sabri:** alta
 voluntaria de Sabri en su propia cuenta/dispositivo beta. **Abierto, owner
 Codex:** conciliación de dos destinatarios, prueba controlada de entrega y
 decisión de activación separada. No hay gastos de prueba ni envíos habilitados.
+
+### Web Push opt-in — dos usuarios verificados (12/10/2026)
+
+Esteban eligió `esteban_beta_qa2` en vez de Sabri para el segundo dispositivo;
+aceptó las notificaciones desde otro navegador y no vinculó Telegram.
+Consulta read-only en la DB `beta-hermes`: **2 suscripciones, 2 usuarios y
+2 endpoints distintos**, exactamente una suscripción para
+`esteban_beta_qa` y una para `esteban_beta_qa2`, **0 grupos de endpoints
+duplicados** y **0 filas de `push_delivery_outbox`**. Ambos usuarios son
+miembros del grupo beta `test` (owner/member). No se leyeron endpoints ni
+claves. **Cerrado:** consentimiento de dos navegadores y verificación de que
+el alta de `qa2` no reasignó el endpoint de `qa`.
+
+**Abierto, owner Codex:** preparar un canary de entrega limitado al grupo de
+prueba, verificar destinatario, recepción, idempotencia y exclusión y apagar
+ante fallo. El worker solo procesa eventos de reintegro elegibles; no hubo
+prueba de entrega ni movimiento de prueba. **Abierto, owner Esteban:** decidir
+separadamente si autoriza la activación beta acotada de los flags de envío y
+un evento de reintegro de prueba. `WEB_PUSH_ENABLED`,
+`NOTIFICATIONS_ENABLED` y el scheduler Push siguen apagados. El estado H04d
+permanece `isolationVerified:false` bajo la aceptación residual solo beta;
+legacy no se tocó.
