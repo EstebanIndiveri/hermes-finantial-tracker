@@ -4,11 +4,23 @@ import { useState, useEffect, useRef } from "react";
 interface Group {
   group_id: string;
   role: "owner" | "admin" | "member";
-  group: { id: string; name: string; owner_id: string };
+  group: {
+    id: string;
+    name: string;
+    owner_id: string;
+    owner?: { id: string; name: string; username: string } | null;
+  };
 }
 
 interface GroupSwitcherProps {
   onGroupChange?: (groupId: string) => void;
+}
+
+function groupLabel(group: Group): string {
+  if (group.role === "owner") return `${group.group.name} · propio`;
+  const owner = group.group.owner;
+  const ownerLabel = owner?.username ? `@${owner.username}` : owner?.name ?? "owner desconocido";
+  return `${group.group.name} · compartido por ${ownerLabel}`;
 }
 
 async function switchActiveGroup(groupId: string) {
@@ -83,7 +95,7 @@ export function GroupSwitcher({ onGroupChange }: GroupSwitcherProps) {
       >
         <span style={{ fontSize: "1.1rem" }}>🏠</span>
         <span style={{ flex: 1, textAlign: "left", fontSize: "0.82rem", fontWeight: 600 }}>
-          {activeGroup?.group.name ?? "Grupo"}
+          {activeGroup ? groupLabel(activeGroup) : "Grupo"}
         </span>
         <span style={{ fontSize: "0.7rem", color: "var(--htext3)" }}>▼</span>
       </button>
@@ -109,7 +121,7 @@ export function GroupSwitcher({ onGroupChange }: GroupSwitcherProps) {
             >
               <span style={{ fontSize: "0.85rem" }}>🏠</span>
               <span style={{ flex: 1 }}>
-                <span style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--htext1)" }}>{g.group.name}</span>
+                <span style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--htext1)" }}>{groupLabel(g)}</span>
                 <span style={{ display: "block", fontSize: "0.7rem", color: "var(--htext3)" }}>{g.role} · miembros</span>
               </span>
               {g.group_id === activeGroupId && <span style={{ color: "var(--haccent)", fontSize: "0.75rem" }}>✓</span>}

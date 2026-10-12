@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { InviteModal } from "@/components/dashboard/InviteModal";
 import { Toast } from "@/components/ui/Toast";
 import GroupSettingsLoading from "./loading";
+import { resolveActiveGroup } from "./active-group";
 
 interface Member {
   group_id: string;
@@ -46,10 +47,15 @@ export function GroupSettingsPageClient() {
   useEffect(() => {
     async function load() {
       try {
-        const groupsRes = await fetch("/api/groups");
+        const [groupsRes, activeRes] = await Promise.all([
+          fetch("/api/groups"),
+          fetch("/api/groups/active"),
+        ]);
+        if (!groupsRes.ok || !activeRes.ok) throw new Error("group unavailable");
         const groups: Array<{ group_id: string; role: "owner" | "admin" | "member"; group: { id: string; name: string; owner_id: string; partner_id: string | null } }> = await groupsRes.json();
-        if (groups.length === 0) return;
-        const activeGroupData = groups[0];
+        const active: { group_id: string | null } = await activeRes.json();
+        const activeGroupData = resolveActiveGroup(groups, active.group_id);
+        if (!activeGroupData) return;
         const activeGroup: Group = {
           id: activeGroupData.group_id,
           name: activeGroupData.group.name,

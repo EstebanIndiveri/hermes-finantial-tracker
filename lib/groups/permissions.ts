@@ -1,5 +1,5 @@
 import { db } from "@/lib/db/client";
-import { groups, group_members } from "@/lib/db/schema";
+import { group_members } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 
 export const MAX_OWNED_GROUPS = 2;
@@ -53,7 +53,13 @@ export async function getPersonalGroup(userId: string): Promise<string | null> {
 export async function getUserGroups(userId: string) {
   const memberships = await db.query.group_members.findMany({
     where: eq(group_members.user_id, userId),
-    with: { group: true },
+    with: {
+      group: {
+        with: {
+          owner: { columns: { id: true, name: true, username: true } },
+        },
+      },
+    },
   });
   return memberships.map(m => ({
     group_id: m.group_id,

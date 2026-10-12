@@ -14,7 +14,8 @@ import type { InlineKeyboardMarkup } from "./send-message";
 import { sendTelegramMessage, buildPersonalKeyboard } from "./send-message";
 import { setConversationState, clearConversationState } from "./splits/conversation-state";
 import { getReimbursementsByUser, getOpenGroupReimbursements, type ReimbursementRequest } from "@/lib/reimbursements/requests";
-import { getGroupMembership, isAdminOrAbove } from "@/lib/groups/permissions";
+import { getGroupMembership, getUserGroups, isAdminOrAbove } from "@/lib/groups/permissions";
+import { findGroupSelection } from "@/lib/groups/disambiguation";
 import { isIncomeCategory } from "@/lib/finance/income";
 import {
   getUserRecurringExpenses,
@@ -92,6 +93,20 @@ type TelegramMonthCurrency =
       projection: Extract<MonthProjection, { mode: "ARS_ARS" }> | null;
       savingGoalYellow: number | null;
     };
+
+function formatGroupOwner(group: { owner?: { name?: string | null; username?: string | null } | null }): string {
+  const owner = group.owner;
+  if (!owner) return "owner desconocido";
+  return owner.username ? `@${owner.username}` : owner.name || "owner desconocido";
+}
+
+function escapeTelegramHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function formatGroupOwnership(group: { role: string; group: { owner?: { name?: string | null; username?: string | null } | null } }): string {
+  return group.role === "owner" ? "propio" : `compartido por ${formatGroupOwner(group.group)}`;
+}
 
 async function getTelegramMonthCurrency(groupId: string, month: string): Promise<TelegramMonthCurrency> {
   const settings = await db.query.monthly_settings.findFirst({
@@ -1842,16 +1857,15 @@ export async function handleTelegramMessage(
   }
 
   if (text === "/grupos") {
-    const { getUserGroups } = await import("@/lib/groups/permissions");
     const myGroups = await getUserGroups(userId);
     if (myGroups.length === 0) return { text: "No pertenecés a ningún grupo." };
-    const currentGroup = await db.query.groups.findFirst({ where: eq(groups.id, groupId) });
     const lines = myGroups.map(g => {
-      const active = g.group.id === groupId ? " ✓ *activo*" : "";
+      const active = g.group.id === groupId ? " ✓ <b>activo</b>" : "";
       const role = g.role === "owner" ? "owner" : g.role === "admin" ? "admin" : "miembro";
-      return `• ${g.group.name} (${role})${active}`;
+      const owner = formatGroupOwnership(g);
+      return `• ${escapeTelegramHtml(g.group.name)} (${escapeTelegramHtml(owner)}; ${role})${active}\n  ID: <code>${g.group.id}</code>`;
     }).join("\n");
-    return { text: `📋 *Tus grupos:*\n${lines}\n\nPara cambiar: /grupo NombreDelGrupo` };
+    return { text: `📋 <b>Tus grupos:</b>\n${lines}\n\nPara cambiar: /grupo NombreDelGrupo\nSi hay nombres repetidos, usá /grupo ID` };
   }
 
   if (text.startsWith("/grupo")) {
@@ -1862,21 +1876,26 @@ export async function handleTelegramMessage(
       const currentGroup = await db.query.groups.findFirst({
         where: eq(groups.id, groupId),
       });
-      return { text: `📁 Grupo activo: *${currentGroup?.name ?? "desconocido"}*\n\nPara cambiar: /grupo NombreDelGrupo` };
+      return { text: `📁 Grupo activo: <b>${escapeTelegramHtml(currentGroup?.name ?? "desconocido")}</b>\n\nPara cambiar: /grupo NombreDelGrupo o /grupo ID` };
     }
 
-    // Find group by name among user's groups
-    const { getUserGroups } = await import("@/lib/groups/permissions");
+    // Resolve IDs first and accept names only when they are unique. Never
+    // silently select the first row when duplicate names exist.
     const myGroups = await getUserGroups(userId);
-    const target = myGroups.find(g => g.group.name.toLowerCase() === groupName.toLowerCase());
+    const selection = findGroupSelection(myGroups, groupName);
 
-    if (!target) {
-      const names = myGroups.map(g => `• ${g.group.name}`).join("\n");
-      return { text: `❌ No encontré un grupo con ese nombre.\n\nTus grupos:\n${names}` };
+    if (selection.kind === "ambiguous") {
+      const matches = selection.groups.map(g => `• ${escapeTelegramHtml(g.group.name)} — ${escapeTelegramHtml(formatGroupOwnership(g))} — ID: <code>${g.group.id}</code>`).join("\n");
+      return { text: `⚠️ Hay más de un grupo llamado <b>${escapeTelegramHtml(groupName)}</b>. Elegí por ID:\n${matches}\n\nUsá /grupo ID` };
     }
 
-    await db.update(users).set({ active_telegram_group_id: target.group.id }).where(eq(users.id, userId));
-    return { text: `✅ Grupo activo cambiado a *${target.group.name}*` };
+    if (selection.kind === "missing") {
+      const names = myGroups.map(g => `• ${escapeTelegramHtml(g.group.name)} — ${escapeTelegramHtml(formatGroupOwnership(g))} — ID: <code>${g.group.id}</code>`).join("\n");
+      return { text: `❌ No encontré un grupo con ese nombre o ID.\n\nTus grupos:\n${names}` };
+    }
+
+    await db.update(users).set({ active_telegram_group_id: selection.group.group.id }).where(eq(users.id, userId));
+    return { text: `✅ Grupo activo cambiado a <b>${escapeTelegramHtml(selection.group.group.name)}</b>` };
   }
 
   const groqKey = process.env.GROQ_API_KEY;
