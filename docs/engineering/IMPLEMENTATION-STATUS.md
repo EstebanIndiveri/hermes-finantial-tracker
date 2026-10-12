@@ -1674,3 +1674,31 @@ avisos. Esteban decidió expresamente no arreglar legacy en este plan; no se
 alteró cron, webhook, env, bot ni despliegue productivo. Hasta ese corte,
 `NOTIFICATIONS_ENABLED` sigue `false` en beta y el canary Web Push se limita
 a un grupo y dos usuarios.
+
+### Corte beta de grupos y canary Push desplegado — 12/10/2026
+
+Los commits `abc5749` (grupos homónimos) y `edfa955` (cerco Push) se
+subieron a `codex/act05-currency-modes`. La web ya distingue `Mi espacio`
+propio/compartido por owner, la configuración de grupo usa el grupo activo
+real, y Telegram acepta `/grupo ID` y rechaza un nombre ambiguo con opciones.
+Pasaron 959 tests en 110 suites, TypeScript, build y lint sin errores (66
+warnings existentes o no bloqueantes).
+
+El deployment beta `dpl_8RSc4Tnd6bU395q2cx4ajg5TfSCF` quedó READY en el
+alias `hermes-finantial-tracker-z2.vercel.app`. La aserción de build pasó diez
+checks y fingerprints beta; el paquete privado de siete recibos para el SHA
+`edfa955e5c8aa0b2c56cb55f28bafa72aa7d581c` validó
+`postActivationRuntimeConsistent:true` e `isolationVerified:false`, bajo el
+residual beta aceptado. El alias legacy permanece en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. Se añadieron únicamente las dos env
+de scope del canary (`WEB_PUSH_CANARY_GROUP_ID` y
+`WEB_PUSH_CANARY_USER_IDS`) al proyecto beta. `WEB_PUSH_ENABLED=false`,
+`NOTIFICATIONS_ENABLED=false` y el scheduler Push siguen apagados.
+
+**Abierto, owner Esteban:** aceptar la invitación Member de `qa2` a `test`
+desde su propio perfil de navegador. **Abierto, owner Codex:** generar la
+invitación tras la confirmación puntual, verificar membresía sin reasignar
+suscripciones, activar solo el cerco Push, reatestar el nuevo deployment,
+ejecutar/conciliar una entrega real y desactivar ante cualquier desvío.
+La validación funcional de nombres homónimos y categorías entre dos cuentas
+beta también queda con owner Codex. No se cambió legacy.

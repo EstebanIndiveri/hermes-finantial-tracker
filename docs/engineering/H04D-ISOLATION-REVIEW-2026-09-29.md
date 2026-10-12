@@ -409,3 +409,22 @@ suscripción de dos usuarios sin reatribuir la primera; no cambia el SHA,
 deployment, bindings ni la aceptación residual H04d. Tampoco prueba la
 entrega real o la lectura independiente de los secretos en ejecución.
 `isolationVerified:false` permanece correcto y el envío Push sigue apagado.
+
+### Reatestación del cerco canary y grupos homónimos — 12/10/2026
+
+El SHA `edfa955e5c8aa0b2c56cb55f28bafa72aa7d581c` se desplegó solo en
+el proyecto beta como `dpl_8RSc4Tnd6bU395q2cx4ajg5TfSCF`. El deployment
+quedó READY; su build registró `beta_build_isolation_attested`, diez checks
+aprobados, fingerprints coincidentes y ningún fallo. El alias beta se movió
+a ese ID; la inspección read-only mantuvo el alias legacy en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+El paquete privado `/private/tmp/hermes-h04d-canary.Lmx7NR/` contiene los
+siete recibos redacted/frescos y el manifiesto actualizado para ese SHA e ID.
+El runner local devolvió `ok:true`, `postActivationRuntimeConsistent:true`
+e `isolationVerified:false`. Las dos bindings nuevas del canary son scope de
+grupo y dos usuarios QA en el proyecto beta; no se alteraron DB, bot,
+webhook, proyecto ni bindings de legacy. Se conserva la limitación residual
+aceptada solo para piloto beta: no se leyó de forma independiente cada secreto
+en cada función en ejecución ni se certificaron URLs antiguas. Los envíos
+Web Push y el scheduler siguen apagados hasta el gate de entrega controlada.
