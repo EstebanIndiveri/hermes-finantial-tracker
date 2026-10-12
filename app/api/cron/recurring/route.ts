@@ -5,6 +5,7 @@ import { createMonthlyExecutions, getPendingExecutions } from "@/lib/db/recurrin
 import { sendTelegramMessage, buildPersonalKeyboard } from "@/lib/telegram/send-message";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
+import { escapeTelegramHtml } from "@/lib/telegram/html";
 
 /**
  * GET /api/cron/recurring
@@ -111,9 +112,9 @@ function formatPendingNotification(
   ];
 
   pending.forEach((exec, i) => {
-    const emoji = exec.recurringExpense.category?.emoji ?? "📦";
+    const emoji = escapeTelegramHtml(exec.recurringExpense.category?.emoji ?? "📦");
     const amount = exec.amountArs ?? exec.recurringExpense.amountArs;
-    lines.push(`${i + 1}. ${emoji} ${exec.recurringExpense.name} - $${amount.toLocaleString("es-AR")}`);
+    lines.push(`${i + 1}. ${emoji} ${escapeTelegramHtml(exec.recurringExpense.name)} - $${amount.toLocaleString("es-AR")}`);
   });
 
   lines.push(`\n<b>Total proyectado: $${totalAmount.toLocaleString("es-AR")}</b>`);

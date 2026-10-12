@@ -105,4 +105,26 @@ describe("GET /api/cron/recurring authorization", () => {
     expect(getPendingExecutions).not.toHaveBeenCalled();
     expect(db.select).not.toHaveBeenCalled();
   });
+
+  it("escapes configurable recurring labels in the monthly Telegram notice", async () => {
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "true" };
+    (db.select as jest.Mock).mockReturnValue({ from: jest.fn().mockResolvedValue([
+      { id: "user-1", telegramUserId: "telegram-1" },
+    ]) });
+    (createMonthlyExecutions as jest.Mock).mockResolvedValue(1);
+    (getPendingExecutions as jest.Mock).mockResolvedValue([{
+      amountArs: 100,
+      recurringExpense: { name: "A <b>& B", amountArs: 100, category: { emoji: "<icon>" } },
+    }]);
+
+    await GET(new NextRequest("http://localhost/api/cron/recurring", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(sendTelegramMessage).toHaveBeenCalledWith(
+      "telegram-1",
+      expect.stringContaining("&lt;icon&gt; A &lt;b&gt;&amp; B"),
+      undefined,
+    );
+  });
 });

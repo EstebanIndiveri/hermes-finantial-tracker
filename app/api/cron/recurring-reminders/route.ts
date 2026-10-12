@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getUpcomingExecutions, getOverdueExecutions } from "@/lib/db/recurring-queries";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
+import { escapeTelegramHtml } from "@/lib/telegram/html";
 
 async function sendTelegramMessage(chatId: string, text: string): Promise<boolean> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -16,7 +17,7 @@ async function sendTelegramMessage(chatId: string, text: string): Promise<boolea
         body: JSON.stringify({
           chat_id: chatId,
           text,
-          parse_mode: "Markdown",
+          parse_mode: "HTML",
         }),
       }
     );
@@ -55,15 +56,15 @@ export async function GET(request: Request) {
     for (const userData of upcoming) {
       if (!userData.telegramUserId) continue;
 
-      const lines = ["⏰ *Recordatorio de pagos próximos*\n"];
+      const lines = ["⏰ <b>Recordatorio de pagos próximos</b>\n"];
       for (const exec of userData.executions) {
-        const emoji = exec.recurringExpense.category?.emoji || "💰";
-        const name = exec.recurringExpense.name;
+        const emoji = escapeTelegramHtml(exec.recurringExpense.category?.emoji || "💰");
+        const name = escapeTelegramHtml(exec.recurringExpense.name);
         const amount =
           exec.amountArs?.toLocaleString("es-AR") ||
           exec.recurringExpense.amountArs.toLocaleString("es-AR");
         const date = exec.scheduledDate;
-        lines.push(`${emoji} *${name}*: $${amount} - Vence ${date}`);
+        lines.push(`${emoji} <b>${name}</b>: $${amount} - Vence ${date}`);
       }
       lines.push("\n💡 Usa /recurrentes para ver todos o /pendientes para los del mes");
 
@@ -74,10 +75,10 @@ export async function GET(request: Request) {
     for (const userData of overdue) {
       if (!userData.telegramUserId) continue;
 
-      const lines = ["🚨 *Pagos vencidos pendientes*\n"];
+      const lines = ["🚨 <b>Pagos vencidos pendientes</b>\n"];
       for (const exec of userData.executions) {
-        const emoji = exec.recurringExpense.category?.emoji || "💰";
-        const name = exec.recurringExpense.name;
+        const emoji = escapeTelegramHtml(exec.recurringExpense.category?.emoji || "💰");
+        const name = escapeTelegramHtml(exec.recurringExpense.name);
         const amount =
           exec.amountArs?.toLocaleString("es-AR") ||
           exec.recurringExpense.amountArs.toLocaleString("es-AR");
@@ -86,7 +87,7 @@ export async function GET(request: Request) {
           (Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24)
         );
         lines.push(
-          `${emoji} *${name}*: $${amount} - Venció hace ${daysOverdue} día${
+          `${emoji} <b>${name}</b>: $${amount} - Venció hace ${daysOverdue} día${
             daysOverdue === 1 ? "" : "s"
           }`
         );

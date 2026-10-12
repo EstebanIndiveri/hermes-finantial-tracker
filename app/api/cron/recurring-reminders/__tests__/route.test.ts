@@ -183,4 +183,35 @@ describe("GET /api/cron/recurring-reminders", () => {
       })
     );
   });
+
+  it("escapes configurable recurring labels in both reminder types", async () => {
+    process.env.NOTIFICATIONS_ENABLED = "true";
+    const execution = {
+      scheduledDate: "2026-08-25",
+      amountArs: 100,
+      recurringExpense: {
+        name: "A <b>& B",
+        amountArs: 100,
+        category: { emoji: "<icon>" },
+      },
+    };
+    (getUpcomingExecutions as jest.Mock).mockResolvedValue([
+      { userId: "u1", telegramUserId: "tg-1", executions: [execution] },
+    ]);
+    (getOverdueExecutions as jest.Mock).mockResolvedValue([
+      { userId: "u1", telegramUserId: "tg-1", executions: [execution] },
+    ]);
+
+    await GET(new NextRequest("http://localhost/api/cron/recurring-reminders", {
+      headers: { authorization: "Bearer test-secret" },
+    }));
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    for (const [, options] of (global.fetch as jest.Mock).mock.calls) {
+      const body = JSON.parse(options.body);
+      expect(body.parse_mode).toBe("HTML");
+      expect(body.text).toContain("&lt;icon&gt; <b>A &lt;b&gt;&amp; B</b>");
+      expect(body.text).not.toContain("<icon>");
+    }
+  });
 });
