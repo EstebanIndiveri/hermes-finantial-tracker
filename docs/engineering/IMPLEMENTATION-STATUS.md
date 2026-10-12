@@ -1864,10 +1864,20 @@ regresión falló antes del parche y ahora cubre ID de usuario/grupo falsificado
 membresía revocada sin grupo personal y cookies de onboarding/grupo. Pasaron
 972 tests de app y el harness, TypeScript, lint sin errores y build aislado.
 
-**Owner Codex, abierto:** commit, publicación exclusivamente beta y smoke de
-middleware→ruta con sesión/cuenta QA y headers falsificados; reatestar H04d
-antes y después del alias beta. Ningún despliegue o flag cambió en este corte
-local. **ACT-17 permanece abierto, owner Codex:** consentimiento separado para
+El commit `17addb7` está pusheado a la rama de trabajo. El proyecto Vercel
+separado `hermes-finantial-tracker-z2` creó el candidato target Production
+`dpl_CmesjbMCAh3M7fToJ6pHZnDNtYcd` con `--skip-domain`; quedó READY y su
+build pasó los diez checks H04d y el match de fingerprints. Antes de mover
+el alias, `vercel inspect` siguió resolviendo el alias beta a
+`dpl_14jnXpA9N5QNyFjgjATvYgcAGaZD` y el legacy a
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. No se cambió ningún flag, webhook o DB.
+
+**Owner Codex, abierto:** comprobación funcional con sesión/cuenta QA en el
+candidato, reatestar H04d para el nuevo ID/SHA y mover solo el alias beta
+después de pasar ambos gates; luego releer los dos aliases. **Owner Esteban:**
+validar el login y el dashboard QA en la URL candidata si Codex no dispone
+de una sesión aislada apta. La suite local no sustituye este recorrido.
+**ACT-17 permanece abierto, owner Codex:** consentimiento separado para
 resumen diario, recordatorios de recurrentes, reintegros y sesiones; resolver
 destinatarios de chats de sesiones con pertenencia vigente, sanear texto HTML
 y ampliar pruebas A/B/exmiembro antes de activar `NOTIFICATIONS_ENABLED`.
