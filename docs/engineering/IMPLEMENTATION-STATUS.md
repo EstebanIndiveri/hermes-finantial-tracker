@@ -1702,3 +1702,36 @@ suscripciones, activar solo el cerco Push, reatestar el nuevo deployment,
 ejecutar/conciliar una entrega real y desactivar ante cualquier desvío.
 La validación funcional de nombres homónimos y categorías entre dos cuentas
 beta también queda con owner Codex. No se cambió legacy.
+
+### Canary Web Push y aislamiento recurrente — 12/10/2026
+
+Esteban aceptó la invitación normal: `esteban_beta_qa2` es member de `test`
+y `esteban_beta_qa` sigue siendo owner. Las dos suscripciones permanecen
+asociadas a dos usuarios/endpoints distintos. Codex desplegó únicamente en
+el proyecto beta `dpl_EcPXDj4ZLkJjCjSzp3gbMx8wCqpy` (commit de app
+`f37ef12`) y movió solo el alias beta después del gate H04d. El build pasó
+los diez checks, y el paquete privado post-promoción devolvió
+`postActivationRuntimeConsistent:true`, `isolationVerified:false` bajo el
+residual aceptado solo para beta. El alias legacy sigue en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+`WEB_PUSH_ENABLED=true` está cercado al UUID de `test` y a las dos cuentas
+QA; `NOTIFICATIONS_ENABLED=false` sigue intacto. El Worker Cloudflare
+`hermes-beta-outbox-scheduler` versión
+`efb2776f-0470-4500-915c-aa935cf2be1f` usa cron cada cinco minutos,
+destino beta fijo y secreto dedicado. El commit `ac7355f` corresponde al
+Worker y es posterior al commit de app desplegado. Un gasto sintético de
+ARS 1 en `test` creó un reintegro y exactamente una fila Push dirigida a
+QA2. La fila terminó `sent` con un intento, sin error, y Esteban confirmó
+una sola notificación en el dispositivo con dos capturas. **Canary de
+entrega cerrado para ese evento**; no prueba la conducta de todo dispositivo
+o cada reintento posible. No se marcó el reintegro como pagado.
+
+El endurecimiento de avisos de reintegro para exmiembros ya pasó regresión
+en `f37ef12`. **En trabajo, owner Codex:** filtrar recurrentes por
+membresía actual y revalidar antes de cualquier escritura financiera,
+verificar el código y desplegarlo solo en beta tras un nuevo H04d. También
+quedan con owner Codex los tests funcionales de grupos homónimos y creación
+de categoría con el mismo nombre en dos grupos. **Owner Esteban:** ninguna
+validación adicional requerida para este canary; avisar si revoca el
+consentimiento Push en QA. Legacy permanece fuera de alcance.

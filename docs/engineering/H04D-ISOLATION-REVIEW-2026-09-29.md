@@ -428,3 +428,23 @@ webhook, proyecto ni bindings de legacy. Se conserva la limitación residual
 aceptada solo para piloto beta: no se leyó de forma independiente cada secreto
 en cada función en ejecución ni se certificaron URLs antiguas. Los envíos
 Web Push y el scheduler siguen apagados hasta el gate de entrega controlada.
+
+### Reatestación Push activo solo beta — 12/10/2026
+
+El commit de app `f37ef121de8661dd648ca60ae7a97e26257ba4a0` produjo
+`dpl_EcPXDj4ZLkJjCjSzp3gbMx8wCqpy` en el proyecto beta separado.
+El build pasó la aserción `beta_build_isolation_attested` con diez checks,
+fingerprints coincidentes y cero fallos. El paquete privado de siete
+recibos frescos se concilió antes y después de mover **solo** el alias beta
+`hermes-finantial-tracker-z2.vercel.app`, con `ok:true` y
+`postActivationRuntimeConsistent:true`. El alias legacy permanece en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`; no se desplegó ni configuró legacy.
+
+El proyecto beta declara `WEB_PUSH_ENABLED=true` solo con canary explícito
+de un grupo y dos usuarios QA, mientras `NOTIFICATIONS_ENABLED=false`.
+Cloudflare ejecuta el scheduler Push contra la URL beta fija y con secreto
+dedicado. Un evento de prueba quedó entregado a QA2 y Esteban verificó
+visualmente una sola notificación. Esto valida el carril funcional, **no**
+el aislamiento completo de todos los secretos en cada función ni las URLs
+de despliegues antiguos. `isolationVerified:false` sigue siendo el resultado
+correcto bajo la aceptación residual acotada al piloto beta.

@@ -1,6 +1,6 @@
 import { db } from "../client";
-import { recurringExecutions, recurringExpenses, monthly_settings, categories } from "../schema";
-import { confirmExecution, skipExecution } from "../recurring-queries";
+import { recurringExecutions, recurringExpenses, monthly_settings, categories, group_members } from "../schema";
+import { confirmExecution, getPendingExecutions, getUserRecurringExpenses, skipExecution } from "../recurring-queries";
 import { and, eq } from "drizzle-orm";
 import { createTelegramOperationContext, createTelegramOperationIdentity } from "@/lib/telegram/operation-context";
 import { runTelegramOperation } from "@/lib/telegram/financial-operation";
@@ -15,9 +15,10 @@ jest.mock("drizzle-orm", () => {
 });
 
 const mockLimit = jest.fn();
-const mockWhere = jest.fn(() => ({ limit: mockLimit }));
-const mockInnerJoin = jest.fn(() => ({ where: mockWhere }));
-const mockLeftJoin = jest.fn(() => ({ where: mockWhere }));
+const mockOrderBy = jest.fn().mockResolvedValue([]);
+const mockWhere = jest.fn(() => ({ limit: mockLimit, orderBy: mockOrderBy }));
+const mockInnerJoin = jest.fn(() => ({ where: mockWhere, innerJoin: mockInnerJoin, leftJoin: mockLeftJoin }));
+const mockLeftJoin = jest.fn(() => ({ where: mockWhere, innerJoin: mockInnerJoin, leftJoin: mockLeftJoin }));
 const mockFrom = jest.fn(() => ({ innerJoin: mockInnerJoin, leftJoin: mockLeftJoin, where: mockWhere }));
 const mockInsertValues = jest.fn();
 const mockUpdateReturning = jest.fn().mockResolvedValue([{ id: "exec-a" }]);
@@ -80,6 +81,9 @@ function expectActorScopedLookup(executionId: string, actorUserId: string): void
     recurringExpenses,
     mockEq.mock.results[joinCall].value,
   );
+  expect(mockEq).toHaveBeenCalledWith(group_members.group_id, recurringExpenses.groupId);
+  expect(mockEq).toHaveBeenCalledWith(group_members.user_id, recurringExpenses.userId);
+  expect(mockInnerJoin).toHaveBeenCalledWith(group_members, expect.anything());
 }
 
 const authorizedExecution = {
@@ -118,10 +122,21 @@ describe("recurring execution authorization", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockLimit.mockResolvedValue([]);
+    mockOrderBy.mockResolvedValue([]);
     mockUpdateReturning.mockResolvedValue([{ id: "exec-a" }]);
     (mockDb.transaction as jest.Mock).mockImplementation(
       async (work: (transaction: typeof db) => Promise<unknown>) => work(db),
     );
+  });
+
+  it("filters recurring definitions and pending reminders by current group membership", async () => {
+    await expect(getUserRecurringExpenses("user-a", { activeOnly: true })).resolves.toEqual([]);
+    await expect(getPendingExecutions("user-a", "2026-09")).resolves.toEqual([]);
+
+    const memberJoins = mockInnerJoin.mock.calls.filter(([table]) => table === group_members);
+    expect(memberJoins).toHaveLength(2);
+    expect(mockEq).toHaveBeenCalledWith(group_members.group_id, recurringExpenses.groupId);
+    expect(mockEq).toHaveBeenCalledWith(group_members.user_id, recurringExpenses.userId);
   });
 
   it("scopes confirmation lookup to both execution ID and actor", async () => {
@@ -174,6 +189,7 @@ describe("recurring execution authorization", () => {
     mockLimit
       .mockResolvedValueOnce([authorizedExecution])
       .mockResolvedValueOnce([authorizedRecurring])
+      .mockResolvedValueOnce([{ userId: "user-a" }])
       .mockResolvedValueOnce([{ currency_mode: "USD_ARS", exchange_rate: 1000 }])
       .mockResolvedValueOnce([{ id: "cat-a" }]);
 
@@ -201,6 +217,7 @@ describe("recurring execution authorization", () => {
     mockLimit
       .mockResolvedValueOnce([{ ...authorizedExecution, ownerUserId: "member-a" }])
       .mockResolvedValueOnce([{ ...authorizedRecurring, userId: "member-a" }])
+      .mockResolvedValueOnce([{ userId: "member-a" }])
       .mockResolvedValueOnce([{ currency_mode: "USD_ARS", exchange_rate: 1250 }])
       .mockResolvedValueOnce([{ id: "cat-a" }]);
 
@@ -223,6 +240,19 @@ describe("recurring execution authorization", () => {
     expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 
+  it("rejects a former member before any financial write", async () => {
+    mockLimit
+      .mockResolvedValueOnce([authorizedExecution])
+      .mockResolvedValueOnce([authorizedRecurring])
+      .mockResolvedValueOnce([]);
+
+    await expect(confirmExecution("exec-a", "user-a")).rejects.toThrow("ya no pertenece");
+    expect(mockEq).toHaveBeenCalledWith(group_members.group_id, "group-a");
+    expect(mockEq).toHaveBeenCalledWith(group_members.user_id, "user-a");
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid amount before writing a transaction", async () => {
     mockLimit
       .mockResolvedValueOnce([authorizedExecution])
@@ -237,6 +267,7 @@ describe("recurring execution authorization", () => {
     mockLimit
       .mockResolvedValueOnce([authorizedExecution])
       .mockResolvedValueOnce([authorizedRecurring])
+      .mockResolvedValueOnce([{ userId: "user-a" }])
       .mockResolvedValueOnce([{ currency_mode: "USD_ARS", exchange_rate: 1000 }])
       .mockResolvedValueOnce([{ id: "cat-a" }]);
     mockUpdateReturning.mockResolvedValueOnce([]);
@@ -262,6 +293,7 @@ describe("recurring execution authorization", () => {
       limit: jest.fn()
         .mockResolvedValueOnce([authorizedExecution])
         .mockResolvedValueOnce([authorizedRecurring])
+        .mockResolvedValueOnce([{ userId: "user-a" }])
         .mockResolvedValueOnce([{ currency_mode: "USD_ARS", exchange_rate: 1000 }])
         .mockResolvedValueOnce([{ id: "cat-a" }]),
     };

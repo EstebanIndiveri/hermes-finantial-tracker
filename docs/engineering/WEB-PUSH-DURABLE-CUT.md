@@ -244,3 +244,34 @@ El worker actual solo envía eventos `reimbursement.requested` o
 real de entrega sin evento elegible. El scheduler Push sigue apagado hasta
 verificar el canary manual. Una activación global sin limitar destinatarios afectaría
 otros eventos del piloto beta y no se infiere de la autorización de opt-in.
+
+### Canary acotado en curso — 12/10/2026
+
+`esteban_beta_qa2` aceptó una invitación normal al grupo `test` como member;
+`esteban_beta_qa` sigue siendo owner. La conciliación beta mostró dos
+suscripciones de usuarios distintos y endpoints distintos. Codex activó
+`WEB_PUSH_ENABLED=true` solo en el proyecto beta, mantuvo
+`NOTIFICATIONS_ENABLED=false`, y limitó el carril por el UUID del grupo
+`test` y los UUID de las dos cuentas QA. El deployment beta
+`dpl_EcPXDj4ZLkJjCjSzp3gbMx8wCqpy` pasó build, pruebas y el paquete
+privado H04d de siete recibos antes y después de mover **solo** el alias
+canónico beta. El resultado conserva `isolationVerified:false` bajo el
+residual beta aceptado; el alias legacy sigue en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+El Worker Cloudflare `hermes-beta-outbox-scheduler` quedó en versión
+`efb2776f-0470-4500-915c-aa935cf2be1f`, con cron cada cinco minutos,
+destino fijo beta y secreto propio para Push. El commit del Worker
+`ac7355f` es posterior al commit de app `f37ef12` desplegado en Vercel;
+no implica un segundo deployment de la app. La prueba creó un gasto
+sintético de ARS 1 en `test`, reintegro
+`2B0zQ1wPA35bD4uCX1v90`, y **exactamente una** fila de outbox
+`reimbursement.requested` dirigida a QA2. El primer read-back aún la mostró
+`pending`, pero el cron la procesó después: la conciliación final registró
+`sent`, **un intento**, ningún código de error y ninguna segunda fila.
+Esteban mostró la misma notificación genérica en dos capturas del dispositivo
+QA2 (banner y Centro de notificaciones), y aclaró que era **una sola**
+notificación. Queda validada la entrega end-to-end de este evento del
+canary, no la promesa de exactamente una visualización bajo todos los
+reintentos. No hace falta pagar el reintegro de prueba. No se leyeron
+endpoints ni claves.

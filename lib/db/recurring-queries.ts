@@ -13,6 +13,7 @@ import {
   monthly_settings,
   users,
   telegram_delivery_outbox,
+  group_members,
 } from "./schema";
 import { eq, and, desc, sql, gte, lte, isNull, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -133,8 +134,8 @@ export async function getUserRecurringExpenses(
     conditions.push(eq(recurringExpenses.isActive, true));
   }
 
-  // Include both matching groupId AND null groupId (for backwards compatibility)
-  // This ensures recurrents created without groupId are still visible
+  // Keep the legacy null-group predicate for callers, but the membership join
+  // below deliberately excludes unscoped rows from beta reads and cron writes.
   if (options?.groupId) {
     conditions.push(
       or(
@@ -165,6 +166,10 @@ export async function getUserRecurringExpenses(
       categorySlug: categories.slug,
     })
     .from(recurringExpenses)
+    .innerJoin(group_members, and(
+      eq(group_members.group_id, recurringExpenses.groupId),
+      eq(group_members.user_id, recurringExpenses.userId),
+    ))
     .leftJoin(categories, eq(recurringExpenses.categoryId, categories.id))
     .where(and(...conditions))
     .orderBy(desc(recurringExpenses.createdAt));
@@ -486,6 +491,10 @@ export async function getPendingExecutions(
     })
     .from(recurringExecutions)
     .innerJoin(recurringExpenses, eq(recurringExecutions.recurringExpenseId, recurringExpenses.id))
+    .innerJoin(group_members, and(
+      eq(group_members.group_id, recurringExpenses.groupId),
+      eq(group_members.user_id, recurringExpenses.userId),
+    ))
     .leftJoin(categories, eq(recurringExpenses.categoryId, categories.id))
     .where(
       and(
@@ -609,6 +618,10 @@ async function getExecutionForActor(
       recurringExpenses,
       eq(recurringExecutions.recurringExpenseId, recurringExpenses.id),
     )
+    .innerJoin(group_members, and(
+      eq(group_members.group_id, recurringExpenses.groupId),
+      eq(group_members.user_id, recurringExpenses.userId),
+    ))
     .where(
       and(
         eq(recurringExecutions.id, executionId),
@@ -846,6 +859,20 @@ async function createTransactionFromRecurring(
     throw new Error("No se pueden crear transacciones recurrentes sin grupo");
   }
 
+  // A removed member must not be able to confirm an old execution. This is
+  // checked again inside the writer's transaction, including auto-confirm.
+  const membership = (await executor
+    .select({ userId: group_members.user_id })
+    .from(group_members)
+    .where(and(
+      eq(group_members.group_id, recurring.groupId),
+      eq(group_members.user_id, recurring.userId),
+    ))
+    .limit(1))[0];
+  if (!membership) {
+    throw new Error("El usuario ya no pertenece al grupo del gasto recurrente");
+  }
+
   const settings = (await executor
     .select({ currency_mode: monthly_settings.currency_mode, exchange_rate: monthly_settings.exchange_rate })
     .from(monthly_settings)
@@ -1003,6 +1030,10 @@ export async function getUpcomingExecutions(
     })
     .from(recurringExecutions)
     .innerJoin(recurringExpenses, eq(recurringExecutions.recurringExpenseId, recurringExpenses.id))
+    .innerJoin(group_members, and(
+      eq(group_members.group_id, recurringExpenses.groupId),
+      eq(group_members.user_id, recurringExpenses.userId),
+    ))
     .leftJoin(categories, eq(recurringExpenses.categoryId, categories.id))
     .innerJoin(users, eq(recurringExpenses.userId, users.id))
     .where(
@@ -1081,6 +1112,10 @@ export async function getOverdueExecutions(): Promise<Array<{ userId: string; te
     })
     .from(recurringExecutions)
     .innerJoin(recurringExpenses, eq(recurringExecutions.recurringExpenseId, recurringExpenses.id))
+    .innerJoin(group_members, and(
+      eq(group_members.group_id, recurringExpenses.groupId),
+      eq(group_members.user_id, recurringExpenses.userId),
+    ))
     .leftJoin(categories, eq(recurringExpenses.categoryId, categories.id))
     .innerJoin(users, eq(recurringExpenses.userId, users.id))
     .where(
