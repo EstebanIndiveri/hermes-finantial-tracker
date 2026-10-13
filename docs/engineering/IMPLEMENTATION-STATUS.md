@@ -2476,9 +2476,78 @@ errores (63 advertencias previas) y `git diff --check` en Node 22.
 
 La fotografía beta read-only de las 16:47:52 UTC conservó Push 1 y Telegram
 25 `sent`, sin trabajos abiertos, vencidos ni purgas debidas. Este código
-todavía requiere promoción beta y reatestación H04d para observarlo en
-runtime; no altera datos QA ni activa avisos proactivos. **Owner Codex:**
-desplegar, comprobar al menos un tick con `activity` y sostener la
-observación. La prueba de reintento real sigue separada; el canary histórico
-Telegram no acredita por sí solo el deployment actual y el ensayo local no
-es latencia de proveedor.
+no altera datos QA ni activa avisos proactivos. La revisión independiente
+Luna no encontró defectos concretos en la cabecera ni en la validación.
+
+**Rollout beta (17:06 UTC):** commit `d97a185f5abc3c12dfe2f00f4ffc74b5013e9326`
+pusheado; Vercel creó `dpl_5euJyd1xRaQ8fQjnBHeEj3n4MaFE` como target
+`production` **solo en el proyecto beta**. Quedó `READY`, con los diez checks
+H04d del build y los seis fingerprints beta aprobados. El paquete privado
+de recibos actualizado pasó antes y después de mover únicamente el alias
+`hermes-finantial-tracker-z2.vercel.app`: `ok:true`,
+`postActivationRuntimeConsistent:true`, `isolationVerified:false`.
+El alias legacy conserva `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. Cloudflare
+publicó solo `hermes-beta-outbox-scheduler` versión
+`7cefe87a-2df0-4192-a8b5-9cd896aac00b`, con cron de cinco minutos,
+flags de ambos carriles en `true` y dos bindings secretos presentes por
+nombre. No se leyeron valores secretos.
+
+La fotografía beta read-only de las 17:00:40 UTC seguía Push 1 y Telegram
+25 `sent`, cero abiertos, vencidos o purgas debidas. El tick de las 17:10 UTC
+del Worker nuevo registró ambos carriles `processed`, HTTP 200, con
+`activity={claimed:0,sent:0,retryable:0,dead:0,lostLease:0}` y duración
+de 1639/1640 ms. La fotografía Turso posterior a las 17:11:33 UTC conservó
+Push 1 y Telegram 25 `sent`, sin trabajo abierto, vencido ni purga debida.
+La conexión de tail se reconectó antes del tick; el evento registrado
+identifica la versión desplegada y no se infiere actividad durante el
+intervalo desconectado. **Cerrado, owner Codex:** promoción y primer tick
+con metadatos agregados. **Abierto, owner Codex:** observación temporal y
+prueba de reintento real acotada; el canary histórico Telegram no acredita
+por sí solo este deployment y el ensayo local no mide latencia de proveedor.
+
+### ACT-17 — canary de recuperación Telegram beta (13/10/2026)
+
+La cuenta QA `esteban_beta_qa` era única, tenía Telegram vinculado y 47
+mensajes privados previos con el chat correspondiente; el bot del outbox
+coincidía con la identidad beta. Se insertaron solo una `telegram_operations`
+sintética y una `telegram_delivery_outbox` sintética para su chat privado,
+con texto explícito de prueba técnica y estado inicial `retryable`, intento
+1, código estable `provider_unavailable`. No se creó gasto, reintegro,
+split ni pago. La fotografía previa a las 17:14:28 UTC mostraba Telegram
+1 `retryable` vencido y Push sin trabajo abierto.
+
+El tick del Worker beta de las 17:15 UTC registró Telegram HTTP 200,
+`processed`, `activity={claimed:1,sent:1,retryable:0,dead:0,lostLease:0}`
+en 1443 ms. Push permaneció `processed` con cinco ceros. En Turso la única
+fila del canary quedó `sent`, intento 2, con recibo de proveedor presente,
+lease y error limpios. Los conteos financieros antes/después se mantuvieron
+en 24 transacciones, 9 reintegros, 0 splits y 0 pagos. Esto acredita una
+recuperación beta con proveedor, no tasa sostenida ni ausencia de duplicados
+ante fallos de red inciertos.
+
+La inserción manual del fixture omitió `retention_until`: el snapshot
+estricto lo bloqueó y la consulta agregada confirmó que era la única fila
+terminal sin TTL. El encolador normal sí establece el TTL de 30 días. Se
+completó **solo esa fila QA**, condicionada a `sent`/intento 2/TTL nulo, con
+`retention_until=sent_at+30 días`; no hubo cambio de código ni purga. A las
+17:17:51 UTC el snapshot volvió a pasar: Telegram 26 `sent`, Push 1 `sent`,
+cero abiertos, vencidos, leases expirados o purgas debidas. En futuros
+canaries, usar el encolador o incluir el TTL en el fixture antes del envío.
+
+**Cerrado, owner Codex:** recuperación Telegram en el deployment vigente y
+conciliación financiera/retención. **Abierto, owner Codex:** ventana más
+larga de capacidad/latencia y validación Push con proveedor representativo.
+Los opt-ins proactivos siguen en cero y `NOTIFICATIONS_ENABLED=false`;
+ningún aviso proactivo fue activado. Los datos QA y sus movimientos se
+conservan hasta el cierre del piloto, sujetos únicamente a TTLs terminales
+de entrega.
+
+Un tercer tick observado a las 17:20 UTC, con el mismo Worker beta, devolvió
+ambos carriles `processed`, HTTP 200 y cinco ceros; duró 643/660 ms. La
+fotografía posterior de las 17:21:26 UTC conservó Telegram 26 y Push 1
+`sent`, sin abiertos, vencidos o purgas debidas. Esta ventana de tres ticks
+incluye un canary de recuperación y dos colas vacías, pero sigue sin ser
+una medición sostenida de capacidad o un SLO. **Owner Codex:** mantener
+observabilidad del piloto y no activar avisos proactivos hasta consentimiento
+individual y decisión de alcance; el único canary Push con confirmación
+humana previa sigue siendo el del 12/10.

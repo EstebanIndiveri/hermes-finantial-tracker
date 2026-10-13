@@ -107,3 +107,19 @@ agrega `X-Hermes-Outbox-Counts` a las respuestas procesadas. El scheduler
 registra únicamente cinco contadores acotados, o `activity:null` si faltan
 o son inválidos. Cero claims durante un tick prueba ausencia de trabajo
 reclamado por esa invocación; no es evidencia de capacidad o entrega.
+
+El tick del 13/10 a las 17:10 UTC, versión Worker
+`7cefe87a-2df0-4192-a8b5-9cd896aac00b`, devolvió `processed`, HTTP 200
+y cinco ceros en ambos carriles. El snapshot Turso posterior a las
+17:11:33 UTC mantuvo Push 1/Telegram 25 `sent`, cero abiertos, vencidos
+o purgas debidas. La lectura de tail había reconectado antes de ese tick;
+no extrapolar continuidad al período sin conexión.
+
+Un canary Telegram beta del mismo deployment se inició en `retryable`
+intento 1 y el tick de las 17:15 UTC lo registró `claimed:1,sent:1` en
+1443 ms. La única fila llegó a `sent`, intento 2, con recibo de proveedor;
+los conteos financieros no cambiaron. La inserción sintética manual omitió
+el TTL terminal, que el encolador normal sí fija; el snapshot bloqueó el
+estado hasta corregir únicamente esa fila QA a `sent_at+30 días`. A las
+17:17:51 UTC ambas colas volvieron a cero abiertos. No interpretar este
+único envío como capacidad sostenida ni como permiso para avisos proactivos.
