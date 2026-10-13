@@ -98,3 +98,63 @@ it("sweeps expired non-terminal rows and allows only one concurrent claim", asyn
   const row = await client.execute("SELECT status, last_error_code FROM push_delivery_outbox WHERE delivery_key = 'expired'");
   expect(row.rows[0]).toMatchObject({ status: "dead", last_error_code: "expired" });
 });
+
+it("drains a concurrent backlog through a rate-limit retry without duplicate claims", async () => {
+  const deliveryCount = 40;
+  for (let index = 0; index < deliveryCount; index += 1) {
+    await database.transaction((tx) => outbox.enqueuePushDelivery(tx, {
+      ...input(`load-${index}`, 100_000),
+      operationId: `load-operation-${index}`,
+      reimbursementId: `load-reimbursement-${index}`,
+      userId: `load-user-${index}`,
+      subscriptionId: `load-subscription-${index}`,
+    }));
+  }
+
+  async function countStatus(status: "retryable" | "sent"): Promise<number> {
+    const rows = await client.execute({
+      sql: "SELECT COUNT(*) AS count FROM push_delivery_outbox WHERE delivery_key LIKE 'load-%' AND status = ?",
+      args: [status],
+    });
+    return Number(rows.rows[0].count);
+  }
+
+  async function drainPhase(phase: "retryable" | "sent", now: number): Promise<void> {
+    const claimedIds: string[] = [];
+    for (let round = 0; round < deliveryCount && await countStatus(phase) < deliveryCount; round += 1) {
+      const batches = await Promise.all(Array.from({ length: 4 }, async (_, worker) => {
+        const ids: string[] = [];
+        for (let slot = 0; slot < 5; slot += 1) {
+          const leaseToken = `${phase}-${round}-${worker}-${slot}`;
+          const row = await outbox.claimPushDelivery({ now, leaseToken });
+          if (!row) break;
+          ids.push(row.id);
+          const changed = phase === "retryable"
+            ? await outbox.markPushDeliveryRetryable({
+              id: row.id,
+              leaseToken,
+              errorCode: "provider_rate_limited",
+              httpStatus: 429,
+              retryAt: now + 1_000,
+              now,
+            })
+            : await outbox.markPushDeliverySent({ id: row.id, leaseToken, now });
+          expect(changed).toBe(true);
+        }
+        return ids;
+      }));
+      for (const batch of batches) {
+        expect(batch.length).toBeLessThanOrEqual(5);
+        claimedIds.push(...batch);
+      }
+    }
+    expect(await countStatus(phase)).toBe(deliveryCount);
+    expect(claimedIds).toHaveLength(deliveryCount);
+    expect(new Set(claimedIds).size).toBe(deliveryCount);
+  }
+
+  await drainPhase("retryable", 100_000);
+  await drainPhase("sent", 101_000);
+  const counts = await client.execute("SELECT MIN(attempt_count) AS minimum, MAX(attempt_count) AS maximum FROM push_delivery_outbox WHERE delivery_key LIKE 'load-%'");
+  expect(counts.rows[0]).toEqual(expect.objectContaining({ minimum: 2, maximum: 2 }));
+});

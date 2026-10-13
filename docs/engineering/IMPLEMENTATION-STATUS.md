@@ -2257,3 +2257,26 @@ observar una ventana posterior y definir por separado el inventario exacto
 de dependencias antes de proponer cualquier limpieza de gastos, reintegros,
 categorías o cuentas QA. Ninguna evidencia de este corte autoriza borrar
 datos financieros ni activar avisos proactivos.
+
+### ACT-17 — ensayo local de concurrencia Push (13/10/2026)
+
+El [contrato de este ensayo](ACT-17-PUSH-SATURATION-HARNESS.md) se cubrió
+con 40 intenciones sintéticas en libSQL local y cuatro consumidores por
+ronda, limitados a cinco claims cada uno. Una primera fase aplica
+directamente la transición `retryable` con código `429`; la segunda termina
+en `sent`. Cada fase reclamó 40 IDs distintos y todas las filas acabaron
+con dos intentos. La fixture crea solo la tabla del outbox Push; no llama a
+`web-push`, bases remotas ni escritores financieros. El adaptador del
+proveedor y la capacidad real **no** quedan probados por este ensayo.
+
+Pasaron 1006 tests de app, 101 del harness, typecheck y lint dirigido. La
+revisión independiente Luna confirmó el cerco y acotó explícitamente la
+interpretación de `429` a una transición simulada. Este corte agrega solo
+prueba y documentación; no modifica el runtime publicado en beta.
+
+**Cerrado, owner Codex:** saturación funcional local de claims/transiciones
+Push. **Abierto, owner Codex:** prueba de adaptador y capacidad con entorno
+representativo, observación temporal de colas y política de retención de
+datos Telegram; la limpieza financiera QA permanece separada y requiere
+inventario exacto antes de cualquier borrado. **Owner Esteban:** ninguna
+acción requerida ahora.
