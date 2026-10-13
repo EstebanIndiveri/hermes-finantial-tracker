@@ -2386,3 +2386,24 @@ se incorporaron contadores que bloquean estado nulo y tiempos inválidos.
 **Abierto, owner Codex:** comparaciones temporales en varios cortes y
 capacidad/latencia con proveedor representativo antes de reconsiderar
 avisos proactivos; la decisión de activación beta permanece separada.
+
+### ACT-17 — semántica observable del scheduler Push (13/10/2026)
+
+El siguiente corte corrige una ambigüedad: un HTTP 200 de
+`/api/cron/push-outbox` podía significar cola procesada o Push deshabilitado,
+pero el scheduler registraba ambos como ejecución completada. La ruta ahora
+emite el estado cerrado `processed` o `skipped_worker_disabled` en
+`X-Hermes-Outbox-Execution`; el Worker lo registra solo tras validarlo y
+convierte cualquier valor inesperado en `unknown`, sin leer cuerpos.
+Pruebas dirigidas de ruta y scheduler fijan el contrato. No se han activado
+envíos, alterado datos QA ni consultado secretos con este cambio.
+Pasaron 1008 pruebas de app, 110 del harness, typecheck, lint (0 errores;
+63 advertencias preexistentes) y `git diff --check` con Node 22.
+
+**Abierto, owner Codex:** revisar estado real de
+Cloudflare/Vercel y promover el runtime solo a beta con reatestación H04d.
+El Wrangler versionado tiene `PUSH_SCHEDULER_ENABLED=true`, mientras la
+evidencia histórica de Vercel señalaba `WEB_PUSH_ENABLED=false`; no se
+infiere el estado desplegado de ninguno a partir del repositorio. La
+fotografía limpia de Turso no prueba liveness del scheduler. Avisos
+proactivos siguen apagados y su activación requiere un gate distinto.

@@ -74,3 +74,23 @@ Mantener el kill switch proactivo apagado hasta cerrar la revisión del
 worker/outbox en una ventana suficiente, conservar opt-in individual y
 acordar con Esteban el alcance de activación en beta. Chats de sesiones
 siguen excluidos hasta tener vínculo chat-grupo comprobable.
+
+## Estado de ejecución del scheduler Push
+
+La ruta Push distingue `processed` de `skipped_worker_disabled` mediante
+`X-Hermes-Outbox-Execution`, igual que la ruta Telegram. El scheduler solo
+registra ese valor si está en la lista cerrada; cualquier otro encabezado se
+convierte en `unknown`. No lee el cuerpo ni registra endpoints, tokens o
+datos financieros. Un HTTP 200 con `skipped_worker_disabled` significa que
+la petición llegó, **no** que se haya ejecutado la cola Push. Una prueba
+local verifica ambos lados del contrato, pero no acredita que el Worker
+desplegado esté activo ni que haya entregas reales.
+
+Antes de atribuir latencia o disponibilidad a Push hay que comparar la
+configuración efectivamente desplegada en Cloudflare y Vercel con el
+repositorio: `PUSH_SCHEDULER_ENABLED` del Worker y `WEB_PUSH_ENABLED` de la
+ruta son interruptores distintos. El archivo Wrangler declara el primero
+`true`; la evidencia histórica de Vercel indicaba el segundo `false`.
+Hasta obtener metadatos actuales de ambos proveedores, tratar esa
+diferencia como estado no verificado, no como un envío habilitado. No usar
+un HTTP 200 aislado para abrir la puerta de avisos proactivos.

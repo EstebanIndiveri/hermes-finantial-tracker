@@ -112,9 +112,13 @@ export function createPushOutboxScheduler({
         headers: { Authorization: `Bearer ${env.PUSH_OUTBOX_SCHEDULER_SECRET}` },
         signal: controller.signal,
       });
+      const executionHeader = response.headers?.get?.("X-Hermes-Outbox-Execution");
+      const execution = ["processed", "skipped_worker_disabled"]
+        .includes(executionHeader) ? executionHeader : "unknown";
       safeLogger(logger, {
         event: response.ok ? "push_outbox_scheduler_completed" : "push_outbox_scheduler_http_error",
         status: response.status,
+        execution,
         durationMs: Date.now() - startedAt,
       });
       // Do not read or log the body; the endpoint may return private delivery data.

@@ -155,6 +155,41 @@ test("push recovery targets only the pinned beta endpoint with its dedicated sec
   assert.equal(request.init.signal instanceof AbortSignal, true);
 });
 
+test("push scheduler logs the allowlisted route execution state without reading the body", async () => {
+  const logger = captureLogger();
+  let bodyReads = 0;
+  const run = createPushOutboxScheduler({
+    logger,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "X-Hermes-Outbox-Execution": "skipped_worker_disabled" }),
+      text: async () => { bodyReads += 1; return "private delivery data"; },
+    }),
+  });
+
+  await run({ ...betaEnv, PUSH_SCHEDULER_ENABLED: "true" });
+  assert.equal(JSON.parse(logger.entries[0]).execution, "skipped_worker_disabled");
+  assert.equal(bodyReads, 0);
+  assert.doesNotMatch(logger.entries.join("\n"), /private|push-test-only-secret|Authorization/i);
+});
+
+test("push scheduler replaces unexpected execution headers with unknown", async () => {
+  const logger = captureLogger();
+  const run = createPushOutboxScheduler({
+    logger,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "X-Hermes-Outbox-Execution": "private-token-detail" }),
+    }),
+  });
+
+  await run({ ...betaEnv, PUSH_SCHEDULER_ENABLED: "true" });
+  assert.equal(JSON.parse(logger.entries[0]).execution, "unknown");
+  assert.doesNotMatch(logger.entries.join("\n"), /private-token-detail/);
+});
+
 test("push recovery fails closed for a modified target or missing secret", async () => {
   let fetches = 0;
   const run = createPushOutboxScheduler({ logger: captureLogger(), fetchImpl: async () => { fetches += 1; } });

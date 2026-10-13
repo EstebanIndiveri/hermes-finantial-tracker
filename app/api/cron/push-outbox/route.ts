@@ -3,6 +3,7 @@ import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { isPushCanaryConfigured, isPushCanaryEnabled } from "@/lib/notifications/push-canary";
 
 export const maxDuration = 30;
+const WORKER_STATE_HEADER = "X-Hermes-Outbox-Execution";
 
 function configured(value: string | undefined): boolean {
   return typeof value === "string" && value.trim().length > 0;
@@ -17,7 +18,10 @@ export async function GET(request: Request) {
 
   // No worker import or DB access until the scoped beta push lane is on.
   if (process.env.WEB_PUSH_ENABLED !== "true") {
-    return NextResponse.json({ ok: true, skipped: true });
+    return NextResponse.json(
+      { ok: true, skipped: true },
+      { headers: { [WORKER_STATE_HEADER]: "skipped_worker_disabled" } },
+    );
   }
 
   if (!isPushCanaryConfigured() || !isPushCanaryEnabled() || !configured(process.env.TURSO_DATABASE_URL) || !configured(process.env.TURSO_AUTH_TOKEN) ||
@@ -28,7 +32,10 @@ export async function GET(request: Request) {
   try {
     const { processPushOutbox } = await import("@/lib/notifications/push-outbox-worker");
     const summary = await processPushOutbox({ maxClaims: 25, maxRuntimeMs: 10_000 });
-    return NextResponse.json({ ok: true, ...summary });
+    return NextResponse.json(
+      { ok: true, ...summary },
+      { headers: { [WORKER_STATE_HEADER]: "processed" } },
+    );
   } catch {
     return NextResponse.json({ error: "Push outbox failed" }, { status: 503 });
   }
