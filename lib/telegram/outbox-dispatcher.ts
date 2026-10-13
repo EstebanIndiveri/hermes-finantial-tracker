@@ -5,6 +5,12 @@ import {
   markTelegramDeliverySent,
   type TelegramDeliveryRow,
 } from "@/lib/telegram/outbox";
+import { db } from "@/lib/db/client";
+import { telegram_operations, users } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
+import { DAILY_SUMMARY_OPERATION_KIND, parseDailySummaryContext } from "@/lib/notifications/daily-summary-delivery";
+import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const MAX_ATTEMPTS = 8;
@@ -53,6 +59,33 @@ function decodeReplyMarkup(value: string | null): Record<string, unknown> | unde
 
 function retryDelayMs(attempt: number): number {
   return Math.min(15 * 60_000, 1_000 * 2 ** Math.max(0, attempt - 1));
+}
+
+async function dailySummaryRejection(row: TelegramDeliveryRow): Promise<string | null> {
+  const [operation] = await db.select({
+    botId: telegram_operations.bot_id,
+    updateId: telegram_operations.update_id,
+    kind: telegram_operations.operation_kind,
+    status: telegram_operations.status,
+    resourceType: telegram_operations.resource_type,
+    userId: telegram_operations.resource_id,
+    context: telegram_operations.result_json,
+  }).from(telegram_operations).where(eq(telegram_operations.operation_id, row.operation_id)).limit(1);
+  if (!operation || operation.botId !== row.bot_id || operation.updateId !== row.update_id ||
+    operation.kind !== DAILY_SUMMARY_OPERATION_KIND || operation.status !== "committed" ||
+    operation.resourceType !== "daily_summary" || !operation.userId) return "invalid_proactive_context";
+  const context = parseDailySummaryContext(operation.context);
+  if (!context || row.action !== "send_message") return "invalid_proactive_context";
+  if (process.env.NOTIFICATIONS_ENABLED !== "true") return "notifications_disabled";
+  if (!await hasProactiveConsent(operation.userId, "dailySummary")) return "consent_revoked";
+  const [user] = await db.select({
+    telegramId: users.telegram_user_id,
+    activeGroupId: users.active_telegram_group_id,
+  }).from(users).where(eq(users.id, operation.userId)).limit(1);
+  if (!user || user.telegramId !== row.chat_id) return "recipient_changed";
+  const authorizedGroupId = await resolveAuthorizedTelegramGroup(operation.userId, user.activeGroupId);
+  if (authorizedGroupId !== context.groupId) return "group_changed";
+  return null;
 }
 
 function providerBody(value: unknown): TelegramProviderBody {
@@ -156,7 +189,35 @@ export async function dispatchClaimedTelegramDelivery({
   if (!leaseToken) throw new Error("Claimed Telegram delivery has no lease token");
 
   const claimedAt = now();
+  const isDailySummary = row.update_id.startsWith("cron:daily:");
+  if (isDailySummary) {
+    // A recovered lease may follow a provider-accepted request whose response
+    // never reached us. Do not call sendMessage twice for this beta alert.
+    const rejection = row.attempt_count > 1
+      ? "delivery_uncertain"
+      : await dailySummaryRejection(row);
+    if (rejection) {
+      const changed = await markTelegramDeliveryDead({
+        id: row.id,
+        leaseToken,
+        errorCode: rejection,
+        now: claimedAt,
+      });
+      summary[changed ? "dead" : "lostLease"] += 1;
+      return summary;
+    }
+  }
   if (!token) {
+    if (isDailySummary) {
+      const changed = await markTelegramDeliveryDead({
+        id: row.id,
+        leaseToken,
+        errorCode: "missing_token",
+        now: claimedAt,
+      });
+      summary[changed ? "dead" : "lostLease"] += 1;
+      return summary;
+    }
     const changed = await markTelegramDeliveryRetryable({
       id: row.id,
       leaseToken,
@@ -180,6 +241,18 @@ export async function dispatchClaimedTelegramDelivery({
       now: now(),
     });
     summary[changed ? "sent" : "lostLease"] += 1;
+    return summary;
+  }
+
+  if (isDailySummary) {
+    const changed = await markTelegramDeliveryDead({
+      id: row.id,
+      leaseToken,
+      errorCode: result.kind === "retryable" ? "delivery_uncertain" : result.errorCode,
+      httpStatus: result.httpStatus,
+      now: now(),
+    });
+    summary[changed ? "dead" : "lostLease"] += 1;
     return summary;
   }
 

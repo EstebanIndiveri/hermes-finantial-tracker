@@ -2574,3 +2574,39 @@ duplicar un resumen, y la cola monitoreada no acredita ese envío. Conservar
 el switch apagado hasta resolver ese borde, revalidar consentimiento al
 entregar y observar una ventana operativa suficiente. No tocar legacy ni
 los datos financieros QA retenidos durante el piloto.
+
+### ACT-17 — corte local de entrega diaria durable (13/10/2026)
+
+El cron de resumen diario ya no llama directamente a Telegram: prepara una
+intención por bot, usuario y fecha calendario Argentina en el outbox Telegram
+beta. Reutiliza la operación padre persistente como recibo de deduplicación,
+incluso después del TTL de 30 días del hijo. Si cae entre padre e hijo puede
+completar el hijo dentro de esa ventana, sin recrearlo después. La misma fecha
+Argentina gobierna el mes, la clave y la condición de lunes; se corrigió el
+borde de las 21:00 locales que la conversión a ISO movía al día siguiente.
+
+Antes del envío el dispatcher exige `NOTIFICATIONS_ENABLED=true`, preferencia
+diaria vigente, chat privado aún vinculado y grupo activo autorizado e igual
+al preparado. Una revocación, cambio de chat/grupo o falta de metadatos mata
+la entrega sin proveedor. Para este aviso proactivo se permite un solo intento
+de proveedor: timeout, resultado incierto o lease recuperado quedan `dead`
+para revisión, sin reintento automático. El proveedor no ofrece idempotencia
+de envío; se prioriza evitar un duplicado a costa de poder perder un resumen.
+Las respuestas a acciones del usuario conservan sus reintentos actuales.
+
+El contrato y sus exclusiones están en `ACT-17-DAILY-DELIVERY.md`. Pruebas
+dirigidas e integración libSQL cubren concurrencia, deduplicación, caída
+parcial, revocación, relink, cambio de grupo, flag apagado y resultado incierto.
+La batería completa pasó con Node 22: 120 suites/1022 tests de Jest, 113
+pruebas del harness, lint sin errores (63 warnings previos), build Next y
+`tsc --noEmit --incremental false`. `git diff --check` pasó. La revisión
+independiente no encontró bloqueos de código; señaló como condición operativa
+verificar flags, worker, bot y base beta antes de un canary.
+
+**Cerrado, owner Codex:** implementación y verificación local del borde de
+idempotencia/revocación diario. **Abierto, owner Codex:** commit/push,
+atestación H04d, despliegue únicamente del proyecto beta, canary de cola y
+observación operacional. **No activar aún** `NOTIFICATIONS_ENABLED`: el
+consentimiento individual está guardado, pero el envío proactivo permanece
+apagado hasta que ese corte y sus controles queden aprobados. No se alteraron
+movimientos financieros ni datos QA ni legacy.

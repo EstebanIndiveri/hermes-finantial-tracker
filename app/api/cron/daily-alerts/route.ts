@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { users, transactions, monthly_settings, reimbursementRequests } from "@/lib/db/schema";
 import { eq, and, gte, lte, lt } from "drizzle-orm";
-import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
+import { getArgentinaDateKey } from "@/lib/utils/dates";
 import { getMonthSummary, getAccountingMonthProjection, getCategoryBreakdown } from "@/lib/finance/summaries";
 import { calculateMonthStatus } from "@/lib/finance/rules";
 import { isIncomeCategory } from "@/lib/finance/income";
-import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
+import { enqueueDailySummary } from "@/lib/notifications/daily-summary-delivery";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
@@ -29,7 +29,9 @@ export async function GET(req: NextRequest) {
   if (notificationsMode === "invalid") {
     return NextResponse.json({ error: "Notifications unavailable" }, { status: 503 });
   }
-  if (notificationsMode === "disabled") {
+  // This proactive route requires an explicit opt-in at both the deployment
+  // and recipient layers; a missing legacy-compatible flag is not consent.
+  if (notificationsMode === "disabled" || process.env.NOTIFICATIONS_ENABLED !== "true") {
     return NextResponse.json({
       ok: true,
       skipped: true,
@@ -43,10 +45,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const month = getActiveMonthArgentina();
-    const today = getArgentinaDate();
-    const todayStr = today.toISOString().split("T")[0]; // YYYY-MM-DD
-    const isMonday = today.getDay() === 1;
+    const todayStr = getArgentinaDateKey();
+    const month = todayStr.slice(0, 7);
+    const isMonday = new Date(`${todayStr}T12:00:00Z`).getUTCDay() === 1;
 
     // Get all users (personal app — typically one)
     const allUsers = await db.select().from(users);
@@ -156,8 +157,14 @@ export async function GET(req: NextRequest) {
       });
 
       if (shouldSend) {
-        await sendTelegramMessage(chatId, message);
-        results.push({ userId: user.id, sent: true });
+        const queued = await enqueueDailySummary({
+          userId: user.id,
+          groupId,
+          chatId,
+          argentinaDate: todayStr,
+          message,
+        });
+        results.push({ userId: user.id, sent: false, reason: queued ? "queued" : "already_queued" });
       } else {
         results.push({ userId: user.id, sent: false, reason: "nothing_relevant" });
       }

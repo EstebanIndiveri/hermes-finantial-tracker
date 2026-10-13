@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { GET } from "../route";
 import { db } from "@/lib/db/client";
 import { getMonthSummary, getCategoryBreakdown, getAccountingMonthProjection } from "@/lib/finance/summaries";
-import { sendTelegramMessage } from "@/lib/telegram/send-message";
+import { enqueueDailySummary } from "@/lib/notifications/daily-summary-delivery";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
@@ -23,7 +23,7 @@ jest.mock("@/lib/db/client", () => ({
   },
 }));
 jest.mock("@/lib/finance/summaries", () => ({ getMonthSummary: jest.fn(), getCategoryBreakdown: jest.fn(), getAccountingMonthProjection: jest.fn() }));
-jest.mock("@/lib/telegram/send-message", () => ({ sendTelegramMessage: jest.fn() }));
+jest.mock("@/lib/notifications/daily-summary-delivery", () => ({ enqueueDailySummary: jest.fn() }));
 jest.mock("@/lib/telegram/alerts", () => ({ buildDailyAlert: jest.fn() }));
 jest.mock("@/lib/telegram/authorized-group-context", () => ({ resolveAuthorizedTelegramGroup: jest.fn() }));
 jest.mock("@/lib/notifications/telegram", () => ({ notifyReimbursementReminder: jest.fn(), getUserById: jest.fn() }));
@@ -37,6 +37,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     jest.clearAllMocks();
     (db.select as jest.Mock).mockReset();
     (hasProactiveConsent as jest.Mock).mockResolvedValue(true);
+    (enqueueDailySummary as jest.Mock).mockResolvedValue(true);
   });
   afterEach(() => { process.env = originalEnv; });
 
@@ -57,13 +58,13 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(getMonthSummary).not.toHaveBeenCalled();
     expect(getCategoryBreakdown).not.toHaveBeenCalled();
     expect(resolveAuthorizedTelegramGroup).not.toHaveBeenCalled();
-    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
     expect(getUserById).not.toHaveBeenCalled();
     expect(notifyReimbursementReminder).not.toHaveBeenCalled();
   });
 
   it("continues with daily processing for the exact configured token", async () => {
-    process.env = { ...originalEnv, CRON_SECRET: "cron-secret" };
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "true" };
     const from = jest.fn(() => ({ where: jest.fn().mockResolvedValue([]) }));
     (db.select as jest.Mock)
       .mockReturnValueOnce({ from: jest.fn().mockResolvedValue([]) })
@@ -95,7 +96,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
     expect(db.query.splits.findFirst).not.toHaveBeenCalled();
   });
 
@@ -118,8 +119,19 @@ describe("GET /api/cron/daily-alerts authorization", () => {
       results: [],
     });
     expect(db.select).not.toHaveBeenCalled();
-    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
     expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+  });
+
+  it("skips a missing proactive flag instead of using the legacy default", async () => {
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret" };
+    delete process.env.NOTIFICATIONS_ENABLED;
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+    expect(await response.json()).toMatchObject({ skipped: true, reason: "notifications_disabled" });
+    expect(db.select).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
   });
 
   it("does not remind a former payer about another group's reimbursement", async () => {
@@ -186,11 +198,11 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "Notifications unavailable" });
     expect(db.select).not.toHaveBeenCalled();
-    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
   });
 
   it("rejects authenticated test mode without running queries or sending notifications", async () => {
-    process.env = { ...originalEnv, CRON_SECRET: "cron-secret" };
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "true" };
 
     const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts?test=1", {
       headers: { authorization: "Bearer cron-secret" },
@@ -207,12 +219,12 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(getCategoryBreakdown).not.toHaveBeenCalled();
     expect(buildDailyAlert).not.toHaveBeenCalled();
     expect(resolveAuthorizedTelegramGroup).not.toHaveBeenCalled();
-    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
     expect(notifyReimbursementReminder).not.toHaveBeenCalled();
   });
 
   function setupDailyProcessing(users: Array<Record<string, unknown>>) {
-    process.env = { ...originalEnv, CRON_SECRET: "cron-secret", TELEGRAM_CHAT_ID: "global-chat" };
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "true", TELEGRAM_CHAT_ID: "global-chat" };
     (db.select as jest.Mock)
       .mockReturnValueOnce({ from: jest.fn().mockResolvedValue(users) })
       .mockReturnValue({ from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([]) })) });
@@ -244,7 +256,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(hasProactiveConsent).toHaveBeenCalledWith("u1", "dailySummary");
     expect(resolveAuthorizedTelegramGroup).not.toHaveBeenCalled();
     expect(getMonthSummary).not.toHaveBeenCalled();
-    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
   });
 
   it("keeps A's opt-in from authorizing an alert to B", async () => {
@@ -259,11 +271,11 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     }));
 
     expect(await response.json()).toMatchObject({ results: [
-      { userId: "user-A", sent: true },
+      { userId: "user-A", sent: false, reason: "queued" },
       { userId: "user-B", sent: false, reason: "not_opted_in" },
     ] });
-    expect(sendTelegramMessage).toHaveBeenCalledTimes(1);
-    expect(sendTelegramMessage).toHaveBeenCalledWith("telegram-A", "daily");
+    expect(enqueueDailySummary).toHaveBeenCalledTimes(1);
+    expect(enqueueDailySummary).toHaveBeenCalledWith(expect.objectContaining({ chatId: "telegram-A", message: "daily", groupId: "resolved-group" }));
     expect(resolveAuthorizedTelegramGroup).toHaveBeenCalledTimes(1);
   });
 
@@ -299,11 +311,11 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(sendTelegramMessage).toHaveBeenNthCalledWith(1, "tg-u1", "daily");
-    expect(sendTelegramMessage).toHaveBeenNthCalledWith(2, "tg-u2", "daily");
-    expect(sendTelegramMessage).not.toHaveBeenCalledWith("global-chat", expect.anything());
-    expect(sendTelegramMessage).not.toHaveBeenCalledWith("chat-u1", expect.anything());
-    expect(sendTelegramMessage).not.toHaveBeenCalledWith("chat-u2", expect.anything());
+    expect(enqueueDailySummary).toHaveBeenNthCalledWith(1, expect.objectContaining({ chatId: "tg-u1", message: "daily" }));
+    expect(enqueueDailySummary).toHaveBeenNthCalledWith(2, expect.objectContaining({ chatId: "tg-u2", message: "daily" }));
+    expect(enqueueDailySummary).not.toHaveBeenCalledWith(expect.objectContaining({ chatId: "global-chat" }));
+    expect(enqueueDailySummary).not.toHaveBeenCalledWith(expect.objectContaining({ chatId: "chat-u1" }));
+    expect(enqueueDailySummary).not.toHaveBeenCalledWith(expect.objectContaining({ chatId: "chat-u2" }));
     expect(db.query.bot_messages.findFirst).not.toHaveBeenCalled();
     expect(resolveAuthorizedTelegramGroup).toHaveBeenNthCalledWith(1, "u1", "g1");
     expect(resolveAuthorizedTelegramGroup).toHaveBeenNthCalledWith(2, "u2", "g2");
@@ -317,8 +329,8 @@ describe("GET /api/cron/daily-alerts authorization", () => {
       headers: { authorization: "Bearer cron-secret" },
     }));
 
-    expect(sendTelegramMessage).toHaveBeenCalledWith("tg-u1", "daily");
-    expect(sendTelegramMessage).not.toHaveBeenCalledWith("global-chat", expect.anything());
+    expect(enqueueDailySummary).toHaveBeenCalledWith(expect.objectContaining({ chatId: "tg-u1", message: "daily" }));
+    expect(enqueueDailySummary).not.toHaveBeenCalledWith(expect.objectContaining({ chatId: "global-chat" }));
   });
 
   it("skips summary processing when the user has no chat", async () => {
@@ -335,7 +347,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(getMonthSummary).not.toHaveBeenCalled();
     expect(getCategoryBreakdown).not.toHaveBeenCalled();
     expect(db.query.transactions.findMany).not.toHaveBeenCalled();
-    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
   });
 
   it("does not build or send a USD alert when the monthly USD summary is unavailable", async () => {
@@ -350,7 +362,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
       results: [{ userId: "u1", sent: false, reason: "summary_unavailable" }],
     });
     expect(buildDailyAlert).not.toHaveBeenCalled();
-    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
   });
 
   it("builds an ARS-only alert from the ARS projection and configured yellow threshold", async () => {
@@ -392,7 +404,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     }));
 
     expect(await response.json()).toMatchObject({ results: [{ userId: "u1", sent: false, reason: "no_chat_id" }] });
-    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
     expect(db.query.bot_messages.findFirst).not.toHaveBeenCalled();
   });
 
@@ -433,6 +445,6 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(db.query.transactions.findMany).not.toHaveBeenCalled();
     expect(getMonthSummary).not.toHaveBeenCalled();
     expect(getCategoryBreakdown).not.toHaveBeenCalled();
-    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(enqueueDailySummary).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,9 @@
-import { getArgentinaDate, getActiveMonthArgentina, getMonthDateRange } from "../dates";
+import { getArgentinaDate, getArgentinaDateKey, getActiveMonthArgentina, getMonthDateRange } from "../dates";
+
+test("Argentina date key does not roll over at 21:00 local time", () => {
+  expect(getArgentinaDateKey(new Date("2026-10-14T00:00:00.000Z"))).toBe("2026-10-13");
+  expect(getArgentinaDateKey(new Date("2026-10-14T03:00:00.000Z"))).toBe("2026-10-14");
+});
 
 test("getArgentinaDate returns a Date", () => {
   const d = getArgentinaDate();
