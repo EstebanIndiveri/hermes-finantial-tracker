@@ -16,6 +16,15 @@ function safeLogger(logger, event) {
   }
 }
 
+function activityFromHeaders(response, execution) {
+  if (!response.ok || execution !== "processed") return null;
+  const raw = response.headers?.get?.("X-Hermes-Outbox-Counts");
+  if (typeof raw !== "string" || !/^\d{1,2}(,\d{1,2}){4}$/.test(raw)) return null;
+  const [claimed, sent, retryable, dead, lostLease] = raw.split(",").map(Number);
+  if (claimed > 25 || sent + retryable + dead + lostLease > claimed) return null;
+  return { claimed, sent, retryable, dead, lostLease };
+}
+
 export function createOutboxScheduler({
   fetchImpl = fetch,
   logger = console,
@@ -60,6 +69,7 @@ export function createOutboxScheduler({
         event: response.ok ? "outbox_scheduler_completed" : "outbox_scheduler_http_error",
         status: response.status,
         execution,
+        activity: activityFromHeaders(response, execution),
         durationMs: Date.now() - startedAt,
       });
       // Do not read or log the body; the application may return private data.
@@ -119,6 +129,7 @@ export function createPushOutboxScheduler({
         event: response.ok ? "push_outbox_scheduler_completed" : "push_outbox_scheduler_http_error",
         status: response.status,
         execution,
+        activity: activityFromHeaders(response, execution),
         durationMs: Date.now() - startedAt,
       });
       // Do not read or log the body; the endpoint may return private delivery data.

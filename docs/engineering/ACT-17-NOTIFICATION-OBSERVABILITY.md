@@ -101,3 +101,9 @@ Telegram 758 ms medidos desde el scheduler. La cola beta seguía sin
 trabajos abiertos en la fotografía de las 16:41 UTC. Este control
 confirma invocación de las rutas, no recuperación de un job ni latencia
 de proveedor. Sigue pendiente una ventana operativa más larga.
+
+El [corte de actividad agregada](ACT-17-OUTBOX-ACTIVITY-METADATA.md)
+agrega `X-Hermes-Outbox-Counts` a las respuestas procesadas. El scheduler
+registra únicamente cinco contadores acotados, o `activity:null` si faltan
+o son inválidos. Cero claims durante un tick prueba ausencia de trabajo
+reclamado por esa invocación; no es evidencia de capacidad o entrega.

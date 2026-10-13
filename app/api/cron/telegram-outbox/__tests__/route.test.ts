@@ -37,7 +37,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   process.env = readyEnv();
   botIdMock.mockReturnValue("bot-1");
-  workerMock.mockResolvedValue({ claimed: 2, sent: 1, retryable: 1, dead: 0, purged: 3 });
+  workerMock.mockResolvedValue({ claimed: 2, sent: 1, retryable: 1, dead: 0, lostLease: 0, purged: 3 });
 });
 
 afterEach(() => {
@@ -105,6 +105,7 @@ it("skips a disabled worker without resolving a bot or touching worker code", as
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toEqual({ ok: true, skipped: true });
   expect(response.headers.get("X-Hermes-Outbox-Execution")).toBe("skipped_worker_disabled");
+  expect(response.headers.get("X-Hermes-Outbox-Counts")).toBeNull();
   expect(workerMock).not.toHaveBeenCalled();
   expect(botIdMock).not.toHaveBeenCalled();
 });
@@ -116,6 +117,7 @@ it("recovers user-initiated replies while proactive notifications are disabled",
 
   expect(response.status).toBe(200);
   expect(response.headers.get("X-Hermes-Outbox-Execution")).toBe("processed");
+  expect(response.headers.get("X-Hermes-Outbox-Counts")).toBe("2,1,1,0,0");
   expect(workerMock).toHaveBeenCalledTimes(1);
 });
 
@@ -140,6 +142,7 @@ it("runs the worker with the resolved bot and returns counters only", async () =
     sent: 1,
     retryable: 1,
     dead: 0,
+    lostLease: 0,
     purged: 3,
   });
   expect(workerMock).toHaveBeenCalledWith({

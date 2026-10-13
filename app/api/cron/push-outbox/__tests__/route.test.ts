@@ -45,6 +45,7 @@ it.each([
   const response = await GET(request());
   expect(response.status).toBe(200);
   expect(response.headers.get("X-Hermes-Outbox-Execution")).toBe("skipped_worker_disabled");
+  expect(response.headers.get("X-Hermes-Outbox-Counts")).toBeNull();
   await expect(response.json()).resolves.toEqual({ ok: true, skipped: true });
   expect(worker).not.toHaveBeenCalled();
 });
@@ -76,6 +77,7 @@ it("runs bounded recovery and returns counters only", async () => {
   const response = await GET(request());
   expect(response.status).toBe(200);
   expect(response.headers.get("X-Hermes-Outbox-Execution")).toBe("processed");
+  expect(response.headers.get("X-Hermes-Outbox-Counts")).toBe("1,1,0,0,0");
   await expect(response.json()).resolves.toEqual({ ok: true, claimed: 1, sent: 1, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: false, budgetExhausted: false });
   expect(worker).toHaveBeenCalledWith({ maxClaims: 25, maxRuntimeMs: 10_000 });
 });

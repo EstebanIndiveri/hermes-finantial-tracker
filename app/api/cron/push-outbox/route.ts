@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { isPushCanaryConfigured, isPushCanaryEnabled } from "@/lib/notifications/push-canary";
+import { outboxActivityHeader } from "@/lib/notifications/outbox-activity";
 
 export const maxDuration = 30;
 const WORKER_STATE_HEADER = "X-Hermes-Outbox-Execution";
@@ -32,9 +33,13 @@ export async function GET(request: Request) {
   try {
     const { processPushOutbox } = await import("@/lib/notifications/push-outbox-worker");
     const summary = await processPushOutbox({ maxClaims: 25, maxRuntimeMs: 10_000 });
+    const activity = outboxActivityHeader({ ...summary, retryable: summary.retried });
     return NextResponse.json(
       { ok: true, ...summary },
-      { headers: { [WORKER_STATE_HEADER]: "processed" } },
+      { headers: {
+        [WORKER_STATE_HEADER]: "processed",
+        ...(activity === null ? {} : { "X-Hermes-Outbox-Counts": activity }),
+      } },
     );
   } catch {
     return NextResponse.json({ error: "Push outbox failed" }, { status: 503 });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { resolveTelegramBotId } from "@/lib/telegram/update-inbox";
+import { outboxActivityHeader } from "@/lib/notifications/outbox-activity";
 
 export const maxDuration = 60;
 const WORKER_STATE_HEADER = "X-Hermes-Outbox-Execution";
@@ -56,9 +57,13 @@ export async function GET(request: Request) {
       botId,
       token: process.env.TELEGRAM_BOT_TOKEN,
     });
+    const activity = outboxActivityHeader(summary);
     return NextResponse.json(
       { ok: true, ...summary },
-      { headers: { [WORKER_STATE_HEADER]: "processed" } },
+      { headers: {
+        [WORKER_STATE_HEADER]: "processed",
+        ...(activity === null ? {} : { "X-Hermes-Outbox-Counts": activity }),
+      } },
     );
   } catch {
     // Do not expose provider, database, payload, token, or chat details.

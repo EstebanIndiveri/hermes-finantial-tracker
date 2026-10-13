@@ -67,6 +67,50 @@ test("logs only an allowlisted execution state from the beta response header", a
   assert.deepEqual(JSON.parse(logger.entries[0]).execution, "skipped_worker_disabled");
 });
 
+test("logs bounded Telegram delivery counts without reading response bodies", async () => {
+  const logger = captureLogger();
+  const run = createOutboxScheduler({
+    logger,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        "X-Hermes-Outbox-Execution": "processed",
+        "X-Hermes-Outbox-Counts": "2,1,1,0,0",
+      }),
+      text: async () => { throw new Error("body must not be read"); },
+    }),
+  });
+  await run(betaEnv);
+  assert.deepEqual(JSON.parse(logger.entries[0]).activity,
+    { claimed: 2, sent: 1, retryable: 1, dead: 0, lostLease: 0 });
+});
+
+test("rejects malformed or impossible activity metadata on both scheduler lanes", async () => {
+  for (const [create, env] of [
+    [createOutboxScheduler, betaEnv],
+    [createPushOutboxScheduler, { ...betaEnv, PUSH_SCHEDULER_ENABLED: "true" }],
+  ]) {
+    for (const counts of ["private-detail", "26,1,0,0,0", "1,1,1,0,0", "1,-1,0,0,0"]) {
+      const logger = captureLogger();
+      const run = create({
+        logger,
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            "X-Hermes-Outbox-Execution": "processed",
+            "X-Hermes-Outbox-Counts": counts,
+          }),
+        }),
+      });
+      await run(env);
+      assert.equal(JSON.parse(logger.entries[0]).activity, null);
+      assert.doesNotMatch(logger.entries[0], /private-detail/);
+    }
+  }
+});
+
 test("rejects any configured non-beta or modified target without fetching", async () => {
   let fetches = 0;
   const logger = captureLogger();
@@ -172,6 +216,24 @@ test("push scheduler logs the allowlisted route execution state without reading 
   assert.equal(JSON.parse(logger.entries[0]).execution, "skipped_worker_disabled");
   assert.equal(bodyReads, 0);
   assert.doesNotMatch(logger.entries.join("\n"), /private|push-test-only-secret|Authorization/i);
+});
+
+test("push scheduler records only aggregate delivery activity", async () => {
+  const logger = captureLogger();
+  const run = createPushOutboxScheduler({
+    logger,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        "X-Hermes-Outbox-Execution": "processed",
+        "X-Hermes-Outbox-Counts": "1,0,1,0,0",
+      }),
+    }),
+  });
+  await run({ ...betaEnv, PUSH_SCHEDULER_ENABLED: "true" });
+  assert.deepEqual(JSON.parse(logger.entries[0]).activity,
+    { claimed: 1, sent: 0, retryable: 1, dead: 0, lostLease: 0 });
 });
 
 test("push scheduler replaces unexpected execution headers with unknown", async () => {

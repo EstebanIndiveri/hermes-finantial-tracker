@@ -2461,3 +2461,24 @@ se invocaron y no se omitieron por flag en ese tick; **no** mide latencia
 de una entrega real ni valida reintentos bajo carga. Owner Codex:
 mantener la observación en una ventana mayor y un canary de reintento
 acotado antes de considerar un SLO o avisos proactivos.
+
+### ACT-17 — actividad agregada del outbox (13/10/2026)
+
+El [contrato de este corte](ACT-17-OUTBOX-ACTIVITY-METADATA.md) añade una
+cabecera de cinco contadores acotados (`claimed`, `sent`, `retryable`,
+`dead`, `lostLease`) a las respuestas procesadas de ambos outboxes. El
+scheduler beta valida rangos y consistencia, registra solo los agregados y
+descarta los valores crudos inválidos. Así diferencia un tick procesado con
+cola vacía de uno con actividad, sin leer cuerpos ni datos personales.
+Las regresiones fallaron primero por ausencia de la cabecera/actividad y
+luego pasaron 1009 pruebas de app y 113 del harness, typecheck, lint sin
+errores (63 advertencias previas) y `git diff --check` en Node 22.
+
+La fotografía beta read-only de las 16:47:52 UTC conservó Push 1 y Telegram
+25 `sent`, sin trabajos abiertos, vencidos ni purgas debidas. Este código
+todavía requiere promoción beta y reatestación H04d para observarlo en
+runtime; no altera datos QA ni activa avisos proactivos. **Owner Codex:**
+desplegar, comprobar al menos un tick con `activity` y sostener la
+observación. La prueba de reintento real sigue separada; el canary histórico
+Telegram no acredita por sí solo el deployment actual y el ensayo local no
+es latencia de proveedor.
