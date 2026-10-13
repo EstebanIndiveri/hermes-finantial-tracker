@@ -49,9 +49,14 @@ preparación técnica y Esteban para seleccionar el alcance cuando corresponda.
 
 ## Decisión de producto — 13/10/2026
 
-Esteban confirmó que **todos los datos QA se conservan hasta terminar el
-piloto beta**. No se prepara ni ejecuta un borrado financiero o de cuentas
-durante esta ventana. Los TTL operativos ya existentes de los outboxes
-siguen siendo una política distinta; esta decisión no los cambia ni activa
-avisos proactivos. Al cierre del piloto se reabre el inventario con IDs
+Esteban confirmó que **los datos QA se conservan hasta terminar el piloto
+beta**. No se prepara ni ejecuta un borrado manual financiero, de grupos o
+de cuentas durante esta ventana. Los TTL operativos ya existentes de los
+outboxes son una política distinta que esta decisión no cambió; queda
+pendiente confirmar si «conservar» debe incluir también el historial de
+entregas terminales. Al cierre del piloto se reabre el inventario con IDs
 exactos, respaldo y alcance aprobado antes de cualquier limpieza.
+
+La relectura agregada del 13/10 encontró 1 Push y 25 Telegram `sent`, sin
+purga vencida. El primer vencimiento operativo es el 19/10 para Push y el
+28/10 para Telegram (fechas UTC). No se leyó contenido ni se ejecutó purga.

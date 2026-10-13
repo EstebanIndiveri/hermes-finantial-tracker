@@ -2299,11 +2299,12 @@ el piloto actual.
 
 ### ACT-17 — decisión QA y adaptador Push por lotes (13/10/2026)
 
-Esteban decidió conservar **todos los datos QA hasta terminar el piloto
-beta**. Esta decisión queda registrada en el
+Esteban decidió conservar los datos QA hasta terminar el piloto beta. Esta
+decisión queda registrada en el
 [inventario QA](ACT-17-QA-CLEANUP-INVENTORY.md): no se ejecutará un borrado
-financiero/de cuentas durante el piloto; los TTL operativos ya existentes
-de los outboxes son un tema distinto y no cambiaron.
+manual financiero, de grupos o de cuentas durante el piloto. Queda
+pendiente aclarar si también incluye el historial de entregas terminales;
+los TTL operativos existentes de los outboxes no cambiaron.
 
 El [contrato del adaptador Push](ACT-17-PUSH-ADAPTER-BATCH-HARNESS.md) se
 probó con 40 intenciones sintéticas en libSQL local, cuatro workers reales
@@ -2323,5 +2324,9 @@ deploy ni reatestación H04d para el runtime beta actual.
 backlog concurrente y decisión de preservar datos QA. **Abierto, owner
 Codex:** observación prolongada, capacidad/latencia con proveedor real,
 política de retención del texto Telegram y gate de activación proactiva.
-**Owner Esteban:** ninguna acción adicional ahora; la limpieza QA se reabre
-solo al terminar el piloto.
+Una relectura agregada, con identidad beta verificada, encontró 1 Push y 25
+Telegram `sent`, 0 purgas vencidas y primeros vencimientos operativos el
+19/10 y 28/10 UTC respectivamente. No hubo purga ni lectura de payloads.
+**Owner Esteban:** confirmar si los TTL de historial de entregas continúan
+vigentes o si ese historial debe conservarse hasta finalizar el piloto.
+La limpieza QA manual se reabre solo al terminarlo.
