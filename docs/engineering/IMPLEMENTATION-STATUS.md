@@ -2240,3 +2240,20 @@ y latencia con proveedor/entorno representativos, observación temporal y
 política de retención/limpieza QA. No se infiere SLA ni se habilitan envíos
 proactivos a partir de este ensayo. **Owner Esteban:** sin acción requerida
 en este corte.
+
+### ACT-17 — inventario de retención beta (13/10/2026)
+
+La CLI aislada volvió a confirmar `esteban-indiveri` y el ID exacto de
+`beta-hermes`. Una consulta **solo agregada** de los outboxes encontró 1
+Push `sent` y 25 Telegram `sent`; no hay filas terminales con
+`retention_until` vencido ni trabajos abiertos/fallidos. El código vigente
+retiene terminales Push siete días y Telegram treinta días, y sus workers
+purgan solo terminales vencidos en lotes acotados. No se invocó una purga
+ni se tocó el canary o los movimientos financieros QA.
+
+**Cerrado, owner Codex:** inventario previo a limpieza y confirmación de que
+no hay purga de notificaciones debida ahora. **Abierto, owner Codex:**
+observar una ventana posterior y definir por separado el inventario exacto
+de dependencias antes de proponer cualquier limpieza de gastos, reintegros,
+categorías o cuentas QA. Ninguna evidencia de este corte autoriza borrar
+datos financieros ni activar avisos proactivos.
