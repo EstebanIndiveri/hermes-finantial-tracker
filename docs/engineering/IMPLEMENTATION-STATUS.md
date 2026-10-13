@@ -2303,8 +2303,8 @@ Esteban decidió conservar los datos QA hasta terminar el piloto beta. Esta
 decisión queda registrada en el
 [inventario QA](ACT-17-QA-CLEANUP-INVENTORY.md): no se ejecutará un borrado
 manual financiero, de grupos o de cuentas durante el piloto. Queda
-pendiente aclarar si también incluye el historial de entregas terminales;
-los TTL operativos existentes de los outboxes no cambiaron.
+documentada abajo la decisión posterior sobre el historial de entregas
+terminales; los TTL operativos existentes de los outboxes no cambiaron.
 
 El [contrato del adaptador Push](ACT-17-PUSH-ADAPTER-BATCH-HARNESS.md) se
 probó con 40 intenciones sintéticas en libSQL local, cuatro workers reales
@@ -2327,6 +2327,33 @@ política de retención del texto Telegram y gate de activación proactiva.
 Una relectura agregada, con identidad beta verificada, encontró 1 Push y 25
 Telegram `sent`, 0 purgas vencidas y primeros vencimientos operativos el
 19/10 y 28/10 UTC respectivamente. No hubo purga ni lectura de payloads.
-**Owner Esteban:** confirmar si los TTL de historial de entregas continúan
-vigentes o si ese historial debe conservarse hasta finalizar el piloto.
+**Decisión Esteban, 13/10:** conservar datos QA hasta el cierre del piloto,
+pero mantener los TTL actuales de entregas terminales (Push 7 días,
+Telegram 30 días). No requiere cambio de runtime ni de configuración.
 La limpieza QA manual se reabre solo al terminarlo.
+
+### ACT-17 — borde de retención Telegram y decisión confirmada (13/10/2026)
+
+Esteban confirmó mantener los TTL existentes de entregas terminales: Push
+7 días y Telegram 30 días. El [contrato e inventario de retención
+Telegram](ACT-17-TELEGRAM-DATA-RETENTION-BOUNDARY.md) distingue estos
+outboxes de `bot_messages`, inbox, operaciones, recibos y estados de
+conversación. Una lectura agregada y de solo lectura, después de verificar
+la identidad de `beta-hermes`, encontró 61 mensajes, 108 updates inbox, 20
+operaciones, 25 entregas Telegram, 11 importaciones de recibo y 0 estados
+de conversación. No se consultó contenido ni hubo purga.
+
+Una nueva prueba libSQL fija el límite Telegram por defecto: una entrega
+`sent` permanece hasta el milisegundo anterior a los 30 días desde su
+encolado; en el vencimiento se borra su texto y la operación durable queda.
+Pasaron el test dirigido, 1008 tests de app y 101 del harness, typecheck,
+lint dirigido y `git diff --check` en Node 22. Este corte no cambia
+runtime, por lo que no requiere deploy o reatestación H04d. Los datos QA
+financieros, grupos y cuentas permanecen hasta el cierre del piloto.
+
+**Cerrado, owner Codex:** ambigüedad entre preservación QA y TTLs de
+entrega, más regresión del límite Telegram. **Abierto, owner Codex:**
+observación temporal y capacidad con proveedor representativo; estudiar el
+horizonte de replay y minimización de texto antes de cualquier nueva
+retención/purga. `NOTIFICATIONS_ENABLED=false` permanece vigente. No se
+aplicará un TTL nuevo a las otras tablas solo por analogía con el outbox.

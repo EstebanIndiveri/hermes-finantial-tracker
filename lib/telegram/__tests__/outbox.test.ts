@@ -70,6 +70,45 @@ function input(deliveryKey = "delivery-key") {
   };
 }
 
+it("purges terminal delivery text 30 days after enqueue, but not earlier", async () => {
+  const queued = await outbox.enqueueTelegramDelivery(input("default-retention"));
+  const retentionUntil = 1_000 + 30 * 24 * 60 * 60 * 1_000;
+  expect(queued.retention_until).toBe(retentionUntil);
+
+  const claimed = await outbox.claimTelegramDelivery({
+    id: queued.id,
+    now: 1_100,
+    leaseToken: "default-retention-lease",
+  });
+  expect(claimed).not.toBeNull();
+  await expect(outbox.markTelegramDeliverySent({
+    id: queued.id,
+    leaseToken: "default-retention-lease",
+    now: 1_200,
+  })).resolves.toBe(true);
+
+  await expect(outbox.purgeExpiredTelegramDeliveries({
+    botId: "bot-1",
+    now: retentionUntil - 1,
+  })).resolves.toBe(0);
+  expect(await stored(queued.id)).toEqual(expect.objectContaining({ status: "sent" }));
+
+  await expect(outbox.purgeExpiredTelegramDeliveries({
+    botId: "bot-1",
+    now: retentionUntil,
+  })).resolves.toBe(1);
+  const delivery = await client.execute({
+    sql: "SELECT text FROM telegram_delivery_outbox WHERE id = ?",
+    args: [queued.id],
+  });
+  expect(delivery.rows).toHaveLength(0);
+  const operation = await client.execute({
+    sql: "SELECT operation_id FROM telegram_operations WHERE operation_id = ?",
+    args: [queued.operation_id],
+  });
+  expect(operation.rows).toHaveLength(1);
+});
+
 it("enqueues one row for a repeated logical delivery", async () => {
   const first = await outbox.enqueueTelegramDelivery(input("unique-delivery"));
   const second = await outbox.enqueueTelegramDelivery({
