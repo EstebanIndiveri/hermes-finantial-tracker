@@ -2551,3 +2551,26 @@ una medición sostenida de capacidad o un SLO. **Owner Codex:** mantener
 observabilidad del piloto y no activar avisos proactivos hasta consentimiento
 individual y decisión de alcance; el único canary Push con confirmación
 humana previa sigue siendo el del 12/10.
+
+### ACT-17 — opt-in de resumen diario recibido (13/10/2026)
+
+Esteban activó «Resumen diario» en `Mi cuenta` del alias beta y aportó la
+captura de confirmación. La lectura de la base aislada `beta-hermes` a las
+18:09 UTC verificó exactamente una fila de preferencias: `daily_summary=1`,
+`recurring=0`, `reimbursements=0`, con Telegram privado vinculado para
+`esteban_beta_qa`. El grupo Telegram activo conserva membresía válida y
+configuración `USD_ARS` de octubre. La fotografía agregada de outboxes a
+las 18:09:29 UTC mostró Push 1 y Telegram 26 `sent`, cero abiertos,
+vencidos, leases expirados o purgas debidas. No se creó movimiento ni se
+envió aviso por esta verificación.
+
+**Consentimiento individual cerrado, owner Esteban. Activación proactiva
+abierta, owner Codex.** La preferencia no enciende por sí sola el kill switch
+`NOTIFICATIONS_ENABLED=false`; recurrentes y reintegros no tienen opt-in.
+Antes de habilitar el cron diario en beta, cerrar su entrega idempotente y
+observable: hoy `/api/cron/daily-alerts` llama a Telegram directamente, sin
+recibo durable por destinatario/fecha/tipo. Un reintento de la ruta puede
+duplicar un resumen, y la cola monitoreada no acredita ese envío. Conservar
+el switch apagado hasta resolver ese borde, revalidar consentimiento al
+entregar y observar una ventana operativa suficiente. No tocar legacy ni
+los datos financieros QA retenidos durante el piloto.
