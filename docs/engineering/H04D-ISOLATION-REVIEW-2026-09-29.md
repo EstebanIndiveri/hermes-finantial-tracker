@@ -498,3 +498,34 @@ distintos, cero duplicados y una fila Push enviada.
 independiente de cada secreto en cada función ni certifica URLs antiguas.
 El residual aceptado se mantiene solo para el piloto beta. No hubo cambio
 de bindings, migración, escritura ni despliegue legacy.
+
+### Reatestación del estado observable Push — 13/10/2026
+
+El commit `aefe1a57fc254a7859beefacd96ef5de5fe8260a` se desplegó
+solo en el proyecto beta `prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`, con
+`--prod --skip-domain`, como candidato
+`dpl_EdcTTLMTDGESu3cfUrYQLRH36tFd`. Vercel informó `READY`; el build
+emitió `passed:true`, los diez checks esperados, seis fingerprints
+coincidentes y ningún check fallido. El inventario de bindings conservó
+los nombres esperados, sin lectura de sus valores. La identidad exacta de
+`beta-hermes` se comprobó con el control Turso read-only; las identidades
+Telegram y legacy permanecen respaldadas por recibos vigentes del paquete
+privado, no por una nueva lectura de secretos.
+
+El paquete `/private/tmp/hermes-h04d-act17.VpHoRK/` se renovó para el
+deployment y SHA actuales. Su runner devolvió `ok:true` y
+`postActivationRuntimeConsistent:true` antes y después de mover solo
+`hermes-finantial-tracker-z2.vercel.app` al candidato. La relectura de
+Vercel confirmó ese ID en beta y
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx` sin cambios en legacy.
+Cloudflare desplegó únicamente el Worker beta versión
+`c2a503cb-e72e-4972-9d7f-bf3359816156`, con dos URLs beta pinneadas,
+cron de cinco minutos, flags de scheduler `true` y dos secretos presentes
+solo por nombre. No hubo cambio de DB, bot, webhook ni bindings conocidos.
+
+El resultado formal sigue `isolationVerified:false`: no se leyó cada
+secreto de cada función en ejecución, no se certificaron URLs antiguas y
+no se hizo un smoke HTTP del candidato en este corte. La aceptación del
+residual solo cubre el piloto beta; no autoriza legacy ni un lanzamiento
+general. La observación sostenida de ticks y entregas es un gate ACT-17
+separado, todavía abierto.

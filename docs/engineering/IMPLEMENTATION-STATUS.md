@@ -2421,3 +2421,43 @@ ejecuciones recientes, entrega Push real ni estado efectivo de la ruta
 Vercel. Owner Codex: comprobar una ventana de logs/métricas y hacer el
 rollout beta con la reatestación H04d antes de atribuir el nuevo encabezado
 al runtime desplegado.
+
+### ACT-17 — promoción beta del estado Push observable (13/10/2026)
+
+La rama quedó en `aefe1a57fc254a7859beefacd96ef5de5fe8260a` con
+1008 pruebas de app, 110 del harness, typecheck y lint aprobados; la
+revisión Luna del diff no halló un defecto crítico. Vercel creó el
+candidato `dpl_EdcTTLMTDGESu3cfUrYQLRH36tFd` con target `production`
+**dentro del proyecto beta** y `--skip-domain`. Quedó `READY`. El build
+remoto pasó los diez checks H04d y los seis fingerprints de secretos beta.
+Antes de mover el alias, el paquete privado de siete recibos actualizado
+para este ID/SHA devolvió `ok:true`, `postActivationRuntimeConsistent:true`,
+`isolationVerified:false`. Codex movió solo
+`hermes-finantial-tracker-z2.vercel.app` a ese candidato y releyó los dos
+aliases: beta apunta al ID nuevo; legacy sigue en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. La reatestación privada volvió a
+pasar después de la promoción. El residual H04d sigue aceptado **solo
+para el piloto beta**, sin certificar secretos en función ni URLs retiradas.
+
+Cloudflare publicó únicamente `hermes-beta-outbox-scheduler` versión
+`c2a503cb-e72e-4972-9d7f-bf3359816156` a las 16:36 UTC, 100 % del
+tráfico, cron `*/5 * * * *`, dos URLs beta exactas, flags de scheduler
+`true` y dos bindings de secreto por nombre (sin leer valores). No se
+tocó el proyecto legacy ni se activó `NOTIFICATIONS_ENABLED`.
+
+**Abierto, owner Codex:** observar ticks actuales y la diferencia
+`processed`/`skipped_worker_disabled`; las lecturas de cola sin trabajos
+abiertos no prueban recuperación, capacidad ni latencia de entrega. La
+activación de avisos proactivos sigue siendo una decisión separada, con
+opt-in y evidencia operativa sostenida.
+
+Una observación read-only del tick de las 16:40 UTC, filtrada a campos
+permitidos del Worker ya desplegado, registró Push HTTP 200
+`execution=processed` en 634 ms y Telegram HTTP 200
+`execution=processed` en 758 ms. La fotografía Turso posterior, a las
+16:41:04 UTC, mantuvo Push 1 y Telegram 25 `sent`, sin trabajo abierto,
+vencido ni purga pendiente. Esto confirma que ambas rutas de recuperación
+se invocaron y no se omitieron por flag en ese tick; **no** mide latencia
+de una entrega real ni valida reintentos bajo carga. Owner Codex:
+mantener la observación en una ventana mayor y un canary de reintento
+acotado antes de considerar un SLO o avisos proactivos.

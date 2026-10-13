@@ -94,3 +94,10 @@ ruta son interruptores distintos. El archivo Wrangler declara el primero
 Hasta obtener metadatos actuales de ambos proveedores, tratar esa
 diferencia como estado no verificado, no como un envío habilitado. No usar
 un HTTP 200 aislado para abrir la puerta de avisos proactivos.
+
+El primer tick observado tras publicar el contrato (13/10, 16:40 UTC)
+devolvió `processed` en ambas rutas con HTTP 200; Push duró 634 ms y
+Telegram 758 ms medidos desde el scheduler. La cola beta seguía sin
+trabajos abiertos en la fotografía de las 16:41 UTC. Este control
+confirma invocación de las rutas, no recuperación de un job ni latencia
+de proveedor. Sigue pendiente una ventana operativa más larga.
