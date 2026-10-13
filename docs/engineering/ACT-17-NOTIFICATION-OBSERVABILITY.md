@@ -9,6 +9,25 @@ independiente. Leer las colas no equivale a activar ninguno de esos envíos.
 
 ## Control read-only por corte
 
+El control reproducible está en `scripts/beta-outbox-snapshot.mjs`. Usar
+únicamente el perfil Turso beta aislado (ruta absoluta), por ejemplo:
+
+```bash
+node scripts/beta-outbox-snapshot.mjs --config-path /private/tmp/hermes-beta-turso.2flp53
+```
+
+El comando valida cuenta, nombre, ID y URL exactos antes de ejecutar SQL
+fijo. Devuelve un JSON con conteos por estado, entregas vencidas,
+leases expirados, purgas terminales vencidas y edad agregada del trabajo
+abierto más antiguo. No permite SQL/DB por argumento, no hace escrituras
+y no muestra texto, IDs de filas, chats, endpoints ni payloads. No prueba
+que las credenciales Turso sean de solo lectura: la seguridad del control
+depende además de que el código solo ejecuta `SELECT` y de usar el perfil
+beta aislado. Si falla, no interpretar una salida parcial como evidencia.
+
+La lectura manual siguiente sigue siendo una referencia para diagnosticar
+un fallo del comando, nunca una autorización para usar el perfil legacy.
+
 1. Reconfirmar en la CLI aislada `auth whoami` = `esteban-indiveri` y
    `db show beta-hermes` con ID
    `01a0c0bd-0601-7f27-b147-915d105b19f2` y host beta exacto.

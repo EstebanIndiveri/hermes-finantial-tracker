@@ -2357,3 +2357,32 @@ observación temporal y capacidad con proveedor representativo; estudiar el
 horizonte de replay y minimización de texto antes de cualquier nueva
 retención/purga. `NOTIFICATIONS_ENABLED=false` permanece vigente. No se
 aplicará un TTL nuevo a las otras tablas solo por analogía con el outbox.
+
+### ACT-17 — fotografía agregada reproducible (13/10/2026)
+
+El [contrato](ACT-17-BETA-OUTBOX-SNAPSHOT-CONTRACT.md) y el
+[runbook](ACT-17-NOTIFICATION-OBSERVABILITY.md) incorporan un comando
+local de observabilidad que exige `--config-path` absoluto y confirma
+cuenta, nombre, ID y URL exactos de `beta-hermes` antes de ejecutar SQL
+constante. Solo emite conteos por estado, trabajos vencidos para entrega
+o purga, leases expirados y edad agregada; errores/formatos inesperados
+se bloquean sin imprimir resultados crudos.
+
+La primera ejecución real, de solo lectura, produjo una fotografía a las
+16:03:07 UTC; se repitió a las 16:06:22 UTC tras reforzar la validación
+de estados y tiempos malformados. Ambas mostraron Push 1 `sent`, Telegram
+25 `sent`, cero abiertos, `dead`,
+leases expirados o purgas vencidas en ambos canales. Coincide con los
+agregados anteriores, pero no demuestra un SLA ni capacidad de proveedor.
+No hubo escrituras, envíos, borrados ni cambios de flags.
+
+Pasaron 7 pruebas nuevas del comando (incluida SQL real en libSQL local),
+108 del harness, 1008 de la app, typecheck, lint dirigido y
+`git diff --check` en Node 22. La revisión independiente Luna confirmó el
+alcance y señaló el riesgo de que una fila malformada no entre al conteo;
+se incorporaron contadores que bloquean estado nulo y tiempos inválidos.
+
+**Cerrado, owner Codex:** herramienta y primer corte reproducible.
+**Abierto, owner Codex:** comparaciones temporales en varios cortes y
+capacidad/latencia con proveedor representativo antes de reconsiderar
+avisos proactivos; la decisión de activación beta permanece separada.
