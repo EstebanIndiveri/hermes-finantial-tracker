@@ -2170,3 +2170,26 @@ datos personales. **Abierto, owner Codex:** seguimiento en otra ventana
 temporal y conciliación de reintentos/fallos si aparecen; el canary Push y
 los datos QA siguen intactos. Una única fotografía no prueba supervisión
 continua ni autoriza activar envíos proactivos.
+
+### ACT-17 — contadores cercados y presupuesto Push (13/10/2026)
+
+Se implementaron dos cortes locales de confiabilidad del worker: el
+[dispatcher Telegram](ACT-17-TELEGRAM-LEASE-COUNTERS.md) solo suma
+`sent`/`retryable`/`dead` si su transición cercada por lease se confirmó;
+en una carrera o pérdida de lease informa `lostLease` sin reencolar ni
+afirmar entrega durable. Una prueba con libSQL aislado fuerza a dos workers
+a competir sobre la misma fila y comprueba los contadores y estado final.
+
+El [worker Push](ACT-17-PUSH-WORKER-BUDGET.md) separa reloj monotónico de
+los timestamps del outbox, deja de iniciar nuevas tareas al agotar el
+presupuesto de ejecución e informa `budgetExhausted`. El límite es blando
+para una operación de DB o proveedor ya iniciada; no promete cancelación
+de una entrega en curso ni evita por sí solo duplicados de proveedor tras
+un timeout.
+
+Pasaron 1004 tests de app y 101 del harness, typecheck, build y lint sin
+errores (63 warnings preexistentes fuera de este corte). **Owner Codex:**
+revisión independiente, publicación solo beta y reatestación H04d; luego,
+observación temporal de colas/worker y alcance de activación. **Owner
+Esteban:** ninguna acción requerida para estos dos cambios. El kill switch
+proactivo sigue apagado; los datos QA no se limpiaron.

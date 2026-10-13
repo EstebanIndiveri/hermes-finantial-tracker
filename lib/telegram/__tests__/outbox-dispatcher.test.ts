@@ -72,7 +72,7 @@ it("marks a successful provider delivery as sent", async () => {
     token: "test-token",
     fetchImpl,
     now: () => 1_000,
-  })).resolves.toEqual({ sent: 1, retryable: 0, dead: 0 });
+  })).resolves.toEqual({ sent: 1, retryable: 0, dead: 0, lostLease: 0 });
 
   expect(sentMock).toHaveBeenCalledWith({
     id: "delivery-1",
@@ -84,6 +84,22 @@ it("marks a successful provider delivery as sent", async () => {
     "https://api.telegram.org/bottest-token/sendMessage",
     expect.objectContaining({ method: "POST" }),
   );
+});
+
+it("reports a lost lease instead of a durable send after Telegram accepts the message", async () => {
+  sentMock.mockResolvedValue(false);
+  const fetchImpl = jest.fn().mockResolvedValue(response(200, { ok: true, result: { message_id: 42 } }));
+
+  await expect(dispatchTelegramDeliveriesForUpdate({
+    botId: "bot-1",
+    updateId: "update-1",
+    token: "test-token",
+    fetchImpl,
+    now: () => 1_000,
+  })).resolves.toEqual({ sent: 0, retryable: 0, dead: 0, lostLease: 1 });
+
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+  expect(retryMock).not.toHaveBeenCalled();
 });
 
 it("treats an unchanged edit as a successful idempotent delivery", async () => {
@@ -99,7 +115,7 @@ it("treats an unchanged edit as a successful idempotent delivery", async () => {
     token: "test-token",
     fetchImpl,
     now: () => 2_000,
-  })).resolves.toEqual({ sent: 1, retryable: 0, dead: 0 });
+  })).resolves.toEqual({ sent: 1, retryable: 0, dead: 0, lostLease: 0 });
   expect(sentMock).toHaveBeenCalledTimes(1);
   expect(retryMock).not.toHaveBeenCalled();
 });
@@ -116,12 +132,21 @@ it("uses Telegram retry_after for rate limits", async () => {
     token: "test-token",
     fetchImpl,
     now: () => 5_000,
-  })).resolves.toEqual({ sent: 0, retryable: 1, dead: 0 });
+  })).resolves.toEqual({ sent: 0, retryable: 1, dead: 0, lostLease: 0 });
   expect(retryMock).toHaveBeenCalledWith(expect.objectContaining({
     errorCode: "rate_limited",
     httpStatus: 429,
     retryAt: 12_000,
   }));
+});
+
+it("does not count a retry when the lease has been taken by another worker", async () => {
+  retryMock.mockResolvedValue(false);
+  const fetchImpl = jest.fn().mockResolvedValue(response(429, { ok: false }));
+
+  await expect(dispatchTelegramDeliveriesForUpdate({
+    botId: "bot-1", updateId: "update-1", token: "test-token", fetchImpl, now: () => 5_000,
+  })).resolves.toEqual({ sent: 0, retryable: 0, dead: 0, lostLease: 1 });
 });
 
 it("marks permanent provider rejection dead", async () => {
@@ -133,11 +158,20 @@ it("marks permanent provider rejection dead", async () => {
     token: "test-token",
     fetchImpl,
     now: () => 8_000,
-  })).resolves.toEqual({ sent: 0, retryable: 0, dead: 1 });
+  })).resolves.toEqual({ sent: 0, retryable: 0, dead: 1, lostLease: 0 });
   expect(deadMock).toHaveBeenCalledWith(expect.objectContaining({
     errorCode: "provider_rejected",
     httpStatus: 403,
   }));
+});
+
+it("does not count a dead delivery when the lease has been taken by another worker", async () => {
+  deadMock.mockResolvedValue(false);
+  const fetchImpl = jest.fn().mockResolvedValue(response(403, { ok: false }));
+
+  await expect(dispatchTelegramDeliveriesForUpdate({
+    botId: "bot-1", updateId: "update-1", token: "test-token", fetchImpl, now: () => 8_000,
+  })).resolves.toEqual({ sent: 0, retryable: 0, dead: 0, lostLease: 1 });
 });
 
 it("keeps network failures retryable without exposing provider text", async () => {
@@ -149,7 +183,7 @@ it("keeps network failures retryable without exposing provider text", async () =
     token: "test-token",
     fetchImpl,
     now: () => 9_000,
-  })).resolves.toEqual({ sent: 0, retryable: 1, dead: 0 });
+  })).resolves.toEqual({ sent: 0, retryable: 1, dead: 0, lostLease: 0 });
   expect(retryMock).toHaveBeenCalledWith(expect.objectContaining({ errorCode: "network_error" }));
   expect(JSON.stringify(retryMock.mock.calls)).not.toContain("secret provider details");
 });
@@ -164,7 +198,7 @@ it("marks exhausted transient failures dead", async () => {
     token: "test-token",
     fetchImpl,
     now: () => 9_500,
-  })).resolves.toEqual({ sent: 0, retryable: 0, dead: 1 });
+  })).resolves.toEqual({ sent: 0, retryable: 0, dead: 1, lostLease: 0 });
   expect(deadMock).toHaveBeenCalledWith(expect.objectContaining({ errorCode: "attempts_exhausted" }));
 });
 
@@ -178,7 +212,7 @@ it("marks malformed stored markup dead without contacting Telegram", async () =>
     token: "test-token",
     fetchImpl,
     now: () => 9_750,
-  })).resolves.toEqual({ sent: 0, retryable: 0, dead: 1 });
+  })).resolves.toEqual({ sent: 0, retryable: 0, dead: 1, lostLease: 0 });
   expect(fetchImpl).not.toHaveBeenCalled();
   expect(deadMock).toHaveBeenCalledWith(expect.objectContaining({ errorCode: "invalid_payload" }));
 });
@@ -190,6 +224,13 @@ it("keeps delivery retryable when no bot token is configured", async () => {
     token: "",
     fetchImpl: jest.fn(),
     now: () => 10_000,
-  })).resolves.toEqual({ sent: 0, retryable: 1, dead: 0 });
+  })).resolves.toEqual({ sent: 0, retryable: 1, dead: 0, lostLease: 0 });
   expect(retryMock).toHaveBeenCalledWith(expect.objectContaining({ errorCode: "missing_token" }));
+});
+
+it("reports a lost lease when a tokenless delivery cannot be marked retryable", async () => {
+  retryMock.mockResolvedValue(false);
+  await expect(dispatchTelegramDeliveriesForUpdate({
+    botId: "bot-1", updateId: "update-1", token: "", fetchImpl: jest.fn(), now: () => 10_000,
+  })).resolves.toEqual({ sent: 0, retryable: 0, dead: 0, lostLease: 1 });
 });

@@ -167,4 +167,59 @@ describe("push outbox worker", () => {
     expect(result.dead).toBe(1);
     expect(sendNotification).not.toHaveBeenCalled();
   });
+
+  it("does not start purge or claims after sweep consumes the runtime budget", async () => {
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public";
+    process.env.VAPID_PRIVATE_KEY = "private";
+    let elapsed = 0;
+    sweep.mockImplementationOnce(async () => { elapsed = 150; return 1; });
+    const { processPushOutbox } = await import("../push-outbox-worker");
+
+    const result = await processPushOutbox({
+      maxRuntimeMs: 100,
+      now: () => 1_000,
+      monotonicNow: () => elapsed,
+    });
+
+    expect(result).toEqual(expect.objectContaining({ swept: 1, purged: 0, claimed: 0, budgetExhausted: true }));
+    expect(purge).not.toHaveBeenCalled();
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it("does not start claims after purge consumes the runtime budget", async () => {
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public";
+    process.env.VAPID_PRIVATE_KEY = "private";
+    let elapsed = 0;
+    purge.mockImplementationOnce(async () => { elapsed = 150; return 1; });
+    const { processPushOutbox } = await import("../push-outbox-worker");
+
+    const result = await processPushOutbox({
+      maxRuntimeMs: 100,
+      now: () => 1_000,
+      monotonicNow: () => elapsed,
+    });
+
+    expect(result).toEqual(expect.objectContaining({ swept: 0, purged: 1, claimed: 0, budgetExhausted: true }));
+    expect(sweep).toHaveBeenCalledWith({ now: 1_000, limit: 100 });
+    expect(purge).toHaveBeenCalledWith({ now: 1_000, limit: 100 });
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it("reports budget exhaustion when the final provider call exceeds the deadline", async () => {
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "public";
+    process.env.VAPID_PRIVATE_KEY = "private";
+    let elapsed = 0;
+    claim.mockResolvedValueOnce({ id: "d1", reimbursementId: "r1", eventType: "reimbursement.requested", userId: "payer", subscriptionId: "s1", attemptCount: 1, leaseToken: "lease" });
+    dbSelect
+      .mockImplementationOnce(() => query([{ status: "pending", requesterId: "owner", payerId: "payer", groupId: "g", transactionStatus: "active", deletedAt: null }]))
+      .mockImplementationOnce(() => query([{ userId: "payer" }]))
+      .mockImplementationOnce(() => query([{ endpoint: "https://push", p256dhKey: "p", authKey: "a" }]));
+    sendNotification.mockImplementationOnce(async () => { elapsed = 150; });
+    const { processPushOutbox } = await import("../push-outbox-worker");
+
+    const result = await processPushOutbox({ maxClaims: 1, maxRuntimeMs: 100, now: () => 1_000, monotonicNow: () => elapsed });
+
+    expect(result).toEqual(expect.objectContaining({ claimed: 1, sent: 1, budgetExhausted: true }));
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
 });

@@ -49,7 +49,7 @@ function row(id: string): TelegramDeliveryRow {
   };
 }
 
-const sent: TelegramDispatchSummary = { sent: 1, retryable: 0, dead: 0 };
+const sent: TelegramDispatchSummary = { sent: 1, retryable: 0, dead: 0, lostLease: 0 };
 
 beforeEach(() => {
   jest.resetAllMocks();
@@ -71,7 +71,7 @@ it("claims globally for the configured bot, serially, and clamps claims to five"
     token: "test-token",
     maxClaims: 50,
     now: () => 1_000,
-  })).resolves.toEqual({ claimed: 5, sent: 5, retryable: 0, dead: 0, purged: 2 });
+  })).resolves.toEqual({ claimed: 5, sent: 5, retryable: 0, dead: 0, lostLease: 0, purged: 2 });
 
   expect(claimMock).toHaveBeenCalledTimes(5);
   expect(claimMock).toHaveBeenNthCalledWith(1, {
@@ -95,7 +95,7 @@ it("does not claim when the Telegram token is unavailable", async () => {
 
 it("keeps the worker summary limited to counters", async () => {
   claimMock.mockResolvedValueOnce(row("one"));
-  dispatchMock.mockResolvedValueOnce({ sent: 0, retryable: 1, dead: 0 });
+  dispatchMock.mockResolvedValueOnce({ sent: 0, retryable: 1, dead: 0, lostLease: 0 });
 
   const summary = await runTelegramOutboxWorker({
     botId: "bot-1",
@@ -107,10 +107,20 @@ it("keeps the worker summary limited to counters", async () => {
   expect(Object.keys(summary).sort()).toEqual([
     "claimed",
     "dead",
+    "lostLease",
     "purged",
     "retryable",
     "sent",
   ]);
+});
+
+it("propagates lost-lease counts without reporting a durable delivery", async () => {
+  claimMock.mockResolvedValueOnce(row("lost"));
+  dispatchMock.mockResolvedValueOnce({ sent: 0, retryable: 0, dead: 0, lostLease: 1 });
+
+  await expect(runTelegramOutboxWorker({
+    botId: "bot-1", token: "test-token", maxClaims: 1,
+  })).resolves.toEqual({ claimed: 1, sent: 0, retryable: 0, dead: 0, lostLease: 1, purged: 2 });
 });
 
 it("shrinks provider timeout to the remaining budget and skips late purge work", async () => {
@@ -123,7 +133,7 @@ it("shrinks provider timeout to the remaining budget and skips late purge work",
     maxClaims: 1,
     budgetMs: 1_000,
     monotonicNow: () => monotonicTimes.shift() ?? 1_200,
-  })).resolves.toEqual({ claimed: 1, sent: 1, retryable: 0, dead: 0, purged: 0 });
+  })).resolves.toEqual({ claimed: 1, sent: 1, retryable: 0, dead: 0, lostLease: 0, purged: 0 });
 
   expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 1 }));
   expect(purgeMock).not.toHaveBeenCalled();

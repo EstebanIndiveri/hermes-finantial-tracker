@@ -115,7 +115,7 @@ it("retries a transient provider failure once while concurrent workers deliver o
     now: () => currentTime,
     fetchImpl,
   });
-  expect(firstAttempt).toEqual({ claimed: 1, sent: 0, retryable: 1, dead: 0, purged: 0 });
+  expect(firstAttempt).toEqual({ claimed: 1, sent: 0, retryable: 1, dead: 0, lostLease: 0, purged: 0 });
   expect(await deliveryState(queued.id)).toEqual(expect.objectContaining({
     status: "retryable",
     attempt_count: 1,
@@ -138,7 +138,7 @@ it("retries a transient provider failure once while concurrent workers deliver o
     now: () => currentTime,
     fetchImpl,
   });
-  expect(duplicateWorker).toEqual({ claimed: 0, sent: 0, retryable: 0, dead: 0, purged: 0 });
+  expect(duplicateWorker).toEqual({ claimed: 0, sent: 0, retryable: 0, dead: 0, lostLease: 0, purged: 0 });
   expect(await deliveryState(queued.id)).toEqual(expect.objectContaining({
     status: "processing",
     attempt_count: 2,
@@ -146,7 +146,7 @@ it("retries a transient provider failure once while concurrent workers deliver o
 
   releaseResponse();
   const winningResult = await winningWorker;
-  expect(winningResult).toEqual({ claimed: 1, sent: 1, retryable: 0, dead: 0, purged: 0 });
+  expect(winningResult).toEqual({ claimed: 1, sent: 1, retryable: 0, dead: 0, lostLease: 0, purged: 0 });
   expect(fetchImpl).toHaveBeenCalledTimes(2);
   expect(await deliveryState(queued.id)).toEqual(expect.objectContaining({
     status: "sent",
@@ -156,4 +156,51 @@ it("retries a transient provider failure once while concurrent workers deliver o
     provider_message_id: "123",
   }));
   await expect(financialRowCounts()).resolves.toEqual(baselineFinancialCounts);
+});
+
+it("reports a lost lease when another worker confirms an expired claim first", async () => {
+  await client.execute({
+    sql: `INSERT INTO telegram_operations
+      (operation_id, bot_id, update_id, operation_kind, status)
+      VALUES (?, ?, ?, ?, ?)`,
+    args: ["expired-operation", "bot-test", "expired-update", "outbox.test", "committed"],
+  });
+  const queued = await outbox.enqueueTelegramDelivery({
+    id: "expired-delivery",
+    botId: "bot-test",
+    updateId: "expired-update",
+    operationId: "expired-operation",
+    deliveryKey: "expired-delivery-key",
+    action: "edit_message",
+    chatId: "synthetic-chat",
+    messageId: 456,
+    text: "Controlled lease expiry test",
+    now: 10_000,
+  });
+  let currentTime = 10_000;
+  let signalFirstRequest!: () => void;
+  let releaseFirstResponse!: () => void;
+  const firstRequest = new Promise<void>((resolve) => { signalFirstRequest = resolve; });
+  const firstResponseGate = new Promise<void>((resolve) => { releaseFirstResponse = resolve; });
+  const fetchImpl = jest.fn()
+    .mockImplementationOnce(async () => {
+      signalFirstRequest();
+      await firstResponseGate;
+      return providerResponse(200, { ok: true, result: { message_id: 456 } });
+    })
+    .mockResolvedValueOnce(providerResponse(200, { ok: true, result: { message_id: 456 } }));
+
+  const slowWorker = runWorker({ botId: "bot-test", token: "synthetic-test-token", now: () => currentTime, fetchImpl, maxClaims: 1 });
+  await firstRequest;
+  currentTime = 71_000;
+  const newWorker = await runWorker({ botId: "bot-test", token: "synthetic-test-token", now: () => currentTime, fetchImpl, maxClaims: 1 });
+  expect(newWorker).toEqual({ claimed: 1, sent: 1, retryable: 0, dead: 0, lostLease: 0, purged: 0 });
+
+  releaseFirstResponse();
+  await expect(slowWorker).resolves.toEqual({ claimed: 1, sent: 0, retryable: 0, dead: 0, lostLease: 1, purged: 0 });
+  expect(await deliveryState(queued.id)).toEqual(expect.objectContaining({
+    status: "sent",
+    attempt_count: 2,
+    provider_message_id: "456",
+  }));
 });

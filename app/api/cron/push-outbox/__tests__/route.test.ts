@@ -28,7 +28,7 @@ beforeEach(() => {
     WEB_PUSH_CANARY_GROUP_ID: "group-beta",
     WEB_PUSH_CANARY_USER_IDS: "user-a,user-b",
   };
-  worker.mockResolvedValue({ claimed: 1, sent: 1, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: false });
+  worker.mockResolvedValue({ claimed: 1, sent: 1, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: false, budgetExhausted: false });
 });
 
 afterEach(() => { process.env = originalEnv; });
@@ -74,6 +74,6 @@ it.each(["WEB_PUSH_CANARY_GROUP_ID", "WEB_PUSH_CANARY_USER_IDS"])(
 it("runs bounded recovery and returns counters only", async () => {
   const response = await GET(request());
   expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toEqual({ ok: true, claimed: 1, sent: 1, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: false });
+  await expect(response.json()).resolves.toEqual({ ok: true, claimed: 1, sent: 1, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: false, budgetExhausted: false });
   expect(worker).toHaveBeenCalledWith({ maxClaims: 25, maxRuntimeMs: 10_000 });
 });

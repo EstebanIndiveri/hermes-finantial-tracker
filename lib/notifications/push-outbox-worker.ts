@@ -31,6 +31,7 @@ export interface PushOutboxWorkerOptions {
   maxClaims?: number;
   maxRuntimeMs?: number;
   now?: () => number;
+  monotonicNow?: () => number;
 }
 
 export interface PushOutboxWorkerResult {
@@ -42,6 +43,7 @@ export interface PushOutboxWorkerResult {
   swept: number;
   purged: number;
   skipped: boolean;
+  budgetExhausted: boolean;
 }
 
 interface ProviderError {
@@ -150,23 +152,36 @@ async function sendClaimed(row: PushDeliveryRow, now: number): Promise<"sent" | 
 
 export async function processPushOutbox(options: PushOutboxWorkerOptions = {}): Promise<PushOutboxWorkerResult> {
   if (!isPushCanaryEnabled()) {
-    return { claimed: 0, sent: 0, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: true };
+    return { claimed: 0, sent: 0, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: true, budgetExhausted: false };
   }
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
-  if (!publicKey || !privateKey) return { claimed: 0, sent: 0, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: true };
+  if (!publicKey || !privateKey) return { claimed: 0, sent: 0, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: true, budgetExhausted: false };
   webPush.setVapidDetails("mailto:admin@hermes.app", publicKey, privateKey);
 
   const nowFn = options.now ?? Date.now;
+  const monotonicNow = options.monotonicNow ?? (() => performance.now());
   if (options.maxClaims !== undefined && (!Number.isSafeInteger(options.maxClaims) || options.maxClaims < 0)) throw new Error("maxClaims must be a non-negative safe integer");
   if (options.maxRuntimeMs !== undefined && (!Number.isSafeInteger(options.maxRuntimeMs) || options.maxRuntimeMs <= 0)) throw new Error("maxRuntimeMs must be a positive safe integer");
   const maxClaims = Math.min(DEFAULT_MAX_CLAIMS, options.maxClaims ?? DEFAULT_MAX_CLAIMS);
   const runtimeMs = Math.min(DEFAULT_MAX_RUNTIME_MS, options.maxRuntimeMs ?? DEFAULT_MAX_RUNTIME_MS);
-  const deadline = nowFn() + runtimeMs;
-  const result: PushOutboxWorkerResult = { claimed: 0, sent: 0, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: false };
+  const deadline = monotonicNow() + runtimeMs;
+  const result: PushOutboxWorkerResult = { claimed: 0, sent: 0, retried: 0, dead: 0, lostLease: 0, swept: 0, purged: 0, skipped: false, budgetExhausted: false };
+  if (monotonicNow() >= deadline) {
+    result.budgetExhausted = true;
+    return result;
+  }
   result.swept = await sweepExpiredPushDeliveries({ now: nowFn(), limit: 100 });
+  if (monotonicNow() >= deadline) {
+    result.budgetExhausted = true;
+    return result;
+  }
   result.purged = await purgeExpiredPushDeliveries({ now: nowFn(), limit: 100 });
-  while (result.claimed < maxClaims && nowFn() < deadline) {
+  while (result.claimed < maxClaims) {
+    if (monotonicNow() >= deadline) {
+      result.budgetExhausted = true;
+      break;
+    }
     const row = await claimPushDelivery({ now: nowFn(), leaseMs: LEASE_MS });
     if (!row) break;
     result.claimed += 1;
@@ -179,6 +194,7 @@ export async function processPushOutbox(options: PushOutboxWorkerOptions = {}): 
     const outcome = await sendClaimed(row, nowFn());
     result[outcome === "retryable" ? "retried" : outcome] += 1;
   }
+  result.budgetExhausted ||= monotonicNow() >= deadline;
   return result;
 }
 

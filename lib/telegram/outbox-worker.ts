@@ -46,7 +46,7 @@ function boundedInteger(
 }
 
 function emptySummary(): TelegramOutboxWorkerSummary {
-  return { claimed: 0, sent: 0, retryable: 0, dead: 0, purged: 0 };
+  return { claimed: 0, sent: 0, retryable: 0, dead: 0, lostLease: 0, purged: 0 };
 }
 
 function addDispatchSummary(
@@ -56,6 +56,7 @@ function addDispatchSummary(
   target.sent += result.sent;
   target.retryable += result.retryable;
   target.dead += result.dead;
+  target.lostLease += result.lostLease;
 }
 
 /**

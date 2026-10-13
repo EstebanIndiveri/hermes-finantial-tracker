@@ -577,6 +577,7 @@ export async function POST(req: NextRequest) {
         sent: 0,
         retryable: 0,
         dead: 0,
+        lostLease: 0,
       }));
     }
     return NextResponse.json({ ok: true });
