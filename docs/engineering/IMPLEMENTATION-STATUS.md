@@ -2407,3 +2407,17 @@ evidencia histórica de Vercel señalaba `WEB_PUSH_ENABLED=false`; no se
 infiere el estado desplegado de ninguno a partir del repositorio. La
 fotografía limpia de Turso no prueba liveness del scheduler. Avisos
 proactivos siguen apagados y su activación requiere un gate distinto.
+
+**Lectura operativa posterior, sin escrituras (16:23 UTC):** Vercel CLI
+reconfirmó el proyecto beta `prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`. Su listado
+Production muestra las variables de Push cifradas, pero no sus valores;
+por eso no acredita `WEB_PUSH_ENABLED`. Cloudflare CLI confirmó que la
+última versión del Worker beta fue desplegada el 12/10 a las 06:18 UTC,
+con 100 % del tráfico, URLs pinneadas al beta y
+`SCHEDULER_ENABLED=PUSH_SCHEDULER_ENABLED=true`. Una tercera fotografía
+Turso, a las 16:23:13 UTC, mantuvo Push 1 y Telegram 25 `sent`, con cero
+abiertos, vencidos o purgas pendientes. Estos metadatos no demuestran
+ejecuciones recientes, entrega Push real ni estado efectivo de la ruta
+Vercel. Owner Codex: comprobar una ventana de logs/métricas y hacer el
+rollout beta con la reatestación H04d antes de atribuir el nuevo encabezado
+al runtime desplegado.
