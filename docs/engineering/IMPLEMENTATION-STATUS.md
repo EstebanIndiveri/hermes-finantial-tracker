@@ -2280,3 +2280,19 @@ representativo, observación temporal de colas y política de retención de
 datos Telegram; la limpieza financiera QA permanece separada y requiere
 inventario exacto antes de cualquier borrado. **Owner Esteban:** ninguna
 acción requerida ahora.
+
+### ACT-17 — dependencias QA para limpieza futura (13/10/2026)
+
+El [inventario beta read-only](ACT-17-QA-CLEANUP-INVENTORY.md) separa los
+dos «Mi espacio» por propietario y cuenta dependencias agregadas de QA1 y
+QA2. QA2 no tiene movimientos en su espacio propio, pero sí membresías en
+los dos grupos de QA1, una suscripción y entrega Push, y un rol de
+reintegro. Por ello, ni el nombre del grupo ni un dashboard vacío son
+criterio seguro de borrado. No hubo escrituras, envíos ni limpieza.
+
+**Cerrado, owner Codex:** inventario agregado previo a la limpieza.
+**Abierto, owner Codex:** identificar IDs y dependencias transitivas solo
+después de una selección de alcance; preparar dry-run y conciliación antes
+de cualquier eliminación. **Owner Esteban:** decidir qué datos QA conservar
+o retirar cuando se abra ese corte; no se requiere decisión para mantener
+el piloto actual.
