@@ -2070,7 +2070,48 @@ no se alteró. No se usaron ni se expusieron credenciales de la sesión.
 **Cerrado, owner Codex:** aceptación funcional autenticada de lectura,
 persistencia y revocación de las tres preferencias en beta. **Abierto, owner
 Codex:** verificación cruzada de aislamiento entre cuentas, observabilidad
-continua del outbox/worker, índice único de endpoint Push a nivel DB y
-retención/limpieza QA; los chats de sesiones permanecen sin envíos. **Owner
+continua del outbox/worker y retención/limpieza QA; los chats de sesiones
+permanecen sin envíos. **Owner
 Esteban:** no se requiere otra acción para este subcorte. Una activación
 proactiva futura sigue requiriendo revisión explícita después de esos gates.
+
+### ACT-17 — unicidad de endpoint Push en beta (12/10/2026)
+
+El [contrato de este corte](ACT-17-PUSH-ENDPOINT-UNIQUENESS.md) quedó en
+`eb5309f6ca790017c73c4259ad0cea79f418f9c7`, pusheado a la rama de
+trabajo. Una prueba fail-first demostró que el esquema anterior admitía dos
+titulares para el mismo endpoint. La migración aditiva
+`0120-push-endpoint-unique` agrega el índice único; un preflight rechaza
+duplicados sin DDL ni ledger, y las pruebas de migración preservan dos
+suscripciones distintas y cubren alta concurrente. No cambió la UX de
+asociación explícita entre cuentas.
+
+El export privado fresco previo está en
+`/private/tmp/hermes-endpoint-beta-backup.wssN2n/`: integridad y ledger
+preíndice válidos, 2 suscripciones, 2 endpoints distintos y 0 grupos
+duplicados. El ensayo sobre una copia alcanzó el esquema canónico. El
+aplicador limitado a la identidad exacta de `beta-hermes` comparó filas de
+29 tablas antes y después y devolvió `verified:true`; la relectura remota
+confirmó 2 suscripciones, 2 endpoints, 1 ledger de la nueva migración y 1
+índice. Pasaron 100 pruebas del harness, 993 de app, typecheck, lint sin
+errores (advertencias preexistentes) y build local.
+
+El proyecto Vercel beta aislado publicó
+`dpl_7wQhEjfYbqKWC8BnTqrFT3s8Td13` (READY, target `production` del
+proyecto beta), con los diez checks de build H04d aprobados. El alias
+canónico beta apunta a ese deployment y el alias legacy permanece en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El paquete privado
+`/private/tmp/hermes-h04d-endpoint.wpuebA/` pasó antes y después de
+promover el alias (`ok:true`, `postActivationRuntimeConsistent:true`).
+`isolationVerified:false` conserva el residual previamente aceptado solo
+para el piloto beta; no es una certificación independiente de los secretos
+en ejecución ni de URLs antiguas. La lectura agregada posterior mostró
+ambos outboxes sin trabajos abiertos y 0 opt-ins proactivos activos. No se
+modificó legacy ni se habilitaron avisos proactivos.
+
+**Cerrado, owner Codex:** índice y rollout beta, preservación de datos y
+reatestación H04d. **Abierto, owner Codex:** aislamiento cruzado de
+preferencias/destinatarios entre cuentas, observabilidad del worker/outbox y
+retención/limpieza QA. **Owner Esteban:** ninguna acción requerida para este
+corte; una activación proactiva posterior seguirá necesitando decisión
+explícita tras los gates técnicos.
