@@ -2052,3 +2052,25 @@ reconciliar el canary Push y preparar la retención/limpieza QA. **Owner
 Esteban:** cuando corresponda, iniciar sesión en el alias canónico beta para
 la validación funcional; decidir una eventual activación proactiva solo tras
 los gates técnicos y revisión explícita de alcance.
+
+### ACT-17 — aceptación autenticada de preferencias (12/10/2026)
+
+Esteban inició sesión en el alias canónico beta y aportó capturas de «Mi
+cuenta»: las tres casillas aparecían apagadas. Codex verificó en esa sesión
+los tres ciclos de activar/revocar (resumen diario, recurrentes y reintegros).
+Cada activación mostró el estado marcado y el mensaje de que los envíos beta
+siguen apagados; cada revocación devolvió la casilla a apagada. Para resumen
+diario se recargó la página entre ambos pasos y la activación persistió.
+Turso beta confirmó durante ese ciclo una sola fila de preferencias con
+`daily_summary=1`, `recurring=0`, `reimbursements=0`, y al final una fila con
+los tres valores en cero. Los conteos de outbox permanecieron en 25 Telegram
+y 1 Push: esta prueba no produjo entregas adicionales. El kill switch global
+no se alteró. No se usaron ni se expusieron credenciales de la sesión.
+
+**Cerrado, owner Codex:** aceptación funcional autenticada de lectura,
+persistencia y revocación de las tres preferencias en beta. **Abierto, owner
+Codex:** verificación cruzada de aislamiento entre cuentas, observabilidad
+continua del outbox/worker, índice único de endpoint Push a nivel DB y
+retención/limpieza QA; los chats de sesiones permanecen sin envíos. **Owner
+Esteban:** no se requiere otra acción para este subcorte. Una activación
+proactiva futura sigue requiriendo revisión explícita después de esos gates.
