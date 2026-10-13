@@ -46,3 +46,12 @@ Telegram `sent`, sin filas vencidas para purga en el corte previo.
 
 **Estado:** inventario agregado cerrado; limpieza abierta, owner Codex para
 preparación técnica y Esteban para seleccionar el alcance cuando corresponda.
+
+## Decisión de producto — 13/10/2026
+
+Esteban confirmó que **todos los datos QA se conservan hasta terminar el
+piloto beta**. No se prepara ni ejecuta un borrado financiero o de cuentas
+durante esta ventana. Los TTL operativos ya existentes de los outboxes
+siguen siendo una política distinta; esta decisión no los cambia ni activa
+avisos proactivos. Al cierre del piloto se reabre el inventario con IDs
+exactos, respaldo y alcance aprobado antes de cualquier limpieza.

@@ -2296,3 +2296,32 @@ después de una selección de alcance; preparar dry-run y conciliación antes
 de cualquier eliminación. **Owner Esteban:** decidir qué datos QA conservar
 o retirar cuando se abra ese corte; no se requiere decisión para mantener
 el piloto actual.
+
+### ACT-17 — decisión QA y adaptador Push por lotes (13/10/2026)
+
+Esteban decidió conservar **todos los datos QA hasta terminar el piloto
+beta**. Esta decisión queda registrada en el
+[inventario QA](ACT-17-QA-CLEANUP-INVENTORY.md): no se ejecutará un borrado
+financiero/de cuentas durante el piloto; los TTL operativos ya existentes
+de los outboxes son un tema distinto y no cambiaron.
+
+El [contrato del adaptador Push](ACT-17-PUSH-ADAPTER-BATCH-HARNESS.md) se
+probó con 40 intenciones sintéticas en libSQL local, cuatro workers reales
+por ronda y `web-push` simulado. Cada endpoint recibió un `429` en su primer
+intento y éxito en el segundo; los 40 pasaron por `retryable` y terminaron
+`sent`, con dos intentos, una única confirmación por endpoint, sin
+`lostLease` y con contadores financieros idénticos antes/después. Un
+destinatario canary sin membresía actual quedó `dead/ineligible` sin llamada
+al proveedor. No se accedió a Turso beta/legacy ni se enviaron Push reales.
+
+Pasaron 1007 tests de app, 101 del harness, typecheck y lint dirigido en
+Node 22. La revisión Luna confirmó el alcance y se reforzó el caso negativo
+de membresía. Este corte solo cambia pruebas y documentación; no requiere
+deploy ni reatestación H04d para el runtime beta actual.
+
+**Cerrado, owner Codex:** reintentos `429` del adaptador simulado bajo
+backlog concurrente y decisión de preservar datos QA. **Abierto, owner
+Codex:** observación prolongada, capacidad/latencia con proveedor real,
+política de retención del texto Telegram y gate de activación proactiva.
+**Owner Esteban:** ninguna acción adicional ahora; la limpieza QA se reabre
+solo al terminar el piloto.
