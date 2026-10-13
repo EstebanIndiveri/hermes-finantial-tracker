@@ -2715,3 +2715,22 @@ considerar cualquier ampliación. `NOTIFICATIONS_ENABLED` permanece `false`;
 no se habilitaron los otros avisos proactivos ni se tocó legacy. Si hay
 resultado de red incierto, la política sigue siendo no reintentar
 automáticamente este aviso.
+
+### ACT-17 — siguiente corte: borde horario y recibo del cron (13/10/2026)
+
+La lectura autenticada de `vercel crons ls` confirmó tres tareas activas en
+el proyecto beta, entre ellas `/api/cron/daily-alerts` a `0 0 * * *` (00:00
+UTC / 21:00 Argentina). Esto acredita la configuración del disparador, **no**
+su ejecución concreta. La revisión independiente Luna no encontró una ruta
+de envío cruzado en el cerco canary, pero sí que el filtro de movimientos
+terminaba en `23:59:59.000` y perdía los últimos 999 ms del día. El corte
+lo reemplaza por el intervalo semiabierto de fecha Argentina y añade pruebas
+de la medianoche.
+
+Para poder observar el disparo aunque no haya movimientos elegibles, el cron
+canary ahora emite solo `beta_daily_summary_canary_cron` con fecha local y
+resultado fijo; no registra IDs, chats, importes ni el mensaje. **Owner
+Codex:** desplegar este corte únicamente a beta con H04d fresco y revisar el
+recibo del siguiente horario junto con el outbox. Sin contenido elegible,
+`nothing_relevant` no debe confundirse con un resumen entregado. Se mantiene
+el switch global apagado y no se fuerza un gasto en el espacio personal QA.

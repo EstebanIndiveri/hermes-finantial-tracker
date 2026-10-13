@@ -280,32 +280,46 @@ describe("GET /api/cron/daily-alerts authorization", () => {
   });
 
   it("limits the beta canary to the configured user and group without scanning reimbursements", async () => {
-    setupDailyProcessing([
-      { id: "user-A", telegram_user_id: "telegram-A", active_telegram_group_id: "group-A" },
-      { id: "user-B", telegram_user_id: "telegram-B", active_telegram_group_id: "group-B" },
-    ]);
-    process.env = {
-      ...process.env,
-      NOTIFICATIONS_ENABLED: "false",
-      DAILY_SUMMARY_CANARY_ENABLED: "true",
-      DAILY_SUMMARY_CANARY_USER_ID: "user-A",
-      DAILY_SUMMARY_CANARY_GROUP_ID: "resolved-group",
-      HERMES_BETA_ISOLATION_ASSERT: "true",
-      NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
-      TURSO_DATABASE_URL: "libsql://beta-hermes-esteban-indiveri.aws-us-east-2.turso.io",
-      TELEGRAM_BOT_ID: "8739389202",
-    };
+    const info = jest.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      setupDailyProcessing([
+        { id: "user-A", telegram_user_id: "telegram-A", active_telegram_group_id: "group-A" },
+        { id: "user-B", telegram_user_id: "telegram-B", active_telegram_group_id: "group-B" },
+      ]);
+      process.env = {
+        ...process.env,
+        NOTIFICATIONS_ENABLED: "false",
+        DAILY_SUMMARY_CANARY_ENABLED: "true",
+        DAILY_SUMMARY_CANARY_USER_ID: "user-A",
+        DAILY_SUMMARY_CANARY_GROUP_ID: "resolved-group",
+        HERMES_BETA_ISOLATION_ASSERT: "true",
+        NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
+        TURSO_DATABASE_URL: "libsql://beta-hermes-esteban-indiveri.aws-us-east-2.turso.io",
+        TELEGRAM_BOT_ID: "8739389202",
+      };
 
-    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
-      headers: { authorization: "Bearer cron-secret" },
-    }));
+      const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+        headers: { authorization: "Bearer cron-secret" },
+      }));
 
-    expect(await response.json()).toMatchObject({ results: [
-      { userId: "user-A", reason: "queued" },
-      { userId: "user-B", reason: "outside_canary" },
-    ] });
-    expect(enqueueDailySummary).toHaveBeenCalledTimes(1);
-    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+      expect(await response.json()).toMatchObject({ results: [
+        { userId: "user-A", reason: "queued" },
+        { userId: "user-B", reason: "outside_canary" },
+      ] });
+      expect(enqueueDailySummary).toHaveBeenCalledTimes(1);
+      expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+      const receipt = String(info.mock.calls[0]?.[0]);
+      expect(JSON.parse(receipt)).toEqual({
+        event: "beta_daily_summary_canary_cron",
+        argentinaDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        outcome: "queued",
+      });
+      expect(receipt).not.toContain("user-A");
+      expect(receipt).not.toContain("telegram-A");
+      expect(receipt).not.toContain("resolved-group");
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("does not prepare a daily canary if its active group changed", async () => {

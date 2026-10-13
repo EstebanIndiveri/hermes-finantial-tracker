@@ -17,6 +17,8 @@ sin enviar. El worker existente entrega y observa el resultado.
 Fecha, mes y lunes se derivan de una misma fecha calendario Argentina,
 independiente del huso horario del servidor; la antigua conversión a ISO
 podía pasar al día siguiente a las 21:00 locales.
+La búsqueda de movimientos usa el intervalo semiabierto del día local:
+incluye hasta `23:59:59.999` y excluye exactamente la medianoche siguiente.
 La operación padre queda como recibo permanente de deduplicación aunque la
 fila de entrega termine su TTL de 30 días. Si una caída deja solo el padre,
 el cron puede completar el hijo durante esa ventana; pasado el TTL no
@@ -70,3 +72,11 @@ proactivos como universalmente apagados. Un canary no demuestra SLO ni
 habilita el switch global. Para desactivarlo, apagar el binding, desplegar
 de nuevo y observar que no quedan entregas elegibles; nunca borrar los
 recibos de operación para forzar un reenvío.
+
+El cron beta emite un único evento operativo `beta_daily_summary_canary_cron`
+con fecha Argentina y resultado (`queued`, `already_queued`,
+`nothing_relevant`, etc.). No incluye IDs de usuario/grupo/chat, importes ni
+texto del aviso. Una respuesta `nothing_relevant` prueba la ejecución del
+cron, no una entrega. El cron de Vercel figura activo en beta a `0 0 * * *`;
+el recibo del siguiente disparo debe compararse con el outbox y el
+consentimiento antes de ampliar destinatarios.

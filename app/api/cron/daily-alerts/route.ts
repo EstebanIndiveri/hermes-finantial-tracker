@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { users, transactions, monthly_settings, reimbursementRequests } from "@/lib/db/schema";
-import { eq, and, gte, lte, lt } from "drizzle-orm";
-import { getArgentinaDateKey } from "@/lib/utils/dates";
+import { eq, and, gte, lt } from "drizzle-orm";
+import { getArgentinaDateKey, getArgentinaDayBounds } from "@/lib/utils/dates";
 import { getMonthSummary, getAccountingMonthProjection, getCategoryBreakdown } from "@/lib/finance/summaries";
 import { calculateMonthStatus } from "@/lib/finance/rules";
 import { isIncomeCategory } from "@/lib/finance/income";
@@ -85,17 +85,16 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // Get today's transactions (created_at between start and end of today ARS)
-      const startOfDay = new Date(todayStr + "T00:00:00-03:00").getTime();
-      const endOfDay = new Date(todayStr + "T23:59:59-03:00").getTime();
+      // Half-open Argentina day includes every millisecond before local midnight.
+      const { startMs, endExclusiveMs } = getArgentinaDayBounds(todayStr);
 
       const todayTx = await db.query.transactions.findMany({
         where: and(
           eq(transactions.group_id, groupId),
           eq(transactions.month, month),
           eq(transactions.status, "active"),
-          gte(transactions.created_at, startOfDay),
-          lte(transactions.created_at, endOfDay),
+          gte(transactions.created_at, startMs),
+          lt(transactions.created_at, endExclusiveMs),
         ),
         with: { category: true },
       });
@@ -244,6 +243,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    if (scope.mode === "canary") {
+      const outcome = results.find((result) => result.userId === scope.userId)?.reason ?? "user_absent";
+      // Operational receipt for the scheduled beta canary. Never log IDs,
+      // balances, category names, chat IDs or the rendered Telegram message.
+      console.info(JSON.stringify({ event: "beta_daily_summary_canary_cron", argentinaDate: todayStr, outcome }));
+    }
     return NextResponse.json({ ok: true, results });
   } catch (err) {
     console.error("Error in daily-alerts cron:", err);

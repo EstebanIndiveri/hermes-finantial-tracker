@@ -17,6 +17,16 @@ export function getArgentinaDateKey(now: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Millisecond bounds for a calendar day in Argentina (UTC−03:00). */
+export function getArgentinaDayBounds(dateKey: string): { startMs: number; endExclusiveMs: number } {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error("Invalid Argentina date key");
+  const startMs = Date.parse(`${dateKey}T00:00:00-03:00`);
+  if (!Number.isFinite(startMs) || getArgentinaDateKey(new Date(startMs)) !== dateKey) {
+    throw new Error("Invalid Argentina calendar date");
+  }
+  return { startMs, endExclusiveMs: startMs + 24 * 60 * 60 * 1000 };
+}
+
 export function getArgentinaDate(): Date {
   const now = new Date();
   const arStr = now.toLocaleString("en-US", { timeZone: ARGENTINA_TZ });
