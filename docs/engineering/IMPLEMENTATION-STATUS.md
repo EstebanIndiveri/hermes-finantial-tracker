@@ -2610,3 +2610,35 @@ observación operacional. **No activar aún** `NOTIFICATIONS_ENABLED`: el
 consentimiento individual está guardado, pero el envío proactivo permanece
 apagado hasta que ese corte y sus controles queden aprobados. No se alteraron
 movimientos financieros ni datos QA ni legacy.
+
+### ACT-17 — promoción beta del resumen diario durable (13/10/2026)
+
+Commit `c17adc0b0d54f3958a424b98be69da2172b34135` pusheado a
+`codex/act05-currency-modes`. El primer candidato beta
+`dpl_4GpzbToXg7wGYw1TLFqMFwc3ZAYC` falló exclusivamente durante el build
+de `next/font`/DM Sans; ya había pasado el evento de diez checks H04d y seis
+fingerprints beta. No se promovió. Un reintento del mismo SHA creó
+`dpl_5a69XMd873KM1vb3VXgqZz1iui6c`, target `production` **dentro del
+proyecto beta** con `--skip-domain`. Quedó `READY` y su build remoto volvió
+a registrar los diez checks H04d y los fingerprints coincidentes.
+
+El paquete privado `/private/tmp/hermes-h04d-daily.eUVL42/` se actualizó
+para este deployment/SHA y pasó antes y después de mover **solo** el alias
+`hermes-finantial-tracker-z2.vercel.app`: `ok:true`,
+`postActivationRuntimeConsistent:true`, `isolationVerified:false`. El
+residual continúa aceptado solo para el piloto beta, sin transformar una
+declaración local en certificación. La lectura autenticada posterior mostró
+el alias beta en `dpl_5a69XMd873KM1vb3VXgqZz1iui6c` `READY` y el alias
+legacy aún en `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx` `READY`.
+
+La fotografía agregada y read-only de `beta-hermes` a las 19:04:41 UTC
+conservó Push 1 y Telegram 26 `sent`, sin pendientes, reintentos, procesando,
+`dead`, vencidos ni purgas debidas. No se creó ni envió una intención diaria;
+`NOTIFICATIONS_ENABLED=false` sigue siendo condición del build y del runtime
+de este corte. Los datos QA se conservan. **Cerrado, owner Codex:** promoción
+beta, aislamiento y snapshot posterior. **Abierto, owner Codex:** definir un
+canary diario acotado que no habilite por accidente otras familias
+proactivas, verificar operativamente el worker/cron vigente y observar una
+ventana suficiente antes de activar envíos. El costo de at-most-once ante
+fallos de red inciertos permanece documentado; no hay prueba de entrega
+diaria real todavía.
