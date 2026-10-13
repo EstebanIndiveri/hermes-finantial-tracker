@@ -2014,3 +2014,41 @@ la UI/API de cuenta y un canary de preferencias sin enviar avisos; mantener
 `NOTIFICATIONS_ENABLED=false`. Después revisar destinatarios restantes,
 observabilidad del outbox y retención/limpieza QA. **Owner Esteban:** ninguna
 activación proactiva solicitada ahora; decidirla solo tras los gates restantes.
+
+### ACT-17 — opt-in publicado en beta, activación pendiente (12/10/2026)
+
+El corte de consentimiento quedó en el commit
+`a6ac21142fcada7b9de1e2d71fa9e192d66e33aa`, publicado solo en el
+proyecto beta como `dpl_51JzPe9bDJHiCgRXxcZdCDNn8bdY` (READY, target
+`production` del proyecto beta). El alias canónico
+`https://hermes-finantial-tracker-z2.vercel.app` apunta a ese deployment; la
+relectura del alias legacy conservó
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`. El build remoto pasó los diez checks
+H04d y los fingerprints; la reatestación privada posterior a la promoción
+`/private/tmp/hermes-h04d-consent.v3BqXB/` devolvió `ok:true` y
+`postActivationRuntimeConsistent:true`. Conserva `isolationVerified:false`
+por el residual aceptado únicamente para el piloto beta: no es certificación
+independiente de cada secreto en ejecución ni de URLs retiradas.
+
+La migración beta `0110-notification-preferences` quedó verificada con las 28
+tablas anteriores preservadas; el backup previo está en
+`/private/tmp/hermes-consent-beta-backup.JOvkMl/`. La suite local pasó 993
+tests de app, además del harness, TypeScript, lint dirigido y build. No se
+modificó legacy ni se creó consentimiento retroactivo. En Chrome, la URL
+canónica de «Mi cuenta» redirigió a `/login`, por lo que la UI/API autenticada
+no se da por validada remotamente. Los envíos proactivos continúan apagados
+mediante `NOTIFICATIONS_ENABLED=false`; la suscripción Push transaccional es
+independiente.
+
+La lectura agregada y sin datos personales de Turso beta tras el despliegue
+encontró 0 filas de preferencias (default off), 25 entregas Telegram `sent`
+y 1 Push `sent`; no había filas `pending`, `retryable` ni `processing` en
+ninguno de los dos outboxes. Esto verifica ausencia de cola pendiente en ese
+instante, no una garantía futura de entrega ni un SLA del worker.
+
+**Owner Codex:** verificar UI/API de preferencias con una sesión beta real y
+revocación, observar los destinatarios y el outbox sin habilitar envíos,
+reconciliar el canary Push y preparar la retención/limpieza QA. **Owner
+Esteban:** cuando corresponda, iniciar sesión en el alias canónico beta para
+la validación funcional; decidir una eventual activación proactiva solo tras
+los gates técnicos y revisión explícita de alcance.
