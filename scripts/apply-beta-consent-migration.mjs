@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { applyBetaAdditiveMigration, parseArgs } from "./apply-beta-push-migration.mjs";
-import { PRE_CONSENT_SCHEMA_FINGERPRINT, CANONICAL_SCHEMA_FINGERPRINT } from "./migrate.mjs";
+import { PRE_CONSENT_SCHEMA_FINGERPRINT, PRE_ENDPOINT_UNIQUE_SCHEMA_FINGERPRINT } from "./migrate.mjs";
 
 export function applyBetaConsentMigration({ configPath, backupPath }) {
   return applyBetaAdditiveMigration({
@@ -8,7 +8,7 @@ export function applyBetaConsentMigration({ configPath, backupPath }) {
     backupPath,
     migrationId: "0110-notification-preferences",
     preSchemaFingerprint: PRE_CONSENT_SCHEMA_FINGERPRINT,
-    postSchemaFingerprint: CANONICAL_SCHEMA_FINGERPRINT,
+    postSchemaFingerprint: PRE_ENDPOINT_UNIQUE_SCHEMA_FINGERPRINT,
   });
 }
 

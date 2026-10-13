@@ -51,6 +51,11 @@
     {
       "id": "0110-notification-preferences",
       "files": ["0013_notification_preferences.sql"]
+    },
+    {
+      "id": "0120-push-endpoint-unique",
+      "files": ["0014_push_endpoint_unique.sql"],
+      "preflight": ["push-endpoint-duplicates"]
     }
   ],
   "excluded": [

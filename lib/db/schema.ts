@@ -368,7 +368,9 @@ export const pushSubscriptions = sqliteTable("push_subscriptions", {
   p256dhKey: text("p256dh_key").notNull(),
   authKey: text("auth_key").notNull(),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
-});
+}, (t) => ({
+  endpointIdx: uniqueIndex("push_subscriptions_endpoint_idx").on(t.endpoint),
+}));
 
 export const pushDeliveryOutbox = sqliteTable("push_delivery_outbox", {
   id: text("id").primaryKey(),

@@ -65,6 +65,7 @@ describe("web push subscription ownership", () => {
   });
 
   it("does not create two rows for concurrent subscriptions to one browser endpoint", async () => {
+    await client.execute("CREATE UNIQUE INDEX push_subscriptions_endpoint_idx ON push_subscriptions(endpoint)");
     const { saveSubscription } = await import("../web-push");
     const endpoint = "https://example.test/concurrent";
     const outcomes = await Promise.allSettled([

@@ -8,7 +8,8 @@ export const RUNNER_VERSION = "1";
 export const PRE_CURRENCY_SCHEMA_FINGERPRINT = "309646a60fcdfc1566e6110cc4e5ec8eb32cbfdb1ffa4ee03a3d838d54014701";
 export const PRE_PUSH_SCHEMA_FINGERPRINT = "db35d5ebe653dcbc135ca236b9ae83671ef00f2b63bcb57a5ca5b9b30f133de1";
 export const PRE_CONSENT_SCHEMA_FINGERPRINT = "ca9e3e5bfbddf0ca2a975f449fd2c8f354361140b38ef2b73b60bd6cfd2b4e38";
-export const CANONICAL_SCHEMA_FINGERPRINT = "a12ae0b767e79d36f6eb057f99862cc9bfcbe1541b4dc7bbf357351992258e09";
+export const PRE_ENDPOINT_UNIQUE_SCHEMA_FINGERPRINT = "a12ae0b767e79d36f6eb057f99862cc9bfcbe1541b4dc7bbf357351992258e09";
+export const CANONICAL_SCHEMA_FINGERPRINT = "ec1380f00d2f88819de0358a82cd4c27833e26185077c15ba403d40cc97eb2a0";
 export const DEFAULT_MANIFEST_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../lib/db/migrations/manifest.json",
@@ -114,9 +115,12 @@ const SCHEMA_REQUIREMENTS = {
   "0110-notification-preferences": {
     tables: ["notification_preferences"],
   },
+  "0120-push-endpoint-unique": {
+    indexes: ["push_subscriptions_endpoint_idx"],
+  },
 };
 
-const ALLOWED_PREFLIGHTS = new Set(["recurring-duplicates"]);
+const ALLOWED_PREFLIGHTS = new Set(["recurring-duplicates", "push-endpoint-duplicates"]);
 
 function migrationError(code, message) {
   const error = new Error(message);
@@ -184,6 +188,15 @@ export async function loadMigrationManifest(manifestPath = DEFAULT_MANIFEST_PATH
       throw migrationError(
         "INVALID_MANIFEST",
         "The Telegram operations/outbox migration requires the recurring-duplicates preflight.",
+      );
+    }
+    if (
+      loadedFiles.some(({ file }) => file === "0014_push_endpoint_unique.sql") &&
+      !preflight.includes("push-endpoint-duplicates")
+    ) {
+      throw migrationError(
+        "INVALID_MANIFEST",
+        "The push endpoint unique migration requires the push-endpoint-duplicates preflight.",
       );
     }
     const minimumSqliteVersion = migration.minimumSqliteVersion;
@@ -383,15 +396,20 @@ async function canonicalSchemaDrift(client, tables, appliedMigrationIds) {
     }
   } else if (canonicalIds.slice(0, -1).every((migrationId) => appliedMigrationIds.has(migrationId))) {
     const fingerprint = await computeSchemaFingerprint(client);
+    if (fingerprint !== PRE_ENDPOINT_UNIQUE_SCHEMA_FINGERPRINT) {
+      drift.push("pre-endpoint-unique-schema-fingerprint-mismatch");
+    }
+  } else if (canonicalIds.slice(0, -2).every((migrationId) => appliedMigrationIds.has(migrationId))) {
+    const fingerprint = await computeSchemaFingerprint(client);
     if (fingerprint !== PRE_CONSENT_SCHEMA_FINGERPRINT) {
       drift.push("pre-consent-schema-fingerprint-mismatch");
     }
-  } else if (canonicalIds.slice(0, -2).every((migrationId) => appliedMigrationIds.has(migrationId))) {
+  } else if (canonicalIds.slice(0, -3).every((migrationId) => appliedMigrationIds.has(migrationId))) {
     const fingerprint = await computeSchemaFingerprint(client);
     if (fingerprint !== PRE_PUSH_SCHEMA_FINGERPRINT) {
       drift.push("pre-push-schema-fingerprint-mismatch");
     }
-  } else if (canonicalIds.slice(0, -3).every((migrationId) => appliedMigrationIds.has(migrationId))) {
+  } else if (canonicalIds.slice(0, -4).every((migrationId) => appliedMigrationIds.has(migrationId))) {
     const fingerprint = await computeSchemaFingerprint(client);
     if (fingerprint !== PRE_CURRENCY_SCHEMA_FINGERPRINT) {
       drift.push("pre-currency-schema-fingerprint-mismatch");
@@ -408,6 +426,20 @@ async function recurringDuplicateCount(client) {
       SELECT recurring_expense_id, scheduled_date
       FROM recurring_executions
       GROUP BY recurring_expense_id, scheduled_date
+      HAVING COUNT(*) > 1
+    )
+  `);
+  return Number(result.rows[0]?.duplicate_groups ?? 0);
+}
+
+async function pushEndpointDuplicateCount(client) {
+  if (!(await tableExists(client, "push_subscriptions"))) return 0;
+  const result = await client.execute(`
+    SELECT COUNT(*) AS duplicate_groups
+    FROM (
+      SELECT endpoint
+      FROM push_subscriptions
+      GROUP BY endpoint
       HAVING COUNT(*) > 1
     )
   `);
@@ -532,6 +564,15 @@ export async function applyMigration(client, migration) {
   await assertMinimumSqliteVersion(client, migration);
   if (migration.preflight.includes("recurring-duplicates")) {
     await assertOutboxPreflight(client);
+  }
+  if (migration.preflight.includes("push-endpoint-duplicates")) {
+    const duplicateGroups = await pushEndpointDuplicateCount(client);
+    if (duplicateGroups > 0) {
+      throw migrationError(
+        "PUSH_ENDPOINT_DUPLICATES",
+        `Cannot create the endpoint uniqueness constraint: ${duplicateGroups} duplicate group(s) found.`,
+      );
+    }
   }
 
   let migrationFailure;
