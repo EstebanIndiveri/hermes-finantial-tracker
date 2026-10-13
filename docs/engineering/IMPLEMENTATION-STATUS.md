@@ -2188,8 +2188,32 @@ de una entrega en curso ni evita por sí solo duplicados de proveedor tras
 un timeout.
 
 Pasaron 1004 tests de app y 101 del harness, typecheck, build y lint sin
-errores (63 warnings preexistentes fuera de este corte). **Owner Codex:**
-revisión independiente, publicación solo beta y reatestación H04d; luego,
-observación temporal de colas/worker y alcance de activación. **Owner
-Esteban:** ninguna acción requerida para estos dos cambios. El kill switch
-proactivo sigue apagado; los datos QA no se limpiaron.
+errores (63 warnings preexistentes fuera de este corte). La revisión
+independiente Luna detectó dos ajustes menores que se incorporaron y
+reprobaron: fallback de resumen del webhook y presupuesto Push agotado
+durante el último envío.
+
+El código `b24c24059798478ae29a38c5723891352326ca65` fue pusheado y
+desplegado como `dpl_67LAD82GEnDGpjz6nzM88oD2VSAd` (READY, target
+`production` **solo del proyecto beta**). El build remoto emitió los diez
+checks H04d `passed:true` con seis fingerprints coincidentes; se releyeron
+los nombres de bindings beta y la identidad exacta de `beta-hermes` en Turso.
+El paquete privado `/private/tmp/hermes-h04d-act17.VpHoRK/` pasó antes y
+después de mover únicamente el alias beta:
+`ok:true`, `postActivationRuntimeConsistent:true`, `isolationVerified:false`.
+El último valor conserva el residual ya aceptado para este piloto; no es
+lectura directa independiente de secretos en ejecución ni certifica URLs
+retiradas. La relectura del alias legacy mantuvo
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`.
+
+Una lectura agregada posterior de la DB beta encontró 1 Push `sent`, 25
+Telegram `sent`, 0 trabajos abiertos, 0 Push vencidos para purga y 0
+preferencias proactivas activas. No se disparó un canary funcional nuevo,
+no se limpiaron datos QA y el kill switch proactivo sigue apagado.
+
+**Cerrado, owner Codex:** ambos cortes de confiabilidad y promoción beta
+acotada. **Abierto, owner Codex:** observación temporal de fallos/reintentos,
+prueba de saturación más amplia y política de retención/limpieza QA; mantener
+la ruta a chats de sesiones apagada hasta vínculo verificable.
+**Owner Esteban:** ninguna acción requerida ahora; el alcance de una futura
+activación proactiva deberá decidirse explícitamente tras esos gates.
