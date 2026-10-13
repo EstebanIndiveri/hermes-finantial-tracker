@@ -92,6 +92,27 @@ test("currency pilot requires an explicit beta activation binding", () => {
   assert.deepEqual(evaluateBetaBuildIsolation({ ...validEnvironment, ACT05_ARS_MODE_ENABLED: "false" }).failedChecks, ["ars_mode_enabled"]);
 });
 
+test("accepts only a complete, scoped daily summary canary when the broad switch is off", () => {
+  const scoped = {
+    ...validEnvironment,
+    DAILY_SUMMARY_CANARY_ENABLED: "true",
+    DAILY_SUMMARY_CANARY_USER_ID: "504b3827-a03e-49a6-acc6-c200f225ca80",
+    DAILY_SUMMARY_CANARY_GROUP_ID: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
+  };
+  assert.equal(evaluateBetaBuildIsolation(scoped).passed, true);
+  for (const [key, value] of [
+    ["DAILY_SUMMARY_CANARY_ENABLED", "True"],
+    ["DAILY_SUMMARY_CANARY_USER_ID", ""],
+    ["DAILY_SUMMARY_CANARY_GROUP_ID", "bad group"],
+    ["DAILY_SUMMARY_CANARY_USER_ID", "different-valid-user"],
+    ["DAILY_SUMMARY_CANARY_GROUP_ID", "different-valid-group"],
+  ]) {
+    assert.ok(evaluateBetaBuildIsolation({ ...scoped, [key]: value }).failedChecks.includes("daily_summary_canary_scope"));
+  }
+  const partial = { ...validEnvironment, DAILY_SUMMARY_CANARY_ENABLED: "true" };
+  assert.ok(evaluateBetaBuildIsolation(partial).failedChecks.includes("daily_summary_canary_scope"));
+});
+
 test("requires exact, distinct fingerprints for the six beta secrets", () => {
   const expected = JSON.parse(validEnvironment.HERMES_BETA_SECRET_FINGERPRINTS);
   const changedSecret = { ...validEnvironment, SESSION_SECRET: "sentinel-different-session-secret" };

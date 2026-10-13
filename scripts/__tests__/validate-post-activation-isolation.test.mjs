@@ -112,6 +112,26 @@ test("requires active beta channels and live AI/OCR while keeping proactive aler
   }
 });
 
+test("accepts only an explicit one-user/one-group daily beta exception with global notifications off", () => {
+  const scoped = fixture();
+  scoped.beta.runtime.dailySummaryCanary = { enabled: true, userId: "504b3827-a03e-49a6-acc6-c200f225ca80", groupId: "b5b15f53-f964-4c12-99ca-88fbbee23c55" };
+  const result = validatePostActivationIsolation(scoped, { now });
+  assert.ok(result.checks.includes("daily-summary-canary-scoped"));
+  for (const canary of [
+    { enabled: false, userId: "qa-user-1", groupId: "qa-group-1" },
+    { enabled: true, userId: "", groupId: "qa-group-1" },
+    { enabled: true, userId: "qa-user-1", groupId: "bad group" },
+    { enabled: true, userId: "qa-user-1", groupId: "qa-group-1", extra: "x" },
+    { enabled: true, userId: "other-valid-user", groupId: "b5b15f53-f964-4c12-99ca-88fbbee23c55" },
+  ]) {
+    const input = fixture();
+    input.beta.runtime.dailySummaryCanary = canary;
+    assert.throws(() => validatePostActivationIsolation(input, { now }));
+  }
+  scoped.beta.runtime.notificationsEnabled = true;
+  assert.throws(() => validatePostActivationIsolation(scoped, { now }), (error) => error.code === "BETA_NOTIFICATIONS_ENABLED");
+});
+
 test("rejects secret-bearing and unknown fields; never certifies from local declarations", () => {
   const input = fixture();
   input.beta.telegram.token = "must-not-be-present";

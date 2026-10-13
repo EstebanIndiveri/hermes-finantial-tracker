@@ -6,6 +6,19 @@
 
 This separate contract describes the post-activation beta state: inbox, outbox, and worker enabled; live AI and OCR; proactive notifications disabled; and explicitly distinct Vercel, Turso, and Telegram identities for beta and legacy production. It is a local consistency check for a redacted evidence manifest, not a provider client and not a certification by itself.
 
+For the ACT-17 daily-summary pilot, `notificationsEnabled:false` continues to
+mean the **global** switch is off. An optional `dailySummaryCanary` declaration
+in `beta.runtime` permits only QA user
+`504b3827-a03e-49a6-acc6-c200f225ca80` in group
+`b5b15f53-f964-4c12-99ca-88fbbee23c55` and must be
+mirrored by the three `DAILY_SUMMARY_CANARY_*` bindings in the beta Production
+deployment. The build assertion rejects partial or malformed scope; the
+dispatcher rechecks that scope, consent, chat and group at delivery. This is
+not general proactive activation, and the local manifest is still not proof
+of deployed binding values. The reviewed runtime receipt must record the
+scope by technical IDs without tokens, and the residual remains
+`isolationVerified:false`.
+
 ## Input contract
 
 Call `validatePostActivationIsolation(input, { now })` from `scripts/validate-post-activation-isolation.mjs`. Its manifest has only provider metadata and non-secret runtime declarations. Every beta and production provider entry must refer to a reviewed redacted receipt under `evidence/`, include a SHA-256 digest, and be no more than seven days old. The beta Vercel receipt also covers deployment target, release SHA, and the runtime flag/mode inventory.
@@ -30,7 +43,7 @@ Formal certification still requires human review of provider provenance, the cur
 
 ## Beta build-time binding assertion
 
-`scripts/assert-beta-build-isolation.mjs` runs before the isolated Next build. It is silent outside an explicitly gated beta deployment (`HERMES_BETA_ISOLATION_ASSERT=true`). When gated, it fails the build unless the actual build environment selects the exact beta app origin, Turso host, bot token ID prefix and declared bot ID/username, beta session cookie, active inbox/outbox/worker flags, live AI/OCR, disabled proactive alerts, nonempty required beta secrets, and exact matches for the six secret fingerprints from the private beta receipt. The expected digest map is stored as the sensitive `HERMES_BETA_SECRET_FINGERPRINTS` binding **only in beta Production**. The only emitted event has fixed check names and pass/fail booleans; no value or digest is logged.
+`scripts/assert-beta-build-isolation.mjs` runs before the isolated Next build. It is silent outside an explicitly gated beta deployment (`HERMES_BETA_ISOLATION_ASSERT=true`). When gated, it fails the build unless the actual build environment selects the exact beta app origin, Turso host, bot token ID prefix and declared bot ID/username, beta session cookie, active inbox/outbox/worker flags, live AI/OCR, disabled global proactive switch, complete daily canary scope if present, nonempty required beta secrets, and exact matches for the six secret fingerprints from the private beta receipt. The expected digest map is stored as the sensitive `HERMES_BETA_SECRET_FINGERPRINTS` binding **only in beta Production**. The only emitted event has fixed check names and pass/fail booleans; no value or digest is logged.
 
 This attests the build environment of a **new** beta deployment, not a prior deployment or a direct readback from a running function. Vercel documents that environment variable changes apply to new deployments, not previous ones. The gate must be enabled only in the separate beta project's Production environment; a failed gated build must leave the existing beta deployment in service. Capture the deployment ID and the allowlisted build event as a redacted receipt, then check the live alias points to that deployment. Do not enable these variables in the legacy project.
 

@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 import { DAILY_SUMMARY_OPERATION_KIND, parseDailySummaryContext } from "@/lib/notifications/daily-summary-delivery";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
+import { isDailySummaryRecipientAllowed } from "@/lib/notifications/daily-summary-canary";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const MAX_ATTEMPTS = 8;
@@ -76,7 +77,7 @@ async function dailySummaryRejection(row: TelegramDeliveryRow): Promise<string |
     operation.resourceType !== "daily_summary" || !operation.userId) return "invalid_proactive_context";
   const context = parseDailySummaryContext(operation.context);
   if (!context || row.action !== "send_message") return "invalid_proactive_context";
-  if (process.env.NOTIFICATIONS_ENABLED !== "true") return "notifications_disabled";
+  if (!isDailySummaryRecipientAllowed(operation.userId, context.groupId)) return "notifications_disabled";
   if (!await hasProactiveConsent(operation.userId, "dailySummary")) return "consent_revoked";
   const [user] = await db.select({
     telegramId: users.telegram_user_id,

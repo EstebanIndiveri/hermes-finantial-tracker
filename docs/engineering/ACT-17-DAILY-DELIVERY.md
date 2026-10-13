@@ -41,3 +41,32 @@ atestado y el canary.
 Pruebas del corte: cron repetido y concurrente, A/B, revocación y relink
 antes del dispatch, cambio/remoción de grupo, lease vencido e incertidumbre
 de proveedor, sin regresión de entregas reintentables iniciadas por usuario.
+
+## Canary beta de alcance exacto
+
+`NOTIFICATIONS_ENABLED=true` no es un canary: abriría otros crons y mensajes
+transaccionales, y deshabilitaría el cerco Push que exige el switch global en
+`false`. Por eso el resumen diario usa una excepción específica: con
+`NOTIFICATIONS_ENABLED=false`, solo
+`DAILY_SUMMARY_CANARY_ENABLED=true` junto a
+`DAILY_SUMMARY_CANARY_USER_ID` y `DAILY_SUMMARY_CANARY_GROUP_ID` aprobados
+permiten el encolado y la entrega de **ese** usuario en **ese** grupo. La
+ausencia, valor mal escrito o configuración parcial apaga la excepción. El
+runtime exige el origen, bot, base de datos y compuerta de build de beta;
+el build y el recibo H04d exigen los IDs QA concretos
+`504b3827-a03e-49a6-acc6-c200f225ca80` y
+`b5b15f53-f964-4c12-99ca-88fbbee23c55`. Una excepción configurada
+jamás se transforma en envío global si cambia el interruptor general. El
+cron no recorre reintegros pendientes en modo canary. Antes del proveedor se
+revalidan el alcance configurado, consentimiento individual, chat vinculado y
+grupo activo autorizado. Cambiar cualquiera de ellos mata una entrega
+pendiente sin envío. El build beta atesta también la completitud de este
+alcance, sin imprimir IDs ni secretos.
+
+La activación de estos bindings solo corresponde al proyecto y target beta.
+Requiere un deployment nuevo y reatestación H04d antes de mover su alias;
+el manifiesto debe declarar la excepción acotada sin describir los avisos
+proactivos como universalmente apagados. Un canary no demuestra SLO ni
+habilita el switch global. Para desactivarlo, apagar el binding, desplegar
+de nuevo y observar que no quedan entregas elegibles; nunca borrar los
+recibos de operación para forzar un reenvío.

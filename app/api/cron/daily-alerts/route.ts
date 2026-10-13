@@ -14,6 +14,7 @@ import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 import { getGroupMembership } from "@/lib/groups/permissions";
 import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
+import { getDailySummaryScope, isDailySummaryRecipientAllowed } from "@/lib/notifications/daily-summary-canary";
 
 /**
  * Daily cron job for proactive Telegram alerts.
@@ -29,9 +30,10 @@ export async function GET(req: NextRequest) {
   if (notificationsMode === "invalid") {
     return NextResponse.json({ error: "Notifications unavailable" }, { status: 503 });
   }
-  // This proactive route requires an explicit opt-in at both the deployment
-  // and recipient layers; a missing legacy-compatible flag is not consent.
-  if (notificationsMode === "disabled" || process.env.NOTIFICATIONS_ENABLED !== "true") {
+  // The beta canary is a separate one-user/one-group exception. Missing or
+  // malformed configuration never inherits the legacy default-on behavior.
+  const scope = getDailySummaryScope();
+  if (scope.mode === "off") {
     return NextResponse.json({
       ok: true,
       skipped: true,
@@ -54,6 +56,10 @@ export async function GET(req: NextRequest) {
     const results: { userId: string; sent: boolean; reason?: string }[] = [];
 
     for (const user of allUsers) {
+      if (scope.mode === "canary" && user.id !== scope.userId) {
+        results.push({ userId: user.id, sent: false, reason: "outside_canary" });
+        continue;
+      }
       // A previous message may belong to an unrelated group chat. Proactive
       // financial summaries go only to the user's linked private Telegram ID.
       const chatId = user.telegram_user_id ?? null;
@@ -72,6 +78,10 @@ export async function GET(req: NextRequest) {
       const groupId = await resolveAuthorizedTelegramGroup(user.id, user.active_telegram_group_id);
       if (!groupId) {
         results.push({ userId: user.id, sent: false, reason: "no_group" });
+        continue;
+      }
+      if (!isDailySummaryRecipientAllowed(user.id, groupId)) {
+        results.push({ userId: user.id, sent: false, reason: "outside_canary" });
         continue;
       }
 
@@ -178,7 +188,7 @@ export async function GET(req: NextRequest) {
     const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
     const reimbursementCutoff = Date.now() - THREE_DAYS_MS;
 
-    const pendingOldReimbursements = await db
+    const pendingOldReimbursements = scope.mode === "global" ? await db
       .select({
         id: reimbursementRequests.id,
         transactionId: reimbursementRequests.transactionId,
@@ -193,7 +203,7 @@ export async function GET(req: NextRequest) {
           eq(reimbursementRequests.status, "pending"),
           lt(reimbursementRequests.createdAt, reimbursementCutoff),
         ),
-      );
+      ) : [];
 
     for (const reimbursement of pendingOldReimbursements) {
       // Only send to assigned payers (not open reimbursements)

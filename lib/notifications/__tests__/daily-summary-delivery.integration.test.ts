@@ -134,6 +134,44 @@ it("does not send if the proactive flag disappears after queueing", async () => 
   expect(fetchImpl).not.toHaveBeenCalled();
 });
 
+it("delivers only the explicitly scoped beta canary while the global switch is off", async () => {
+  await enqueueDailySummary({ ...base, argentinaDate: "2026-10-22", now: 3_800 });
+  process.env = {
+    ...process.env,
+    NOTIFICATIONS_ENABLED: "false",
+    DAILY_SUMMARY_CANARY_ENABLED: "true",
+    DAILY_SUMMARY_CANARY_USER_ID: "user-A",
+    DAILY_SUMMARY_CANARY_GROUP_ID: "group-A",
+    HERMES_BETA_ISOLATION_ASSERT: "true",
+    NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
+    TURSO_DATABASE_URL: "libsql://beta-hermes-esteban-indiveri.aws-us-east-2.turso.io",
+    TELEGRAM_BOT_ID: "8739389202",
+  };
+  const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true, result: { message_id: 22 } }), { status: 200 }));
+  const result = await runWorker({ botId: "beta-bot", token: "test-token", now: () => 3_800, fetchImpl });
+  expect(result.sent).toBe(1);
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+});
+
+it("kills a queued beta canary if its scope changes before delivery", async () => {
+  await enqueueDailySummary({ ...base, argentinaDate: "2026-10-23", now: 3_900 });
+  process.env = {
+    ...process.env,
+    NOTIFICATIONS_ENABLED: "false",
+    DAILY_SUMMARY_CANARY_ENABLED: "true",
+    DAILY_SUMMARY_CANARY_USER_ID: "user-A",
+    DAILY_SUMMARY_CANARY_GROUP_ID: "group-B",
+    HERMES_BETA_ISOLATION_ASSERT: "true",
+    NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
+    TURSO_DATABASE_URL: "libsql://beta-hermes-esteban-indiveri.aws-us-east-2.turso.io",
+    TELEGRAM_BOT_ID: "8739389202",
+  };
+  const fetchImpl = jest.fn();
+  const result = await runWorker({ botId: "beta-bot", token: "test-token", now: () => 3_900, fetchImpl });
+  expect(result.dead).toBe(1);
+  expect(fetchImpl).not.toHaveBeenCalled();
+});
+
 it("does not retry an uncertain send after a recovered lease", async () => {
   await enqueueDailySummary({ ...base, argentinaDate: "2026-10-16", now: 4_000 });
   const claimed = await claimDelivery({ botId: "beta-bot", now: 4_000, leaseMs: 1_000 });

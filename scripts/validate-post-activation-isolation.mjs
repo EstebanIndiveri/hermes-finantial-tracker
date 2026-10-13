@@ -5,6 +5,11 @@ const VERCEL_KEYS = ["projectId", "appOrigin"];
 const DATABASE_KEYS = ["id", "host"];
 const TELEGRAM_KEYS = ["botId", "username", "webhookUrl"];
 const RUNTIME_KEYS = ["flags", "aiMode", "ocrMode", "notificationsEnabled"];
+const DAILY_CANARY_KEYS = ["enabled", "userId", "groupId"];
+const APPROVED_DAILY_CANARY = Object.freeze({
+  userId: "504b3827-a03e-49a6-acc6-c200f225ca80",
+  groupId: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
+});
 const FLAG_KEYS = ["inbox", "outbox", "worker"];
 const EVIDENCE_ROOT_KEYS = ["beta", "production"];
 const EVIDENCE_KEYS = { beta: ["vercel", "turso", "telegram", "runtime"], production: ["vercel", "turso", "telegram"] };
@@ -128,7 +133,9 @@ export function validatePostActivationIsolation(input, { now = Date.now() } = {}
   exactKeys(production.database, DATABASE_KEYS, "production.database");
   exactKeys(beta.telegram, TELEGRAM_KEYS, "beta.telegram");
   exactKeys(production.telegram, TELEGRAM_KEYS, "production.telegram");
-  exactKeys(beta.runtime, RUNTIME_KEYS, "beta.runtime");
+  exactKeys(beta.runtime,
+    beta.runtime?.dailySummaryCanary === undefined ? RUNTIME_KEYS : [...RUNTIME_KEYS, "dailySummaryCanary"],
+    "beta.runtime");
   exactKeys(beta.runtime.flags, FLAG_KEYS, "beta.runtime.flags");
 
   if (input.version !== 1 || beta.environment !== "beta") {
@@ -185,7 +192,16 @@ export function validatePostActivationIsolation(input, { now = Date.now() } = {}
     fail("BETA_PROVIDERS_NOT_LIVE", "beta.runtime", "Post-activation evidence requires live AI and OCR modes.");
   }
   if (beta.runtime.notificationsEnabled !== false) {
-    fail("BETA_NOTIFICATIONS_ENABLED", "beta.runtime.notificationsEnabled", "Proactive notifications must remain disabled for this beta evidence contract.");
+    fail("BETA_NOTIFICATIONS_ENABLED", "beta.runtime.notificationsEnabled", "The global proactive switch must remain disabled for this beta evidence contract.");
+  }
+  if (beta.runtime.dailySummaryCanary !== undefined) {
+    const canary = beta.runtime.dailySummaryCanary;
+    exactKeys(canary, DAILY_CANARY_KEYS, "beta.runtime.dailySummaryCanary");
+    if (canary.enabled !== true ||
+      canary.userId !== APPROVED_DAILY_CANARY.userId ||
+      canary.groupId !== APPROVED_DAILY_CANARY.groupId) {
+      fail("INVALID_DAILY_CANARY", "beta.runtime.dailySummaryCanary", "Daily summary exception must target one stable beta user and group.");
+    }
   }
 
   checkEvidence(beta.evidence, now);
@@ -205,7 +221,8 @@ export function validatePostActivationIsolation(input, { now = Date.now() } = {}
       "distinct-telegram-bots-and-webhooks",
       "beta-inbox-outbox-worker-enabled",
       "beta-ai-and-ocr-live",
-      "proactive-notifications-disabled",
+      "global-proactive-notifications-disabled",
+      ...(beta.runtime.dailySummaryCanary ? ["daily-summary-canary-scoped"] : []),
       "beta-and-production-provider-receipts-referenced-and-fresh",
       "runtime-flag-values-remain-declarations-until-receipts-are-reviewed",
       "no-secret-values-in-contract",

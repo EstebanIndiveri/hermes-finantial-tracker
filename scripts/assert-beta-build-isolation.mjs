@@ -37,6 +37,10 @@ const BETA_SECRET_KEYS = Object.freeze({
   webAccess: "WEB_ACCESS_TOKEN",
 });
 const SHA256 = /^[a-f0-9]{64}$/;
+const APPROVED_DAILY_CANARY = Object.freeze({
+  userId: "504b3827-a03e-49a6-acc6-c200f225ca80",
+  groupId: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
+});
 
 const CHECK_NAMES = Object.freeze([
   "beta_app_origin",
@@ -46,6 +50,7 @@ const CHECK_NAMES = Object.freeze([
   "beta_feature_flags",
   "beta_runtime_modes",
   "beta_notifications_disabled",
+  "daily_summary_canary_scope",
   "ars_mode_enabled",
   "required_secrets_present",
   "beta_secret_fingerprints_match",
@@ -53,6 +58,19 @@ const CHECK_NAMES = Object.freeze([
 
 function nonempty(environment, key) {
   return typeof environment[key] === "string" && environment[key].trim().length > 0;
+}
+
+function dailySummaryCanaryScopeValid(environment) {
+  const keys = [
+    "DAILY_SUMMARY_CANARY_ENABLED",
+    "DAILY_SUMMARY_CANARY_USER_ID",
+    "DAILY_SUMMARY_CANARY_GROUP_ID",
+  ];
+  if (keys.every((key) => environment[key] === undefined)) return true;
+  return environment.NOTIFICATIONS_ENABLED === "false" &&
+    environment.DAILY_SUMMARY_CANARY_ENABLED === "true" &&
+    environment.DAILY_SUMMARY_CANARY_USER_ID === APPROVED_DAILY_CANARY.userId &&
+    environment.DAILY_SUMMARY_CANARY_GROUP_ID === APPROVED_DAILY_CANARY.groupId;
 }
 
 function databaseHost(value) {
@@ -110,6 +128,7 @@ export function evaluateBetaBuildIsolation(environment) {
     beta_feature_flags: Object.entries(EXPECTED.flags).every(([key, value]) => environment[key] === value),
     beta_runtime_modes: environment.AI_MODE === EXPECTED.aiMode && environment.OCR_MODE === EXPECTED.ocrMode,
     beta_notifications_disabled: environment.NOTIFICATIONS_ENABLED === EXPECTED.notificationsEnabled,
+    daily_summary_canary_scope: dailySummaryCanaryScopeValid(environment),
     ars_mode_enabled: environment.ACT05_ARS_MODE_ENABLED === "true",
     required_secrets_present: REQUIRED_SECRETS.every((key) => nonempty(environment, key)),
     beta_secret_fingerprints_match: betaSecretFingerprintsMatch(environment),

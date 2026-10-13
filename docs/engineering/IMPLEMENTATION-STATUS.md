@@ -2642,3 +2642,32 @@ proactivas, verificar operativamente el worker/cron vigente y observar una
 ventana suficiente antes de activar envíos. El costo de at-most-once ante
 fallos de red inciertos permanece documentado; no hay prueba de entrega
 diaria real todavía.
+
+### ACT-17 — cerco para canary diario beta (13/10/2026)
+
+La revisión independiente Luna confirmó que cambiar directamente
+`NOTIFICATIONS_ENABLED=true` habilitaría otros cron y el emisor Telegram
+transaccional no sujeto a esas preferencias, y desactivaría el cerco Push
+existente que requiere el switch global en `false`. Se descartó esa
+activación amplia pese a contar con permiso: no sería un canary acotado.
+
+El siguiente corte agrega `DAILY_SUMMARY_CANARY_ENABLED`,
+`DAILY_SUMMARY_CANARY_USER_ID` y `DAILY_SUMMARY_CANARY_GROUP_ID` como excepción
+exacta de un usuario/grupo mientras `NOTIFICATIONS_ENABLED=false`. El cron
+omite cualquier otro usuario y no examina los reintegros viejos en ese modo;
+el dispatcher vuelve a exigir el mismo alcance, el opt-in diario, el chat
+privado y la membresía/grupo vigente antes del proveedor. Una configuración
+ausente/parcial/mal escrita falla cerrada. El build beta atesta la forma del
+alcance y el validador H04d admite una declaración opcional explícita sin
+confundirla con la activación global. Se documentó el contrato en
+`ACT-17-DAILY-DELIVERY.md` y la excepción en
+`H04D-POST-ACTIVATION-RUNTIME-ISOLATION.md`.
+
+La cuenta `esteban_beta_qa` tiene consentimiento y chat privado vinculados;
+su grupo Telegram activo corresponde a su espacio propio. La consulta beta
+read-only de movimientos del 13/10 en ese grupo dio cero; un cron hoy no
+constituiría prueba de entrega. **Owner Codex:** terminar pruebas, desplegar
+el código y los tres bindings solo en beta con H04d nuevo; después preparar
+una intención técnica identificada como QA (sin crear movimientos) y
+conciliar un único envío o la causa exacta del rechazo. Mantener el switch
+global apagado, preservar datos QA y no tocar legacy.
