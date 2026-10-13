@@ -42,22 +42,23 @@ async function executeMultiple(url, sql) {
 
 test("canonical manifest classifies every SQL file exactly once", async () => {
   const manifest = await loadMigrationManifest();
-  assert.equal(manifest.migrations.length, 11);
+  assert.equal(manifest.migrations.length, 12);
   assert.equal(manifest.excluded.length, 5);
-  assert.equal(new Set(manifest.migrations.map(({ id }) => id)).size, 11);
+  assert.equal(new Set(manifest.migrations.map(({ id }) => id)).size, 12);
 });
 
 test("fresh migration reaches the canonical schema and a second run is a no-op", async (t) => {
   const database = await temporaryDatabase(t);
 
   const first = await migrateDatabase({ url: database.url });
-  assert.equal(first.appliedMigrationIds.length, 11);
+  assert.equal(first.appliedMigrationIds.length, 12);
   assert.equal(first.inspection.state, "canonical");
   assert.equal(first.inspection.preflight.foreignKeysEnabled, true);
   assert.equal(first.inspection.preflight.foreignKeyViolationCount, 0);
 
   const requiredTables = [
     "hermes_schema_migrations",
+    "notification_preferences",
     "push_delivery_outbox",
     "reimbursement_requests",
     "recurring_executions",
@@ -98,7 +99,7 @@ test("fresh migration reaches the canonical schema and a second run is a no-op",
 
   const second = await migrateDatabase({ url: database.url });
   assert.deepEqual(second.appliedMigrationIds, []);
-  assert.equal(second.inspection.appliedMigrationIds.length, 11);
+  assert.equal(second.inspection.appliedMigrationIds.length, 12);
 });
 
 test("push outbox migration upgrades the prior canonical schema without changing existing subscriptions", async (t) => {
@@ -114,12 +115,34 @@ test("push outbox migration upgrades the prior canonical schema without changing
   `);
 
   const result = await migrateDatabase({ url: database.url });
-  assert.deepEqual(result.appliedMigrationIds, ["0100-push-delivery-outbox"]);
+  assert.deepEqual(result.appliedMigrationIds, ["0100-push-delivery-outbox", "0110-notification-preferences"]);
   assert.equal(result.inspection.state, "canonical");
   const subscriptions = await query(database.url, "SELECT id, user_id FROM push_subscriptions");
   assert.deepEqual(subscriptions.rows.map((row) => [row.id, row.user_id]), [["s1", "u1"]]);
   const outbox = await query(database.url, "SELECT COUNT(*) AS count FROM push_delivery_outbox");
   assert.equal(Number(outbox.rows[0].count), 0);
+});
+
+test("notification consent migration is additive and leaves existing users opted out", async (t) => {
+  const database = await temporaryDatabase(t);
+  const canonical = await loadMigrationManifest();
+  const priorManifest = await writeManifestSnapshot(database.directory, canonical, 11);
+  await migrateDatabase({ url: database.url, manifestPath: priorManifest });
+  await executeMultiple(database.url, "INSERT INTO users (id, name, username) VALUES ('u1', 'User', 'user')");
+
+  const result = await migrateDatabase({ url: database.url });
+  assert.deepEqual(result.appliedMigrationIds, ["0110-notification-preferences"]);
+  assert.equal(result.inspection.state, "canonical");
+  assert.equal(Number((await query(database.url, "SELECT COUNT(*) AS n FROM users")).rows[0].n), 1);
+  assert.equal(Number((await query(database.url, "SELECT COUNT(*) AS n FROM notification_preferences")).rows[0].n), 0);
+  await executeMultiple(database.url, "INSERT INTO notification_preferences (user_id) VALUES ('u1')");
+  const preferences = await query(database.url,
+    "SELECT daily_summary, recurring, reimbursements FROM notification_preferences WHERE user_id = 'u1'");
+  assert.deepEqual(Array.from(preferences.rows[0], Number), [0, 0, 0]);
+  await assert.rejects(
+    executeMultiple(database.url, "UPDATE notification_preferences SET recurring = 2 WHERE user_id = 'u1'"),
+    /CHECK constraint failed/,
+  );
 });
 
 async function writeManifestSnapshot(directory, manifest, migrationCount, { failCurrencyMigration = false } = {}) {
@@ -174,7 +197,7 @@ test("currency migration preserves existing records, incoming FKs, indexes and p
   `);
 
   const result = await migrateDatabase({ url: database.url });
-  assert.deepEqual(result.appliedMigrationIds, ["0090-currency-modes", "0100-push-delivery-outbox"]);
+  assert.deepEqual(result.appliedMigrationIds, ["0090-currency-modes", "0100-push-delivery-outbox", "0110-notification-preferences"]);
   assert.equal(result.inspection.preflight.foreignKeysEnabled, true);
   assert.equal(result.inspection.preflight.foreignKeyViolationCount, 0);
 

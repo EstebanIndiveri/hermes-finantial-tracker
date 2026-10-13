@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { createClient } from "@libsql/client";
 import {
   applyMigration,
-  CANONICAL_SCHEMA_FINGERPRINT,
+  PRE_CONSENT_SCHEMA_FINGERPRINT,
   computeSchemaFingerprint,
   loadMigrationManifest,
   PRE_PUSH_SCHEMA_FINGERPRINT,
@@ -113,7 +113,13 @@ function parseArgs(argv) {
 
 export { parseArgs };
 
-export async function applyBetaPushMigration({ configPath, backupPath }) {
+export async function applyBetaAdditiveMigration({
+  configPath,
+  backupPath,
+  migrationId,
+  preSchemaFingerprint,
+  postSchemaFingerprint,
+}) {
   lastStage = "identity";
   await localConfigDirectory(configPath);
   await regularLocalPath(backupPath, "BACKUP");
@@ -128,17 +134,20 @@ export async function applyBetaPushMigration({ configPath, backupPath }) {
     await cli(configPath, "db", "show", EXPECTED.database),
   );
   const manifest = await loadMigrationManifest();
-  const pending = manifest.migrations.at(-1);
-  if (!pending || pending.id !== EXPECTED.migration || pending.files.length !== 1) fail("MIGRATION_MANIFEST_MISMATCH");
+  const migrationIndex = manifest.migrations.findIndex((entry) => entry.id === migrationId);
+  const pending = manifest.migrations[migrationIndex];
+  if (!pending || pending.files.length !== 1 || migrationIndex < 1) fail("MIGRATION_MANIFEST_MISMATCH");
 
   const backup = createClient({ url: pathToFileURL(backupPath).href });
   let beta;
   try {
     lastStage = "backup-integrity";
     await assertIntegrity(backup, "BACKUP_INTEGRITY_FAILED");
-    if (await computeSchemaFingerprint(backup) !== PRE_PUSH_SCHEMA_FINGERPRINT) fail("BACKUP_SCHEMA_MISMATCH");
+    if (await computeSchemaFingerprint(backup) !== preSchemaFingerprint) fail("BACKUP_SCHEMA_MISMATCH");
     const backupLedger = await ledger(backup);
-    const expectedLedger = manifest.migrations.slice(0, -1).map((entry) => [entry.id, entry.checksum]);
+    const expectedLedger = manifest.migrations
+      .slice(0, migrationIndex)
+      .map((entry) => [entry.id, entry.checksum]);
     if (JSON.stringify(backupLedger) !== JSON.stringify(expectedLedger)) fail("BACKUP_LEDGER_MISMATCH");
     const tables = (await backup.execute(
       "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -156,7 +165,7 @@ export async function applyBetaPushMigration({ configPath, backupPath }) {
 
     lastStage = "beta-preflight";
     const preflight = await databaseSnapshot(beta, columns);
-    if (preflight.schema !== PRE_PUSH_SCHEMA_FINGERPRINT) fail("BETA_SCHEMA_DRIFT");
+    if (preflight.schema !== preSchemaFingerprint) fail("BETA_SCHEMA_DRIFT");
     await assertIntegrity(beta);
     if (JSON.stringify(preflight.ledger) !== JSON.stringify(backupLedger)) fail("BETA_LEDGER_DRIFT");
     if (JSON.stringify(preflight.rows) !== JSON.stringify(backupRows)) fail("BETA_DATA_CHANGED_SINCE_BACKUP");
@@ -171,7 +180,7 @@ export async function applyBetaPushMigration({ configPath, backupPath }) {
     await applyMigration(beta, pending);
     lastStage = "beta-postflight";
     await assertIntegrity(beta);
-    if (await computeSchemaFingerprint(beta) !== CANONICAL_SCHEMA_FINGERPRINT) fail("BETA_POST_SCHEMA_MISMATCH");
+    if (await computeSchemaFingerprint(beta) !== postSchemaFingerprint) fail("BETA_POST_SCHEMA_MISMATCH");
     if (JSON.stringify(await captureRows(beta, columns)) !== JSON.stringify(backupRows)) fail("BETA_POST_DATA_CHANGED");
     const afterLedger = await ledger(beta);
     if (JSON.stringify(afterLedger) !== JSON.stringify([...backupLedger, [pending.id, pending.checksum]])) {
@@ -182,6 +191,16 @@ export async function applyBetaPushMigration({ configPath, backupPath }) {
     beta?.close();
     backup.close();
   }
+}
+
+export function applyBetaPushMigration({ configPath, backupPath }) {
+  return applyBetaAdditiveMigration({
+    configPath,
+    backupPath,
+    migrationId: EXPECTED.migration,
+    preSchemaFingerprint: PRE_PUSH_SCHEMA_FINGERPRINT,
+    postSchemaFingerprint: PRE_CONSENT_SCHEMA_FINGERPRINT,
+  });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

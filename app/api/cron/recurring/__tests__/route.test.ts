@@ -3,6 +3,7 @@ import { GET } from "../route";
 import { db } from "@/lib/db/client";
 import { createMonthlyExecutions, getPendingExecutions } from "@/lib/db/recurring-queries";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
+import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 
 jest.mock("@/lib/db/client", () => ({ db: { select: jest.fn() } }));
 jest.mock("@/lib/db/recurring-queries", () => ({
@@ -13,11 +14,12 @@ jest.mock("@/lib/telegram/send-message", () => ({
   sendTelegramMessage: jest.fn(),
   buildPersonalKeyboard: jest.fn(),
 }));
+jest.mock("@/lib/notifications/proactive-consent", () => ({ hasProactiveConsent: jest.fn() }));
 
 describe("GET /api/cron/recurring authorization", () => {
   const originalEnv = process.env;
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => { jest.clearAllMocks(); jest.mocked(hasProactiveConsent).mockResolvedValue(true); });
   afterEach(() => { process.env = originalEnv; });
 
   it.each([
@@ -126,5 +128,24 @@ describe("GET /api/cron/recurring authorization", () => {
       expect.stringContaining("&lt;icon&gt; A &lt;b&gt;&amp; B"),
       undefined,
     );
+  });
+
+  it("creates monthly executions but never sends without recurring opt-in", async () => {
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "true" };
+    (db.select as jest.Mock).mockReturnValue({ from: jest.fn().mockResolvedValue([
+      { id: "user-A", telegramUserId: "telegram-A" },
+    ]) });
+    (createMonthlyExecutions as jest.Mock).mockResolvedValue(1);
+    jest.mocked(hasProactiveConsent).mockResolvedValue(false);
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/recurring", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(createMonthlyExecutions).toHaveBeenCalledWith("user-A");
+    expect(hasProactiveConsent).toHaveBeenCalledWith("user-A", "recurring");
+    expect(getPendingExecutions).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
   });
 });

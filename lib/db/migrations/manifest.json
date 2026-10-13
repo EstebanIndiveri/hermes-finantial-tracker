@@ -47,6 +47,10 @@
     {
       "id": "0100-push-delivery-outbox",
       "files": ["0012_push_delivery_outbox.sql"]
+    },
+    {
+      "id": "0110-notification-preferences",
+      "files": ["0013_notification_preferences.sql"]
     }
   ],
   "excluded": [

@@ -1985,3 +1985,32 @@ consentimiento específico por tipo de aviso, destinatarios y pertenencia
 vigente de chats de sesiones, canary Push, seguimiento de outbox y limpieza
 diferida de QA. `NOTIFICATIONS_ENABLED=false` permanece apagado; Codex no
 habilitará avisos proactivos sin cerrar esas puertas y decisión de Esteban.
+
+### ACT-17 — opt-in individual y chats de sesiones cerrados (12/10/2026)
+
+Esteban confirmó opt-in individual, separado para resumen diario,
+recurrentes y recordatorios de reintegro, con default apagado. Los avisos
+grupales de sesiones esperan vínculo verificable de chat/grupo y destinatarios.
+El [contrato del corte](ACT-17-PROACTIVE-CONSENT.md) distingue estas
+preferencias de Web Push transaccional. La implementación local agrega
+`notification_preferences` sin backfill, API de sesión firmada y controles en
+«Mi cuenta». Los tres crons comprueban la preferencia del destinatario en el
+momento de enviar; el de sesiones deja de usar un `telegram_chat_id` histórico.
+El kill switch beta `NOTIFICATIONS_ENABLED=false` no se cambió.
+
+La migración `0110-notification-preferences` se ensayó sobre una exportación
+fresca y se aplicó solo a `beta-hermes`, tras verificar cuenta/base exactas,
+schema y ledger anteriores, integridad, claves foráneas y conservación de
+las 28 tablas preexistentes. Resultado del aplicador: `verified:true`. El
+backup privado previo permanece en
+`/private/tmp/hermes-consent-beta-backup.JOvkMl/`; se eliminó únicamente la
+copia temporal del ensayo. No se tocó legacy ni se insertó consentimiento
+retroactivo. Localmente pasaron 992 pruebas, TypeScript, lint dirigido y
+build; la publicación del código y H04d para un nuevo deployment siguen
+pendientes en este subcorte.
+
+**Owner Codex:** revisar y promover el código solo a beta con H04d, validar
+la UI/API de cuenta y un canary de preferencias sin enviar avisos; mantener
+`NOTIFICATIONS_ENABLED=false`. Después revisar destinatarios restantes,
+observabilidad del outbox y retención/limpieza QA. **Owner Esteban:** ninguna
+activación proactiva solicitada ahora; decidirla solo tras los gates restantes.

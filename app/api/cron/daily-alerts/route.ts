@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { users, transactions, monthly_settings, split_sessions, splits, reimbursementRequests } from "@/lib/db/schema";
+import { users, transactions, monthly_settings, reimbursementRequests } from "@/lib/db/schema";
 import { eq, and, gte, lte, lt } from "drizzle-orm";
 import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getMonthSummary, getAccountingMonthProjection, getCategoryBreakdown } from "@/lib/finance/summaries";
@@ -8,12 +8,12 @@ import { calculateMonthStatus } from "@/lib/finance/rules";
 import { isIncomeCategory } from "@/lib/finance/income";
 import { sendTelegramMessage } from "@/lib/telegram/send-message";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
-import { escapeTelegramHtml } from "@/lib/telegram/html";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 import { getGroupMembership } from "@/lib/groups/permissions";
+import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 
 /**
  * Daily cron job for proactive Telegram alerts.
@@ -59,6 +59,11 @@ export async function GET(req: NextRequest) {
 
       if (!chatId) {
         results.push({ userId: user.id, sent: false, reason: "no_chat_id" });
+        continue;
+      }
+
+      if (!await hasProactiveConsent(user.id, "dailySummary")) {
+        results.push({ userId: user.id, sent: false, reason: "not_opted_in" });
         continue;
       }
 
@@ -158,47 +163,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Split session reminders — alert groups with pending debts after 24h inactivity
-    const SPLIT_ALERT_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-    const splitAlertCutoff = Date.now() - SPLIT_ALERT_INTERVAL_MS;
-
-    const openGroupSessions = await db.query.split_sessions.findMany({
-      where: and(
-        eq(split_sessions.status, "open"),
-      ),
-    });
-
-    for (const session of openGroupSessions) {
-      // Only alert Telegram group sessions
-      if (!session.telegram_chat_id) continue;
-
-      // Skip if already alerted recently
-      if (session.last_alert_at && session.last_alert_at > splitAlertCutoff) continue;
-
-      // Check if there are any unsettled items in this session
-      const unpaidItems = await db.query.splits.findFirst({
-        where: and(
-          eq(splits.session_id, session.id),
-          eq(splits.status, "active")
-        ),
-      });
-      if (!unpaidItems) continue; // No active items, skip alert
-
-      try {
-        await sendTelegramMessage(
-          session.telegram_chat_id,
-          `⏰ <b>Recordatorio — ${escapeTelegramHtml(session.name)}</b>\n\nHay deudas pendientes en este grupo. Usá /balances para ver el estado actual.`
-        );
-        await db.update(split_sessions)
-          .set({ last_alert_at: Date.now() })
-          .where(eq(split_sessions.id, session.id));
-      } catch (err) {
-        console.error("Error sending split session alert:", {
-          sessionId: session.id,
-          message: err instanceof Error ? err.message : "Unknown error",
-        });
-      }
-    }
+    // Stored Telegram chat IDs are not bound to a verified current finance
+    // group and recipient set. Session reminders remain disabled until that
+    // binding and explicit group-chat consent exist.
 
     // Reimbursement reminders — alert payers for reimbursements pending > 3 days
     const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
@@ -224,6 +191,7 @@ export async function GET(req: NextRequest) {
     for (const reimbursement of pendingOldReimbursements) {
       // Only send to assigned payers (not open reimbursements)
       if (!reimbursement.payerId) continue;
+      if (!await hasProactiveConsent(reimbursement.payerId, "reimbursements")) continue;
 
       // A pending request may outlive group membership. Never disclose its
       // details to a removed payer or for a deleted/cancelled source expense.

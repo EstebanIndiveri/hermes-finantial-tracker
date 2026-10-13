@@ -1,11 +1,13 @@
 import { NextRequest } from "next/server";
 import { GET } from "../route";
 import { getUpcomingExecutions, getOverdueExecutions } from "@/lib/db/recurring-queries";
+import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 
 jest.mock("@/lib/db/recurring-queries", () => ({
   getUpcomingExecutions: jest.fn(),
   getOverdueExecutions: jest.fn(),
 }));
+jest.mock("@/lib/notifications/proactive-consent", () => ({ hasProactiveConsent: jest.fn() }));
 
 describe("GET /api/cron/recurring-reminders", () => {
   const originalEnv = process.env;
@@ -22,6 +24,7 @@ describe("GET /api/cron/recurring-reminders", () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true }) as typeof fetch;
     (getUpcomingExecutions as jest.Mock).mockResolvedValue([]);
     (getOverdueExecutions as jest.Mock).mockResolvedValue([]);
+    jest.mocked(hasProactiveConsent).mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -213,5 +216,21 @@ describe("GET /api/cron/recurring-reminders", () => {
       expect(body.text).toContain("&lt;icon&gt; <b>A &lt;b&gt;&amp; B</b>");
       expect(body.text).not.toContain("<icon>");
     }
+  });
+
+  it("suppresses both reminder types when the recipient has not opted in", async () => {
+    process.env.NOTIFICATIONS_ENABLED = "true";
+    const data = [{ userId: "user-A", telegramUserId: "telegram-A", executions: [{}] }];
+    (getUpcomingExecutions as jest.Mock).mockResolvedValue(data);
+    (getOverdueExecutions as jest.Mock).mockResolvedValue(data);
+    jest.mocked(hasProactiveConsent).mockResolvedValue(false);
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/recurring-reminders", {
+      headers: { authorization: "Bearer test-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(hasProactiveConsent).toHaveBeenCalledWith("user-A", "recurring");
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

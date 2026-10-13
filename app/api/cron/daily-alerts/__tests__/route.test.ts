@@ -7,6 +7,7 @@ import { buildDailyAlert } from "@/lib/telegram/alerts";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
 import { getGroupMembership } from "@/lib/groups/permissions";
+import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 
 jest.mock("@/lib/db/client", () => ({
   db: {
@@ -27,6 +28,7 @@ jest.mock("@/lib/telegram/alerts", () => ({ buildDailyAlert: jest.fn() }));
 jest.mock("@/lib/telegram/authorized-group-context", () => ({ resolveAuthorizedTelegramGroup: jest.fn() }));
 jest.mock("@/lib/notifications/telegram", () => ({ notifyReimbursementReminder: jest.fn(), getUserById: jest.fn() }));
 jest.mock("@/lib/groups/permissions", () => ({ getGroupMembership: jest.fn() }));
+jest.mock("@/lib/notifications/proactive-consent", () => ({ hasProactiveConsent: jest.fn() }));
 
 describe("GET /api/cron/daily-alerts authorization", () => {
   const originalEnv = process.env;
@@ -34,6 +36,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (db.select as jest.Mock).mockReset();
+    (hasProactiveConsent as jest.Mock).mockResolvedValue(true);
   });
   afterEach(() => { process.env = originalEnv; });
 
@@ -76,7 +79,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(db.select).toHaveBeenCalled();
   });
 
-  it("escapes a split session name before sending Telegram HTML", async () => {
+  it("never sends to a stored session chat while its group and recipients are unverified", async () => {
     process.env = { ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "true" };
     const from = jest.fn(() => ({ where: jest.fn().mockResolvedValue([]) }));
     (db.select as jest.Mock)
@@ -92,7 +95,8 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(sendTelegramMessage).toHaveBeenCalledWith("chat-1", expect.stringContaining("Viaje &lt;script&gt;&amp;"));
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
+    expect(db.query.splits.findFirst).not.toHaveBeenCalled();
   });
 
   it("skips disabled notifications before database or provider work", async () => {
@@ -229,6 +233,57 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     (getCategoryBreakdown as jest.Mock).mockResolvedValue([]);
     (buildDailyAlert as jest.Mock).mockReturnValue({ shouldSend: true, message: "daily" });
   }
+
+  it("does not read financial details or send a summary without the recipient's opt-in", async () => {
+    setupDailyProcessing([{ id: "u1", telegram_user_id: "tg-u1", active_telegram_group_id: "g1" }]);
+    (hasProactiveConsent as jest.Mock).mockResolvedValue(false);
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+    expect(await response.json()).toMatchObject({ results: [{ userId: "u1", sent: false, reason: "not_opted_in" }] });
+    expect(hasProactiveConsent).toHaveBeenCalledWith("u1", "dailySummary");
+    expect(resolveAuthorizedTelegramGroup).not.toHaveBeenCalled();
+    expect(getMonthSummary).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
+  });
+
+  it("keeps A's opt-in from authorizing an alert to B", async () => {
+    setupDailyProcessing([
+      { id: "user-A", telegram_user_id: "telegram-A", active_telegram_group_id: "group-A" },
+      { id: "user-B", telegram_user_id: "telegram-B", active_telegram_group_id: "group-B" },
+    ]);
+    (hasProactiveConsent as jest.Mock).mockImplementation(async (userId: string) => userId === "user-A");
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(await response.json()).toMatchObject({ results: [
+      { userId: "user-A", sent: true },
+      { userId: "user-B", sent: false, reason: "not_opted_in" },
+    ] });
+    expect(sendTelegramMessage).toHaveBeenCalledTimes(1);
+    expect(sendTelegramMessage).toHaveBeenCalledWith("telegram-A", "daily");
+    expect(resolveAuthorizedTelegramGroup).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not remind a payer who did not opt in even when membership is current", async () => {
+    process.env = { ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "true" };
+    (db.select as jest.Mock)
+      .mockReturnValueOnce({ from: jest.fn().mockResolvedValue([]) })
+      .mockReturnValueOnce({ from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([{
+        id: "r1", transactionId: "tx1", payerId: "payer", requesterId: "requester",
+        amount: 100, createdAt: Date.now() - 4 * 24 * 60 * 60 * 1000,
+      }]) })) });
+    (hasProactiveConsent as jest.Mock).mockResolvedValue(false);
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+    expect(response.status).toBe(200);
+    expect(hasProactiveConsent).toHaveBeenCalledWith("payer", "reimbursements");
+    expect(getGroupMembership).not.toHaveBeenCalled();
+    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+  });
 
   it("uses each user's linked private Telegram ID instead of a stale chat or TELEGRAM_CHAT_ID", async () => {
     setupDailyProcessing([

@@ -3,6 +3,7 @@ import { getUpcomingExecutions, getOverdueExecutions } from "@/lib/db/recurring-
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 import { escapeTelegramHtml } from "@/lib/telegram/html";
+import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 
 async function sendTelegramMessage(chatId: string, text: string): Promise<boolean> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -55,6 +56,7 @@ export async function GET(request: Request) {
 
     for (const userData of upcoming) {
       if (!userData.telegramUserId) continue;
+      if (!await hasProactiveConsent(userData.userId, "recurring")) continue;
 
       const lines = ["⏰ <b>Recordatorio de pagos próximos</b>\n"];
       for (const exec of userData.executions) {
@@ -74,6 +76,7 @@ export async function GET(request: Request) {
 
     for (const userData of overdue) {
       if (!userData.telegramUserId) continue;
+      if (!await hasProactiveConsent(userData.userId, "recurring")) continue;
 
       const lines = ["🚨 <b>Pagos vencidos pendientes</b>\n"];
       for (const exec of userData.executions) {

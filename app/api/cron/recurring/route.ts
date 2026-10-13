@@ -6,6 +6,7 @@ import { sendTelegramMessage, buildPersonalKeyboard } from "@/lib/telegram/send-
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 import { escapeTelegramHtml } from "@/lib/telegram/html";
+import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 
 /**
  * GET /api/cron/recurring
@@ -52,7 +53,8 @@ export async function GET(req: NextRequest) {
         const created = await createMonthlyExecutions(user.id);
         totalCreated += created;
 
-        if (notificationsMode === "enabled" && created > 0 && user.telegramUserId) {
+        if (notificationsMode === "enabled" && created > 0 && user.telegramUserId &&
+          await hasProactiveConsent(user.id, "recurring")) {
           const pending = await getPendingExecutions(user.id);
           
           if (pending.length > 0) {

@@ -12,6 +12,18 @@ export const users = sqliteTable("users", {
   created_at: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
 
+export const notificationPreferences = sqliteTable("notification_preferences", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  dailySummary: integer("daily_summary").notNull().default(0),
+  recurring: integer("recurring").notNull().default(0),
+  reimbursements: integer("reimbursements").notNull().default(0),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+}, (t) => ({
+  dailySummaryCheck: check("notification_preferences_daily_summary_check", sql`${t.dailySummary} IN (0, 1)`),
+  recurringCheck: check("notification_preferences_recurring_check", sql`${t.recurring} IN (0, 1)`),
+  reimbursementsCheck: check("notification_preferences_reimbursements_check", sql`${t.reimbursements} IN (0, 1)`),
+}));
+
 export const monthly_settings = sqliteTable("monthly_settings", {
   id: text("id").primaryKey(),
   user_id: text("user_id").notNull().references(() => users.id),
