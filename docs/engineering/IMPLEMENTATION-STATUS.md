@@ -2152,3 +2152,21 @@ limpieza diferida de QA; la ruta a chats de sesiones sigue apagada hasta
 un contrato explícito de vínculo chat-grupo. **Owner Esteban:** ninguna
 validación requerida ahora; no activar avisos proactivos antes del cierre
 de los gates restantes y una decisión explícita de alcance.
+
+### ACT-17 — fotografía de colas y criterio operativo (12/10/2026)
+
+El [control read-only del piloto](ACT-17-NOTIFICATION-OBSERVABILITY.md)
+fija identidad beta, consultas agregadas, criterio de alarma y exclusión
+de limpieza financiera. La lectura actual encontró 1 Push `sent`, 25
+Telegram `sent`, 0 trabajos abiertos/fallidos y 0 filas Push cuyo plazo de
+purga de siete días ya venció. No se forzó el worker, no se enviaron
+mensajes, no se purgó nada y `NOTIFICATIONS_ENABLED=false` permanece.
+Una segunda lectura agregada unos diez minutos después mantuvo 1 Push y
+25 Telegram `sent`, sin `retryable`, `processing` ni `dead`; no había
+trabajos nuevos, por lo que esto tampoco prueba la ruta de reintentos.
+
+**Cerrado, owner Codex:** instrumento y línea base de observabilidad sin
+datos personales. **Abierto, owner Codex:** seguimiento en otra ventana
+temporal y conciliación de reintentos/fallos si aparecen; el canary Push y
+los datos QA siguen intactos. Una única fotografía no prueba supervisión
+continua ni autoriza activar envíos proactivos.
