@@ -2217,3 +2217,26 @@ prueba de saturación más amplia y política de retención/limpieza QA; mantene
 la ruta a chats de sesiones apagada hasta vínculo verificable.
 **Owner Esteban:** ninguna acción requerida ahora; el alcance de una futura
 activación proactiva deberá decidirse explícitamente tras esos gates.
+
+### ACT-17 — ensayo local de saturación Telegram (13/10/2026)
+
+El [contrato de saturación acotada](ACT-17-TELEGRAM-SATURATION-HARNESS.md)
+quedó cubierto con una prueba de integración sobre libSQL aislado: 40
+entregas sintéticas, cuatro workers concurrentes por ronda, cinco claims
+máximos por worker y un proveedor falso que responde primero `429` con
+`retry_after=1` y luego éxito. Las 40 filas pasan por `retryable` y terminan
+`sent`, con dos intentos y exactamente dos llamadas por chat, sin pérdidas
+de lease ni escrituras en tablas financieras. No hubo llamadas a Telegram
+real ni a las bases beta o legacy.
+
+Pasaron 1005 tests de app, 101 del harness y typecheck; la revisión
+independiente Luna confirmó el alcance y se agregaron aserciones de
+contadores y destinatarios. Este corte solo agrega prueba y documentación;
+no modifica el runtime desplegado `b24c240` ni requiere otra promoción.
+
+**Cerrado, owner Codex:** ensayo funcional local de backlog concurrente y
+reintento por límite de tasa. **Abierto, owner Codex:** medición de capacidad
+y latencia con proveedor/entorno representativos, observación temporal y
+política de retención/limpieza QA. No se infiere SLA ni se habilitan envíos
+proactivos a partir de este ensayo. **Owner Esteban:** sin acción requerida
+en este corte.

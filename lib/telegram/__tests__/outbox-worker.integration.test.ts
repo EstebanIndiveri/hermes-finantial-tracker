@@ -204,3 +204,78 @@ it("reports a lost lease when another worker confirms an expired claim first", a
     provider_message_id: "456",
   }));
 });
+
+it("drains a bounded concurrent backlog through rate limits without duplicate provider calls", async () => {
+  const deliveryCount = 40;
+  const baselineFinancialCounts = await financialRowCounts();
+  for (let index = 0; index < deliveryCount; index += 1) {
+    await client.execute({
+      sql: `INSERT INTO telegram_operations
+        (operation_id, bot_id, update_id, operation_kind, status)
+        VALUES (?, ?, ?, ?, ?)`,
+      args: [`load-operation-${index}`, "bot-test", `load-update-${index}`, "outbox.test", "committed"],
+    });
+    await outbox.enqueueTelegramDelivery({
+      id: `load-delivery-${index}`,
+      botId: "bot-test",
+      updateId: `load-update-${index}`,
+      operationId: `load-operation-${index}`,
+      deliveryKey: `load-key-${index}`,
+      action: "send_message",
+      chatId: `synthetic-chat-${index}`,
+      text: "Controlled saturation test",
+      now: 100_000,
+    });
+  }
+
+  const providerCalls = new Map<string, number>();
+  const fetchImpl = jest.fn(async (_url: string, options: RequestInit) => {
+    const body = JSON.parse(String(options.body)) as { chat_id: string };
+    const count = (providerCalls.get(body.chat_id) ?? 0) + 1;
+    providerCalls.set(body.chat_id, count);
+    return count === 1
+      ? providerResponse(429, { ok: false, parameters: { retry_after: 1 } })
+      : providerResponse(200, { ok: true, result: { message_id: count } });
+  }) as unknown as typeof fetch;
+
+  async function statusCount(status: "retryable" | "sent"): Promise<number> {
+    const result = await client.execute({
+      sql: "SELECT COUNT(*) AS count FROM telegram_delivery_outbox WHERE id LIKE 'load-delivery-%' AND status = ?",
+      args: [status],
+    });
+    return Number(result.rows[0].count);
+  }
+
+  async function drainUntil(status: "retryable" | "sent", now: number): Promise<number> {
+    let claimed = 0;
+    for (let round = 0; round < 20 && await statusCount(status) < deliveryCount; round += 1) {
+      const results = await Promise.all(Array.from({ length: 4 }, () => runWorker({
+        botId: "bot-test",
+        token: "synthetic-test-token",
+        now: () => now,
+        maxClaims: 5,
+        fetchImpl,
+      })));
+      for (const result of results) {
+        expect(result.claimed).toBeLessThanOrEqual(5);
+        expect(result.dead).toBe(0);
+        expect(result.lostLease).toBe(0);
+        expect(result[status]).toBe(result.claimed);
+        claimed += result.claimed;
+      }
+    }
+    expect(await statusCount(status)).toBe(deliveryCount);
+    return claimed;
+  }
+
+  expect(await drainUntil("retryable", 100_000)).toBe(deliveryCount);
+  expect(await drainUntil("sent", 101_000)).toBe(deliveryCount);
+  expect(fetchImpl).toHaveBeenCalledTimes(deliveryCount * 2);
+  expect([...providerCalls.values()]).toEqual(Array(deliveryCount).fill(2));
+  expect([...providerCalls.keys()].sort()).toEqual(
+    Array.from({ length: deliveryCount }, (_, index) => `synthetic-chat-${index}`).sort(),
+  );
+  const attempts = await client.execute("SELECT MIN(attempt_count) AS minimum, MAX(attempt_count) AS maximum FROM telegram_delivery_outbox WHERE id LIKE 'load-delivery-%'");
+  expect(attempts.rows[0]).toEqual(expect.objectContaining({ minimum: 2, maximum: 2 }));
+  await expect(financialRowCounts()).resolves.toEqual(baselineFinancialCounts);
+});
