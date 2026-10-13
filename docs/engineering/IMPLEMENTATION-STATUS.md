@@ -2734,3 +2734,23 @@ Codex:** desplegar este corte únicamente a beta con H04d fresco y revisar el
 recibo del siguiente horario junto con el outbox. Sin contenido elegible,
 `nothing_relevant` no debe confundirse con un resumen entregado. Se mantiene
 el switch global apagado y no se fuerza un gasto en el espacio personal QA.
+
+**Promovido solo a beta:** commit
+`5dfb11ed5ee3d033f28fed7c11091fd8126f2003` pusheado; 121 suites/1042
+tests Jest y harness pasaron, lint 0 errores/63 warnings previos, build y
+typecheck correctos. El deployment
+`dpl_4BDbtrarrNHpRVz39U8TzXZqBEks` quedó `READY` y emitió once checks
+H04d aprobados, incluidos fingerprints y alcance diario. El paquete privado
+`/private/tmp/hermes-h04d-daily.eUVL42/` pasó antes y después de mover solo
+el alias beta al nuevo deployment; mantiene `isolationVerified:false`.
+El alias legacy siguió en `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx` `READY`.
+Foto posterior read-only: un único `cron:daily` técnico `sent`, cero
+operaciones diarias para otros usuarios, preferencia QA activa y grupo
+autorizado sin cambios.
+
+El seguimiento del próximo horario quedó encargado a la automatización del
+hilo `ACT-17 cron diario beta` a las 21:15 de Argentina, silenciosa mientras
+no haya cambio accionable. **Owner Codex:** conciliar su evento redaccionado
+con el outbox y registrar el resultado; no inferir entrega real de
+`nothing_relevant`. Sin permiso nuevo no se expandirá el canary ni se
+habilitará el switch global.
