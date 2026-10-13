@@ -2671,3 +2671,47 @@ el código y los tres bindings solo en beta con H04d nuevo; después preparar
 una intención técnica identificada como QA (sin crear movimientos) y
 conciliar un único envío o la causa exacta del rechazo. Mantener el switch
 global apagado, preservar datos QA y no tocar legacy.
+
+### ACT-17 — canary diario beta activado sin switch global (13/10/2026)
+
+Commit `b5d98fe1e4654af5bfa86af97423e329b9554c79` pusheado a
+`codex/act05-currency-modes`. La revisión independiente detectó que tres
+bindings por sí solos podían activar el canary fuera de beta; se cerró antes
+de desplegar. El runtime exige la compuerta de aislamiento, origen, host
+Turso y bot beta; el build y H04d solo aceptan el usuario QA
+`504b3827-a03e-49a6-acc6-c200f225ca80` y grupo
+`b5b15f53-f964-4c12-99ca-88fbbee23c55`. Si aparece un binding canary y
+el switch global pasa a `true`, el resumen falla cerrado en vez de ampliar
+destinatarios. Los tres bindings canary se agregaron solo al target
+Production del proyecto **beta**, mientras `NOTIFICATIONS_ENABLED=false`.
+
+La batería completa pasó: 121 suites/1040 tests Jest y harness, lint 0
+errores/63 warnings preexistentes, build Next y `git diff --check`. El nuevo
+deployment beta `dpl_66Zq8jQrGN63u11TDMjfdWzUVneS` quedó `READY`; el build
+remoto emitió once checks H04d aprobados, incluido
+`daily_summary_canary_scope`, con seis fingerprints coincidentes. El paquete
+privado `/private/tmp/hermes-h04d-daily.eUVL42/` pasó antes y después de
+mover únicamente `hermes-finantial-tracker-z2.vercel.app` al nuevo deployment:
+`ok:true`, `postActivationRuntimeConsistent:true`, `isolationVerified:false`.
+La consulta autenticada posterior mostró el alias legacy todavía en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx` `READY`.
+
+Se insertó **solo en beta** una intención outbox identificada
+`daily-summary-qa-canary-b5d98fe-20261013`, con texto explícito de prueba
+técnica, al Telegram privado vinculado de `esteban_beta_qa`; no hubo gasto,
+ingreso ni reintegro. La siguiente barrida del worker la llevó a `sent` en
+un intento, con ID de proveedor. Reconciliación read-only: una operación,
+una entrega `sent`, cero filas financieras del 13/10 en el grupo QA.
+La operación/entrega técnica se conserva con los demás datos QA hasta terminar
+el piloto. Esto prueba el despacho del canary y su revalidación, **no** el
+formateo ni disparo cron de un resumen real; hoy no había movimientos en
+ese grupo para gatillarlo.
+
+**Cerrado, owner Codex:** alcance beta-only, despliegue, reatestación y
+despacho técnico único. **Abierto, owner Codex:** observar al menos un cron
+diario elegible y su resultado, confirmar ausencia de envíos a otros usuarios
+o grupos y vigilar las colas/errores durante la ventana operativa antes de
+considerar cualquier ampliación. `NOTIFICATIONS_ENABLED` permanece `false`;
+no se habilitaron los otros avisos proactivos ni se tocó legacy. Si hay
+resultado de red incierto, la política sigue siendo no reintentar
+automáticamente este aviso.
