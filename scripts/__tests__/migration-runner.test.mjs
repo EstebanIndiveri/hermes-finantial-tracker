@@ -165,6 +165,19 @@ test("canonical schema rejects a second subscription with the same endpoint", as
   `), /UNIQUE constraint failed/);
 });
 
+test("canonical schema rejects a second account claiming the same Telegram identity", async (t) => {
+  const database = await temporaryDatabase(t);
+  await migrateDatabase({ url: database.url });
+  await executeMultiple(database.url, `
+    INSERT INTO users (id, name, username, telegram_user_id)
+      VALUES ('u1', 'First', 'first', 'telegram-shared');
+  `);
+  await assert.rejects(query(database.url, `
+    INSERT INTO users (id, name, username, telegram_user_id)
+      VALUES ('u2', 'Second', 'second', 'telegram-shared')
+  `), /UNIQUE constraint failed/);
+});
+
 test("endpoint uniqueness migration preserves two distinct subscriptions", async (t) => {
   const database = await temporaryDatabase(t);
   const canonical = await loadMigrationManifest();

@@ -2115,3 +2115,40 @@ preferencias/destinatarios entre cuentas, observabilidad del worker/outbox y
 retención/limpieza QA. **Owner Esteban:** ninguna acción requerida para este
 corte; una activación proactiva posterior seguirá necesitando decisión
 explícita tras los gates técnicos.
+
+### ACT-17 — aislamiento cruzado de preferencias y destinatarios (12/10/2026)
+
+La revisión independiente de destinatarios y una segunda lectura del código
+confirmaron que resumen diario usa el Telegram privado vinculado al usuario
+y `resolveAuthorizedTelegramGroup`, que exige membresía actual y sustituye
+un puntero obsoleto por el grupo propio. Los recordatorios recurrentes
+consultan únicamente recurrentes cuyo titular aún pertenece al grupo; los
+de reintegros exigen membresía vigente de pagador y solicitante del grupo
+de la transacción fuente. El cron no usa el último chat ni el ID global
+para resúmenes personales. No se cambió la semántica de fallback al grupo
+propio: que un exmiembro siga recibiendo avisos **de su propio grupo** es
+esperable si algún día activa su opt-in, no una filtración del grupo ajeno.
+
+Se añadieron regresiones de integración con DB para dos cuentas: los opt-ins
+y revocaciones permanecen separados; un grupo activo obsoleto de B no
+resuelve al grupo de A y se limpia; el esquema canónico rechaza un segundo
+usuario con el mismo Telegram ID. La API autenticada ya prohíbe sustituir
+`userId` y sus tests de cron verifican que el opt-in de A no autoriza un
+envío a B. Pasaron 995 tests de app, 101 del harness, typecheck y lint de
+los archivos nuevos sin errores.
+
+La consulta **solo agregada** de `beta-hermes` encontró 2 usuarios con
+Telegram vinculado, 0 Telegram IDs duplicados, 0 punteros activos a grupos
+sin membresía y 0 usuarios sin grupo propio. El outbox observado contiene
+solo 1 Push y 25 Telegram en estado `sent`; no hay trabajos abiertos ni
+fallidos en ese corte de lectura. Esto acredita reglas de identidad y datos
+actuales, no una entrega proactiva real entre dos cuentas: el kill switch
+global sigue apagado y no se envió ningún aviso de prueba.
+
+**Cerrado, owner Codex:** gate técnico de aislamiento de preferencias,
+pertenencia y destinatario para los avisos personales existentes. **Abierto,
+owner Codex:** observabilidad sostenida del worker/outbox, retención y
+limpieza diferida de QA; la ruta a chats de sesiones sigue apagada hasta
+un contrato explícito de vínculo chat-grupo. **Owner Esteban:** ninguna
+validación requerida ahora; no activar avisos proactivos antes del cierre
+de los gates restantes y una decisión explícita de alcance.
