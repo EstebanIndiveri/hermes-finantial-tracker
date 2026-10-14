@@ -3100,3 +3100,25 @@ atribuir una causa no probada. Restaurar `0 0 * * *` (21:00 ART) solo en
 beta con nuevo despliegue y H04d antes de esa ventana; continuar el
 seguimiento de la entrega automática. Mantener `NOTIFICATIONS_ENABLED=false`,
 datos QA y legacy intactos.
+
+**Resultado automático (14/10, 14:40 ART):** el deployment beta vigente
+registró un request `/api/cron/daily-alerts` y el evento redaccionado
+`beta_daily_summary_canary_cron` con fecha Argentina `2026-10-14` y outcome
+`queued`. En `beta-hermes` apareció exactamente una operación
+`proactive.daily_summary` y una fila outbox `cron:daily` a las 17:40:44 UTC;
+la operación quedó `committed` y la fila `sent` en un intento, con
+`sent_at` e identificador de mensaje de Telegram. El `chat_id` de esa
+fila coincide con el Telegram vinculado a `esteban_beta_qa`, el grupo
+resultante es su `Mi espacio` personal aprobado, y el texto enviado incluye
+Supermercado y ARS 2.000. La consulta agregada del corte mostró **cero
+operaciones o destinatarios diarios ajenos**. No se ejecutó el cron a mano
+ni se reenvió el mensaje. El usuario informó inicialmente que no le había
+llegado; un recibo de proveedor acredita aceptación de Telegram, no prueba
+por sí solo que el usuario lo haya visto en la interfaz. Si sigue ausente
+del chat beta cerca de las 14:40, mantener esa discrepancia abierta sin
+duplicar el envío.
+
+**Owner Codex:** restaurar ahora `0 0 * * *` en beta, comprobar alias,
+`crons.deploymentId` y H04d. Después registrar la restauración y cerrar
+el corte de disparo automático, dejando la discrepancia de visibilidad
+condicionada al chequeo de Esteban.
