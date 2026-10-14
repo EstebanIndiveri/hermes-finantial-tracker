@@ -102,6 +102,13 @@ export interface RecurringExecutionWithDetails {
   };
 }
 
+export interface RecurringReminderGroup {
+  userId: string;
+  groupId: string;
+  telegramUserId: string | null;
+  executions: RecurringExecutionWithDetails[];
+}
+
 export interface RecurringStats {
   totalMonthly: number;
   totalActive: number;
@@ -996,11 +1003,11 @@ export async function getRecurringStats(userId: string): Promise<RecurringStats>
 }
 
 /**
- * Get executions due within N days, grouped by user
+ * Get executions due within N days for the owner's active Telegram group.
  */
 export async function getUpcomingExecutions(
   days: number = 3
-): Promise<Array<{ userId: string; telegramUserId: string | null; executions: RecurringExecutionWithDetails[] }>> {
+): Promise<RecurringReminderGroup[]> {
   const today = getArgentinaDate();
   const targetDate = new Date(today);
   targetDate.setDate(today.getDate() + days);
@@ -1023,6 +1030,7 @@ export async function getUpcomingExecutions(
       recurringMerchant: recurringExpenses.merchant,
       recurringCategoryId: recurringExpenses.categoryId,
       recurringUserId: recurringExpenses.userId,
+      recurringGroupId: recurringExpenses.groupId,
       categoryName: categories.name,
       categoryEmoji: categories.emoji,
       categorySlug: categories.slug,
@@ -1039,17 +1047,25 @@ export async function getUpcomingExecutions(
     .where(
       and(
         eq(recurringExecutions.status, "pending"),
-        eq(recurringExecutions.scheduledDate, targetDateStr)
+        eq(recurringExecutions.scheduledDate, targetDateStr),
+        eq(users.active_telegram_group_id, recurringExpenses.groupId),
       )
     );
 
-  const byUser = new Map<string, { telegramUserId: string | null; executions: RecurringExecutionWithDetails[] }>();
+  const byGroup = new Map<string, RecurringReminderGroup>();
 
   for (const r of results) {
-    if (!byUser.has(r.recurringUserId)) {
-      byUser.set(r.recurringUserId, { telegramUserId: r.userTelegramId, executions: [] });
+    if (!r.recurringGroupId) continue;
+    const key = JSON.stringify([r.recurringUserId, r.recurringGroupId]);
+    if (!byGroup.has(key)) {
+      byGroup.set(key, {
+        userId: r.recurringUserId,
+        groupId: r.recurringGroupId,
+        telegramUserId: r.userTelegramId,
+        executions: [],
+      });
     }
-    byUser.get(r.recurringUserId)!.executions.push({
+    byGroup.get(key)!.executions.push({
       id: r.execId,
       recurringExpenseId: r.recurringExpenseId,
       transactionId: null,
@@ -1075,16 +1091,13 @@ export async function getUpcomingExecutions(
     });
   }
 
-  return Array.from(byUser.entries()).map(([userId, data]) => ({
-    userId,
-    ...data,
-  }));
+  return Array.from(byGroup.values());
 }
 
 /**
- * Get executions past due date and still pending, grouped by user
+ * Get overdue pending executions for the owner's active Telegram group.
  */
-export async function getOverdueExecutions(): Promise<Array<{ userId: string; telegramUserId: string | null; executions: RecurringExecutionWithDetails[] }>> {
+export async function getOverdueExecutions(): Promise<RecurringReminderGroup[]> {
   const argentinaToday = getArgentinaDate();
   const today = [
     argentinaToday.getFullYear(),
@@ -1105,6 +1118,7 @@ export async function getOverdueExecutions(): Promise<Array<{ userId: string; te
       recurringMerchant: recurringExpenses.merchant,
       recurringCategoryId: recurringExpenses.categoryId,
       recurringUserId: recurringExpenses.userId,
+      recurringGroupId: recurringExpenses.groupId,
       categoryName: categories.name,
       categoryEmoji: categories.emoji,
       categorySlug: categories.slug,
@@ -1121,17 +1135,25 @@ export async function getOverdueExecutions(): Promise<Array<{ userId: string; te
     .where(
       and(
         eq(recurringExecutions.status, "pending"),
-        sql`${recurringExecutions.scheduledDate} < ${today}`
+        sql`${recurringExecutions.scheduledDate} < ${today}`,
+        eq(users.active_telegram_group_id, recurringExpenses.groupId),
       )
     );
 
-  const byUser = new Map<string, { telegramUserId: string | null; executions: RecurringExecutionWithDetails[] }>();
+  const byGroup = new Map<string, RecurringReminderGroup>();
 
   for (const r of results) {
-    if (!byUser.has(r.recurringUserId)) {
-      byUser.set(r.recurringUserId, { telegramUserId: r.userTelegramId, executions: [] });
+    if (!r.recurringGroupId) continue;
+    const key = JSON.stringify([r.recurringUserId, r.recurringGroupId]);
+    if (!byGroup.has(key)) {
+      byGroup.set(key, {
+        userId: r.recurringUserId,
+        groupId: r.recurringGroupId,
+        telegramUserId: r.userTelegramId,
+        executions: [],
+      });
     }
-    byUser.get(r.recurringUserId)!.executions.push({
+    byGroup.get(key)!.executions.push({
       id: r.execId,
       recurringExpenseId: r.recurringExpenseId,
       transactionId: null,
@@ -1157,8 +1179,5 @@ export async function getOverdueExecutions(): Promise<Array<{ userId: string; te
     });
   }
 
-  return Array.from(byUser.entries()).map(([userId, data]) => ({
-    userId,
-    ...data,
-  }));
+  return Array.from(byGroup.values());
 }

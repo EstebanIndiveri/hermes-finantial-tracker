@@ -1,6 +1,6 @@
 import { db } from "../client";
-import { recurringExecutions, recurringExpenses, monthly_settings, categories, group_members } from "../schema";
-import { confirmExecution, getPendingExecutions, getUserRecurringExpenses, skipExecution } from "../recurring-queries";
+import { recurringExecutions, recurringExpenses, monthly_settings, categories, group_members, users } from "../schema";
+import { confirmExecution, getOverdueExecutions, getPendingExecutions, getUpcomingExecutions, getUserRecurringExpenses, skipExecution } from "../recurring-queries";
 import { and, eq } from "drizzle-orm";
 import { createTelegramOperationContext, createTelegramOperationIdentity } from "@/lib/telegram/operation-context";
 import { runTelegramOperation } from "@/lib/telegram/financial-operation";
@@ -135,6 +135,44 @@ describe("recurring execution authorization", () => {
 
     const memberJoins = mockInnerJoin.mock.calls.filter(([table]) => table === group_members);
     expect(memberJoins).toHaveLength(2);
+    expect(mockEq).toHaveBeenCalledWith(group_members.group_id, recurringExpenses.groupId);
+    expect(mockEq).toHaveBeenCalledWith(group_members.user_id, recurringExpenses.userId);
+  });
+
+  it("keeps reminder candidates group-scoped and requires the active Telegram group", async () => {
+    const base = {
+      recurringExpenseId: "rec-a",
+      scheduledDate: "2026-09-15",
+      status: "pending",
+      amountArs: 100,
+      createdAt: 1,
+      recurringName: "Internet",
+      recurringAmount: 100,
+      recurringMerchant: null,
+      recurringCategoryId: null,
+      recurringUserId: "user-a",
+      categoryName: null,
+      categoryEmoji: null,
+      categorySlug: null,
+      userTelegramId: "telegram-a",
+    };
+    const candidates = [
+      { ...base, execId: "exec-a", recurringGroupId: "group-a" },
+      { ...base, execId: "exec-b", recurringGroupId: "group-b" },
+    ];
+    mockWhere.mockResolvedValueOnce(candidates).mockResolvedValueOnce(candidates);
+
+    const upcoming = await getUpcomingExecutions(3);
+    const overdue = await getOverdueExecutions();
+
+    for (const result of [upcoming, overdue]) {
+      expect(result).toHaveLength(2);
+      expect(result).toEqual(expect.arrayContaining([
+        expect.objectContaining({ userId: "user-a", groupId: "group-a", executions: [expect.objectContaining({ id: "exec-a" })] }),
+        expect.objectContaining({ userId: "user-a", groupId: "group-b", executions: [expect.objectContaining({ id: "exec-b" })] }),
+      ]));
+    }
+    expect(mockEq).toHaveBeenCalledWith(users.active_telegram_group_id, recurringExpenses.groupId);
     expect(mockEq).toHaveBeenCalledWith(group_members.group_id, recurringExpenses.groupId);
     expect(mockEq).toHaveBeenCalledWith(group_members.user_id, recurringExpenses.userId);
   });
