@@ -2999,3 +2999,15 @@ antes de comenzar su ventana, sin ejecuciones manuales. **Owner Codex:**
 restaurar `0 0 * * *` y reatestar/desplegar beta, después observar la
 siguiente ventana de 21:00–21:59 ART con contenido elegible de fecha nueva.
 Mantener `NOTIFICATIONS_ENABLED=false`, el canary QA y legacy intactos.
+
+**Restauración beta verificada (00:11 ART):** commit
+`129bcb1b274c4d6dc472babd2a511d0cab234d60` desplegado solo al
+proyecto beta, sin `--skip-domain`. El deployment
+`dpl_83wcUw35AgcXa37ffWARDpHZcSMW` quedó `READY` y en el alias canónico;
+`crons.deploymentId` coincide y `/api/cron/daily-alerts` volvió a
+`0 0 * * *`. El build remoto aprobó once checks H04d y el paquete privado
+refrescado pasó con `postActivationRuntimeConsistent:true` e
+`isolationVerified:false`, con los gaps beta preexistentes. No se invocó
+manualmente el cron ni se creó ningún movimiento. El próximo disparo
+automático normal, si Vercel lo ejecuta, corresponde a la ventana
+21:00–21:59 ART del 14/10.
