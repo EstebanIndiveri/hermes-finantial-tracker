@@ -2893,3 +2893,30 @@ automático use el deployment correcto. **Owner Codex:** observar el siguiente
 cron programado, conciliando
 evento redaccionado y outbox sin duplicar el resumen. Mantener
 `NOTIFICATIONS_ENABLED=false`, el cerco canary y los datos QA; no tocar legacy.
+
+### ACT-17 — recibo visual y distinción de schedulers (13/10, 22:58 ART)
+
+Esteban aportó la captura del bot beta con «Resumen del día — martes, 13 de
+octubre», un gasto de Supermercado por ARS 300 y total ARS 300. Confirma la
+recepción visual del envío manual anterior; no es evidencia del disparo
+automático de las 21:00. La pantalla de preferencias muestra las tres
+casillas activadas: son opt-ins almacenados, no prueba de que los tres tipos
+de envío estén habilitados. Con `NOTIFICATIONS_ENABLED=false`, únicamente el
+resumen diario del usuario/grupo QA autorizado tiene excepción canary;
+recordatorios proactivos de recurrentes y reintegros siguen apagados.
+
+La lectura read-only de logs del deployment beta vigente en la ventana
+01:49:50–01:50:30 UTC mostró HTTP 200 en `/api/cron/telegram-outbox` y
+`/api/cron/push-outbox` a las 01:50:08 UTC. Esto concuerda con el outbox
+Telegram `sent` a las 01:50:09 UTC. El cron Vercel `/api/cron/daily-alerts`
+crea la intención diaria; el scheduler Cloudflare cada cinco minutos llama a
+los dos workers de outbox para entregar/reintentar mensajes. Las respuestas
+interactivas del bot y los avisos transaccionales no dependen del cron diario.
+
+Se corrigió en código el texto de «Mi cuenta» para separar claramente
+preferencia de disponibilidad real durante el piloto; prueba enfocada,
+typecheck, ESLint y detector de interfaz aprobaron. **Owner Codex:** mantener
+este ajuste sin promover al alias beta hasta observar el siguiente disparo
+automático sobre `dpl_CuKg4ct2wGWXX2soiesvi18Pj6nh`; después reatestar H04d
+y desplegar solo en el proyecto beta sin `--skip-domain`, verificando el nuevo
+registro `crons.deploymentId`. No ampliar el canary ni tocar legacy.

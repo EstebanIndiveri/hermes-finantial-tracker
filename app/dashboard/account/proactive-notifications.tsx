@@ -71,7 +71,7 @@ export function ProactiveNotificationsSection() {
       const data: unknown = await response.json().catch(() => null);
       if (!response.ok || !isPreferences(data)) throw new Error("No se pudo guardar el cambio.");
       setPreferences(data);
-      setMessage({ type: "ok", text: enabled ? "Preferencia activada. Los envíos beta siguen apagados." : "Preferencia desactivada." });
+      setMessage({ type: "ok", text: enabled ? "Preferencia guardada. Recibirás avisos solo si este tipo de envío está habilitado para tu cuenta y grupo." : "Preferencia desactivada." });
     } catch {
       setMessage({ type: "err", text: "No se pudo guardar el cambio. Tu preferencia anterior sigue vigente." });
     } finally {
@@ -83,10 +83,10 @@ export function ProactiveNotificationsSection() {
     <section style={{ background: "var(--hsurface)", border: "1px solid var(--hborder)", borderRadius: 12, padding: "20px 24px", marginBottom: 20 }}>
       <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--htext1)", margin: 0 }}>Avisos proactivos de Telegram</h2>
       <p style={{ fontSize: "0.82rem", lineHeight: 1.5, color: "var(--htext2)", margin: "5px 0 14px" }}>
-        Elegí qué avisos querés recibir. Están apagados por defecto y solo llegan a tu cuenta de Telegram vinculada.
+        Elegí qué avisos querés recibir. Estas opciones están desmarcadas por defecto y los avisos solo llegan a tu Telegram vinculado.
       </p>
       <p style={{ fontSize: "0.78rem", color: "var(--htext2)", margin: "0 0 16px" }}>
-        Los envíos proactivos del piloto beta siguen desactivados mientras terminamos las verificaciones. Guardar una preferencia no envía un aviso ahora.
+        En este piloto, el resumen diario solo se envía a cuentas y grupos de prueba habilitados. Los avisos proactivos de pagos recurrentes y reintegros siguen apagados. Guardar una preferencia no envía un aviso ahora.
       </p>
 
       {loading ? (
