@@ -2920,3 +2920,31 @@ este ajuste sin promover al alias beta hasta observar el siguiente disparo
 automático sobre `dpl_CuKg4ct2wGWXX2soiesvi18Pj6nh`; después reatestar H04d
 y desplegar solo en el proyecto beta sin `--skip-domain`, verificando el nuevo
 registro `crons.deploymentId`. No ampliar el canary ni tocar legacy.
+
+### ACT-17 — promoción de la aclaración de preferencias a beta (13/10, 23:15 ART)
+
+El diferimiento anterior fue innecesario: preservar el ID viejo no era una
+condición del plan si se volvía a comprobar el registro del scheduler. El
+commit `f13d2818b088c3619a7d8c25f38855c38f191953` se desplegó con
+`vercel deploy --prod --yes --no-wait --scope eindi-acme`, sin
+`--skip-domain`, **solo** en el proyecto beta. El deployment
+`dpl_Exkk9buxrLLsMwpwuUvMzksBkuVv` quedó `READY`; el build remoto emitió
+once checks H04d aprobados, incluidas las huellas, el switch global apagado y
+el alcance diario QA. La lectura posterior de proyecto mostró
+`crons.deploymentId=dpl_Exkk9buxrLLsMwpwuUvMzksBkuVv` y las tres tareas
+apuntando a su host generado. El alias beta resuelve al nuevo deployment;
+el alias legacy aún resuelve a `dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx`
+`READY`.
+
+Se refrescó el paquete privado H04d para el nuevo ID/SHA y pasó con
+`postActivationRuntimeConsistent:true`, `isolationVerified:false`; persisten
+los gaps de certificación aceptados solo para beta. Una lectura en el
+navegador autenticado confirmó el nuevo texto de «Mi cuenta» y que las tres
+preferencias guardadas siguen marcadas. No se ejecutó de nuevo el resumen ni
+se modificó ningún movimiento. El seguimiento del hilo se actualizó para
+comparar el **próximo disparo programado** con este nuevo deployment.
+
+**Owner Codex:** observar la siguiente ventana programada 21:00–21:59 ART,
+conciliar el evento redaccionado con operaciones/outbox, descartar otros
+destinatarios y separar `nothing_relevant` de una entrega real. Mantener
+`NOTIFICATIONS_ENABLED=false`, el canary y los datos QA; no tocar legacy.
