@@ -3040,3 +3040,21 @@ el mismo cron dentro del día concederá otra ejecución. **Owner Codex:**
 observar a las 13:10 ART logs, evento, operación y outbox sin invocación
 manual, descartar destinatarios ajenos, restaurar `0 0 * * *` con H04d y
 seguir la ventana normal si no hubo disparo. Legacy y datos QA intactos.
+
+**Resultado de la ventana de mediodía (13:11 ART):** logs beta
+15:00–16:10 UTC sin request `/api/cron/daily-alerts` ni evento redaccionado;
+sí hubo barridas regulares `/api/cron/telegram-outbox` y
+`/api/cron/push-outbox` HTTP 200 en el deployment QA vigente. El registro
+Vercel todavía apuntaba a `dpl_gt5Lctk1xdCmujVzPQuhj8SsTfjh` con
+`40 15 * * *`. `beta-hermes` mantuvo solo las dos operaciones/outbox
+diarias QA del 13/10, ambas `sent`, y cero para el 14/10 u otros usuarios.
+El ensayo no acredita disparo automático ni entrega. La coincidencia de dos
+reprogramaciones sin segunda invocación en el mismo día UTC, después del
+disparo automático a las 00:43 UTC, es consistente con el límite diario
+Hobby; no hay recibo del scheduler que demuestre la causa exacta.
+
+**Owner Codex:** restaurar `0 0 * * *` ahora, comprobar deployment/registro
+y observar la ventana 21:00–21:59 ART del 14/10 (00:00–00:59 UTC del 15/10)
+con el gasto QA `Test` aún elegible. No hacer un disparo manual ni fabricar
+otro movimiento; mantener cerco canary, switch global apagado y legacy
+intacto.
