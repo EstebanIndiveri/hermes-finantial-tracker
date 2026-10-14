@@ -2754,3 +2754,34 @@ no haya cambio accionable. **Owner Codex:** conciliar su evento redaccionado
 con el outbox y registrar el resultado; no inferir entrega real de
 `nothing_relevant`. Sin permiso nuevo no se expandirá el canary ni se
 habilitará el switch global.
+
+### ACT-17 — observación del cron diario del 13/10 (21:18 ART)
+
+La consulta read-only de logs del proyecto Vercel beta entre las 20:58 y
+21:18 ART no mostró ninguna invocación de `/api/cron/daily-alerts` ni el
+evento redaccionado `beta_daily_summary_canary_cron`. Sí mostró barridas
+`/api/cron/telegram-outbox` y `/api/cron/push-outbox` a las 21:00, 21:05,
+21:10 y 21:15, por lo que la ventana de logs tenía actividad. La lista de
+crons de Vercel continuó mostrando `/api/cron/daily-alerts` con horario
+`0 0 * * *`.
+
+La lectura de `beta-hermes` mantuvo exactamente una operación
+`proactive.daily_summary` y una entrega `sent`, ambas de la prueba técnica
+anterior (19:54/19:55 UTC); no apareció una intención nueva del horario y el
+conteo de operaciones diarias de otros usuarios siguió en cero. **No hay
+evidencia de ejecución del cron diario ni de entrega nueva**; tampoco se
+deduce de esta ausencia que un aviso se haya perdido. La consulta no creó
+movimientos ni reintentó mensajes. `NOTIFICATIONS_ENABLED=false` y el alcance
+canary permanecen sin cambios.
+
+Según la [documentación de Vercel](https://vercel.com/docs/cron-jobs/manage-cron-jobs),
+en plan Hobby una tarea diaria puede dispararse en cualquier momento de la
+hora configurada. No está verificado aquí el plan del equipo, así que la
+ausencia a 21:18 no se clasifica todavía como fallo del scheduler.
+
+**Owner Codex, abierto:** ampliar la observación de logs pasada la hora
+configurada para descartar demora del scheduler; si persiste la ausencia,
+diagnosticar el disparador beta antes
+de realizar otra prueba de entrega. Conservar los recibos QA y no promover el
+switch global ni tocar legacy. El seguimiento del hilo se reprogramó para
+22:05 ART, sin alterar la configuración de Vercel.
