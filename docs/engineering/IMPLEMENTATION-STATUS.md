@@ -3212,3 +3212,17 @@ proyecto beta, reatestar y observar la ventana automática con cero
 destinatarios ajenos. Si falta la ejecución o el consentimiento, solicitar
 validación de Esteban antes de enviar; no ampliar el switch global ni
 fabricar un movimiento financiero.
+
+**Preflight de activación (14/10, 15:40 ART):** en la sesión beta QA del
+navegador, `Mi cuenta` muestra Telegram conectado y el consentimiento
+`Pagos recurrentes` marcado. En `Recurrentes` del grupo activo `Mi espacio ·
+propio`, octubre de 2026 muestra **0 activos, 0 pendientes** y el estado
+"No tenés gastos recurrentes configurados". No existe allí una ejecución
+QA elegible para probar entrega automática. El CLI de Turso no tiene sesión
+autenticada; esta lectura de UI no sustituye una conciliación de base/outbox.
+Los bindings del canary siguen ausentes y los envíos recurrentes apagados.
+**Owner Esteban:** decidir/crear un recurrente de prueba en ese espacio, con
+importe y fecha de vencimiento apropiados, o autorizar un fixture QA concreto.
+**Owner Codex:** con esa validación, comprobar la ejecución en beta-hermes,
+actualizar H04d, activar solo el canary exacto y observar el cron automático
+sin ampliar destinatarios.
