@@ -42,3 +42,8 @@ Antes de habilitar recordatorios recurrentes hay que agregar identidad durable p
 - Dos llamadas lanzadas con `Promise.all` contra un archivo libSQL temporal para el mismo Netflix QA y vencimiento del 18/10 dejan una sola ejecución `pending`, sin `transaction_id` y sin transacciones. La restricción única `(recurring_expense_id, scheduled_date)` también está presente en la base de prueba.
 - Con el canary apagado, o tras cambiar el grupo activo de Telegram, no se crea ejecución. La prueba es local y no invoca cron ni proveedor; no fuerza una barrera entre las dos llamadas, por lo que no constituye una demostración exhaustiva de todas las intercalaciones posibles.
 - Owner Codex: conservar esta regresión y observar el cron automático del 15/10 antes de cerrar la activación. Owner Esteban: confirmar si recibe el aviso QA; no hace falta crear otro movimiento.
+
+## Regresión adicional: destinatario ajeno del mismo grupo
+
+- Con el canary beta limitado al usuario QA, una intención de recordatorio ya encolada para otro miembro del **mismo grupo**, que sí tiene Telegram, membresía y consentimiento válidos, se descarta en el dispatcher antes de llamar al proveedor. El outbox queda `dead`; ninguna respuesta privada llega al chat ajeno.
+- Esta prueba local no habilita destinatarios adicionales ni demuestra entrega real del aviso QA. Owner Codex: conservar el aislamiento y reconciliar el único destinatario tras el cron automático. Owner Esteban: reportar solo la recepción del bot beta si ocurre.

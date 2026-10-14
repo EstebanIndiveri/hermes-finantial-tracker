@@ -51,11 +51,16 @@ beforeAll(async () => {
   `);
   await client.executeMultiple(readFileSync(join(process.cwd(), "lib/db/migrations/0010_telegram_operations_outbox.sql"), "utf8"));
   await client.execute({ sql: "INSERT INTO users VALUES (?, ?, ?)", args: ["user-A", "chat-A", "group-A"] });
+  await client.execute({ sql: "INSERT INTO users VALUES (?, ?, ?)", args: ["user-B", "chat-B", "group-A"] });
   await client.execute({ sql: "INSERT INTO groups VALUES (?, ?, ?)", args: ["group-A", "QA", "user-A"] });
   await client.execute({ sql: "INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, ?)", args: ["group-A", "user-A", "owner"] });
+  await client.execute({ sql: "INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, ?)", args: ["group-A", "user-B", "member"] });
   await client.execute({ sql: "INSERT INTO notification_preferences VALUES (?, 0, 1, 0, 0)", args: ["user-A"] });
+  await client.execute({ sql: "INSERT INTO notification_preferences VALUES (?, 0, 1, 0, 0)", args: ["user-B"] });
   await client.execute({ sql: "INSERT INTO recurring_expenses VALUES (?, ?, ?, ?, ?, ?)", args: ["rec-A", "user-A", "group-A", "Internet", 100, null] });
+  await client.execute({ sql: "INSERT INTO recurring_expenses VALUES (?, ?, ?, ?, ?, ?)", args: ["rec-B", "user-B", "group-A", "Internet B", 200, null] });
   await client.execute({ sql: "INSERT INTO recurring_executions VALUES (?, ?, ?, ?, ?)", args: ["exec-A", "rec-A", "2026-10-17", "pending", null] });
+  await client.execute({ sql: "INSERT INTO recurring_executions VALUES (?, ?, ?, ?, ?)", args: ["exec-B", "rec-B", "2026-10-17", "pending", null] });
   const database = drizzle(client, { schema });
   jest.resetModules();
   jest.doMock("@/lib/db/client", () => ({ db: database }));
@@ -77,10 +82,15 @@ beforeEach(async () => {
   await client.execute("DELETE FROM telegram_delivery_outbox");
   await client.execute("DELETE FROM telegram_operations");
   await client.execute("UPDATE users SET telegram_user_id='chat-A', active_telegram_group_id='group-A' WHERE id='user-A'");
+  await client.execute("UPDATE users SET telegram_user_id='chat-B', active_telegram_group_id='group-A' WHERE id='user-B'");
   await client.execute("UPDATE notification_preferences SET recurring=1 WHERE user_id='user-A'");
+  await client.execute("UPDATE notification_preferences SET recurring=1 WHERE user_id='user-B'");
   await client.execute("UPDATE recurring_executions SET status='pending', scheduled_date='2026-10-17' WHERE id='exec-A'");
+  await client.execute("UPDATE recurring_executions SET status='pending', scheduled_date='2026-10-17' WHERE id='exec-B'");
   await client.execute("UPDATE recurring_expenses SET name='Internet', amount_ars=100 WHERE id='rec-A'");
+  await client.execute("UPDATE recurring_expenses SET name='Internet B', amount_ars=200 WHERE id='rec-B'");
   await client.execute("INSERT OR IGNORE INTO group_members (group_id, user_id, role) VALUES ('group-A', 'user-A', 'owner')");
+  await client.execute("INSERT OR IGNORE INTO group_members (group_id, user_id, role) VALUES ('group-A', 'user-B', 'member')");
 });
 
 async function deliver(fetchImpl: typeof fetch, at = now) {
@@ -115,6 +125,29 @@ it("sends only the beta canary recipient and still rechecks the scope at dispatc
   const rejectedFetch = jest.fn();
   expect((await deliver(rejectedFetch)).dead).toBe(1);
   expect(rejectedFetch).not.toHaveBeenCalled();
+});
+
+it("never sends a queued reminder to another member of the canary group", async () => {
+  useBetaCanary();
+  const otherUser = {
+    ...input,
+    userId: "user-B",
+    chatId: "chat-B",
+    context: {
+      ...context,
+      executionIds: ["exec-B"],
+      snapshotHash: buildSnapshot([{
+        id: "exec-B", scheduledDate: "2026-10-17", amountArs: null,
+        recurringName: "Internet B", recurringAmount: 200, categoryEmoji: null,
+      }]),
+    },
+  };
+  expect(await enqueue(otherUser)).toBe(true);
+  const fetchImpl = jest.fn();
+  expect((await deliver(fetchImpl)).dead).toBe(1);
+  expect(fetchImpl).not.toHaveBeenCalled();
+  const rows = await client.execute("SELECT chat_id, status FROM telegram_delivery_outbox");
+  expect(rows.rows).toEqual([{ chat_id: "chat-B", status: "dead" }]);
 });
 
 it("deduplicates concurrent cron intents and delivers only once", async () => {

@@ -3351,3 +3351,20 @@ conciliar ejecución/outbox/despacho y destinatario único, y registrar éxito o
 fallo antes de cualquier activación adicional. **Owner Esteban:** informar si
 recibe el aviso en el bot beta; no necesita hacer otra acción ahora. Se
 conservan los datos QA y `NOTIFICATIONS_ENABLED=false`; legacy intacto.
+
+### ACT-17 — aislamiento de segundo miembro en el despacho (14/10)
+
+Se amplió la integración local de recordatorios con otro miembro de `Mi
+espacio`: dispone de chat y consentimiento propios, pero está fuera del
+usuario exacto del canary. Su intención ya encolada termina `dead` antes de
+llamar a Telegram; el chat ajeno recibe cero llamadas. La ruta positiva del
+usuario QA y el rechazo por cambio de grupo siguen cubiertos. Pasaron 117
+pruebas del arnés, 126 suites / 1.084 tests Jest, TypeScript y lint dirigido.
+El corte solo añade una regresión y documentación: no cambia código de
+producción, despliegue, bindings, cron, datos QA ni legacy. El deployment
+operativo continúa siendo `dpl_7MzoPtaMgYuS9tKxa5YC3uWNQ5Da`.
+
+**Owner Codex:** mantener la observación automática del 15/10 y conciliar
+exactamente un chat QA, o explicar cualquier fallo sin reenvío incierto.
+**Owner Esteban:** avisar si llega el recordatorio beta; ninguna acción previa
+es necesaria. `NOTIFICATIONS_ENABLED=false` permanece intacto.
