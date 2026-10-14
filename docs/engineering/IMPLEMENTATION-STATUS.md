@@ -3179,3 +3179,36 @@ alcance. Mantener envíos recurrentes apagados mientras no exista ese cerco;
 reintegros pendientes y cron mensual siguen fuera de este corte. Para un
 ensayo con entrega real se necesita una ejecución recurrente QA elegible y
 consentimiento explícito, sin fabricar movimientos de usuario.
+
+### ACT-17 — cerco canary de recurrentes preparado, todavía apagado (14/10, 15:37 ART)
+
+El subcorte siguiente añadió `RECURRING_REMINDER_CANARY_{ENABLED,USER_ID,GROUP_ID}`
+como excepción beta de un solo usuario/grupo mientras el switch global
+permanece apagado. El cron filtra antes de encolar y el dispatcher repite
+el control antes de Telegram; configuración parcial, mezcla con switch
+global encendido o identidad de proyecto/base/bot ajena falla cerrada. El
+build beta acepta únicamente el par QA aprobado si los bindings se
+configuran. **Los tres bindings continúan ausentes en beta**: publicar este
+código no activó recordatorios ni produjo un envío. La revisión independiente
+no encontró defectos bloqueantes. Commit `ed30106019f4fd2b6af7f491170b1e1255834a41`
+publicado en la misma rama.
+
+Pasaron 123 suites / 1.072 tests unitarios, 116 tests del arnés, TypeScript,
+lint dirigido y `git diff --check`. El despliegue beta
+`dpl_J29ukXFKfdiLqiDAy8NpVa6KSSr9` quedó `READY` en el alias canónico;
+`crons.deploymentId` y sus tres hosts corresponden a él, con resumen diario
+en `0 0 * * *` y recurrentes en `0 11 * * *`. El build remoto aprobó doce
+checks, incluido `recurring_reminder_canary_scope`. El paquete H04d privado
+actualizado para esta release pasó con `postActivationRuntimeConsistent:true`
+e `isolationVerified:false`; los gaps de certificación independiente siguen
+abiertos. No se cambió `NOTIFICATIONS_ENABLED=false`, no se tocaron
+movimientos QA ni legacy.
+
+**Owner Codex / corte de activación pendiente:** verificar en `beta-hermes`
+consentimiento `recurring`, grupo Telegram activo y una ejecución QA
+recurrente realmente elegible; actualizar el contrato H04d para declarar
+el canary recurrente, configurar solo los tres bindings exactos en el
+proyecto beta, reatestar y observar la ventana automática con cero
+destinatarios ajenos. Si falta la ejecución o el consentimiento, solicitar
+validación de Esteban antes de enviar; no ampliar el switch global ni
+fabricar un movimiento financiero.
