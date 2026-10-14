@@ -2866,3 +2866,30 @@ movimientos financieros ni se modificó legacy.
 confirmar que usa este deployment; la prueba integral de entrega requiere
 contenido elegible en el grupo canary o una decisión explícita para mover el
 alcance QA. El switch `NOTIFICATIONS_ENABLED` permanece `false`.
+
+### ACT-17 — prueba manual integral con gasto QA (13/10, 22:48–22:50 ART)
+
+Esteban creó en el beta un gasto activo de ARS 300, comercio `Cordiez`, en
+`Mi espacio` personal de `esteban_beta_qa` a las 01:45:29 UTC del 14/10.
+Antes del disparo se verificaron el grupo Telegram activo
+`b5b15f53-f964-4c12-99ca-88fbbee23c55`, el vínculo privado y la
+preferencia `daily_summary=1`. Solo existía la operación técnica previa.
+
+Por pedido de Esteban se ejecutó **una sola vez**
+`vercel crons run /api/cron/daily-alerts --scope eindi-acme` a
+01:48:17.842 UTC. El proyecto beta la dirigió a
+`dpl_CuKg4ct2wGWXX2soiesvi18Pj6nh`; el handler respondió HTTP 200 y
+registró `beta_daily_summary_canary_cron` con fecha Argentina 2026-10-13 y
+`outcome:queued`. Se creó una operación nueva `proactive.daily_summary`
+`daily-summary-3e1f1467ed1c70bbd336c27674af30f6a8536e833e399fccbfe54247d981783e`.
+El worker entregó su única fila de outbox a las 01:50:09 UTC: `sent`, un
+intento, recibo de Telegram presente y ningún error. La consulta de
+operaciones diarias de otros usuarios devolvió cero. No se repitió el cron
+ni se creó otro movimiento.
+
+Esto acredita el camino **manual** completo hasta la aceptación del proveedor,
+pero aún falta la confirmación visual de Esteban y **no** acredita que el
+próximo disparo automático use el deployment correcto. **Owner Codex:**
+recibir esa confirmación y observar el siguiente cron programado, conciliando
+evento redaccionado y outbox sin duplicar el resumen. Mantener
+`NOTIFICATIONS_ENABLED=false`, el cerco canary y los datos QA; no tocar legacy.
