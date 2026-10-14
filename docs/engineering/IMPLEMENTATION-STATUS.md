@@ -3069,3 +3069,34 @@ refrescado pasó con `postActivationRuntimeConsistent:true`,
 `isolationVerified:false` y los gaps beta preexistentes. La ventana normal
 de 21:00–21:59 ART del 14/10 será el siguiente corte automático, ya en
 el día UTC 15/10 y con el gasto QA `Test` del día Argentina 14/10 elegible.
+
+### ACT-17 — ensayo automático de las 14:00 y alerta de almacenamiento (14/10, 13:48 ART)
+
+Por pedido de Esteban, el cron diario beta se reprogramó temporalmente a
+`0 17 * * *` (14:00 ART nominal). En Vercel Hobby la ejecución puede ocurrir
+en cualquier momento de 14:00–14:59 ART. El commit
+`f3fcda0e4b6c63df4bca5e0d13f0dba8c18f92c0` se publicó solo en el
+proyecto beta y su deployment `dpl_AkTRXgvhQmSvAGn97qcvFhrzYD8f`
+quedó `READY`, asociado al alias beta antes de comenzar la ventana.
+`crons.deploymentId`, host y schedule coinciden con ese deployment. El build
+remoto aprobó los once checks H04d y el paquete privado reatestado pasó con
+`postActivationRuntimeConsistent:true`, `isolationVerified:false` y los gaps
+beta aceptados. No se invocó el cron manualmente ni se creó un movimiento.
+
+El email de Vercel recibido a la 01:18 ART informa que el equipo Hobby
+`eindi-acme` consumió 75 % de los 10 GB incluidos de **Function Storage**.
+Es una advertencia de capacidad del equipo, no un recibo de fallo del cron
+ni evidencia de suspensión a ese nivel. El proyecto beta tiene al menos
+100 deployments recientes visibles en la primera página de la API, por lo
+que conviene medir el desglose por proyecto y reducir despliegues redundantes
+antes de considerar retención o un cambio de plan. No se borraron
+deployments ni se modificó la retención, que podría afectar rollback.
+
+**Owner Codex:** después de las 14:59 ART conciliar logs del request
+`/api/cron/daily-alerts`, evento `beta_daily_summary_canary_cron`, operación
+y outbox `cron:daily` de la única cuenta/grupo QA autorizados; confirmar cero
+destinatarios ajenos. Si no hay disparo, reportar el resultado observado sin
+atribuir una causa no probada. Restaurar `0 0 * * *` (21:00 ART) solo en
+beta con nuevo despliegue y H04d antes de esa ventana; continuar el
+seguimiento de la entrega automática. Mantener `NOTIFICATIONS_ENABLED=false`,
+datos QA y legacy intactos.
