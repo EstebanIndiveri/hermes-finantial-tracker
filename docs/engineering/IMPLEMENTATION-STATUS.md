@@ -2887,9 +2887,9 @@ intento, recibo de Telegram presente y ningún error. La consulta de
 operaciones diarias de otros usuarios devolvió cero. No se repitió el cron
 ni se creó otro movimiento.
 
-Esto acredita el camino **manual** completo hasta la aceptación del proveedor,
-pero aún falta la confirmación visual de Esteban y **no** acredita que el
-próximo disparo automático use el deployment correcto. **Owner Codex:**
-recibir esa confirmación y observar el siguiente cron programado, conciliando
+Esteban confirmó que recibió el aviso en su Telegram. Queda validado el
+camino **manual** completo, pero esto **no** acredita que el próximo disparo
+automático use el deployment correcto. **Owner Codex:** observar el siguiente
+cron programado, conciliando
 evento redaccionado y outbox sin duplicar el resumen. Mantener
 `NOTIFICATIONS_ENABLED=false`, el cerco canary y los datos QA; no tocar legacy.
