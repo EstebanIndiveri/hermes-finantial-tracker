@@ -113,6 +113,24 @@ test("accepts only a complete, scoped daily summary canary when the broad switch
   assert.ok(evaluateBetaBuildIsolation(partial).failedChecks.includes("daily_summary_canary_scope"));
 });
 
+test("accepts only the approved recurring reminder canary when the broad switch is off", () => {
+  const scoped = {
+    ...validEnvironment,
+    RECURRING_REMINDER_CANARY_ENABLED: "true",
+    RECURRING_REMINDER_CANARY_USER_ID: "504b3827-a03e-49a6-acc6-c200f225ca80",
+    RECURRING_REMINDER_CANARY_GROUP_ID: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
+  };
+  assert.equal(evaluateBetaBuildIsolation(scoped).passed, true);
+  for (const [key, value] of [
+    ["RECURRING_REMINDER_CANARY_ENABLED", "True"],
+    ["RECURRING_REMINDER_CANARY_USER_ID", ""],
+    ["RECURRING_REMINDER_CANARY_GROUP_ID", "different-group"],
+  ]) {
+    assert.ok(evaluateBetaBuildIsolation({ ...scoped, [key]: value }).failedChecks.includes("recurring_reminder_canary_scope"));
+  }
+  assert.ok(evaluateBetaBuildIsolation({ ...validEnvironment, RECURRING_REMINDER_CANARY_ENABLED: "true" }).failedChecks.includes("recurring_reminder_canary_scope"));
+});
+
 test("requires exact, distinct fingerprints for the six beta secrets", () => {
   const expected = JSON.parse(validEnvironment.HERMES_BETA_SECRET_FINGERPRINTS);
   const changedSecret = { ...validEnvironment, SESSION_SECRET: "sentinel-different-session-secret" };

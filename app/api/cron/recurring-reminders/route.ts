@@ -5,6 +5,7 @@ import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 import { escapeTelegramHtml } from "@/lib/telegram/html";
 import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 import { buildRecurringReminderSnapshotHash, enqueueRecurringReminder } from "@/lib/notifications/recurring-reminder-delivery";
+import { getRecurringReminderScope, isRecurringReminderRecipientAllowed } from "@/lib/notifications/recurring-reminder-canary";
 import { getArgentinaDateKey } from "@/lib/utils/dates";
 
 function reminderSnapshotHash(executions: RecurringExecutionWithDetails[]): string {
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
   if (notificationsMode === "invalid") {
     return NextResponse.json({ error: "Notifications unavailable" }, { status: 503 });
   }
-  if (notificationsMode === "disabled") {
+  if (getRecurringReminderScope().mode === "off") {
     return NextResponse.json({
       success: true,
       skipped: true,
@@ -47,6 +48,7 @@ export async function GET(request: Request) {
 
     for (const userData of upcoming) {
       if (!userData.telegramUserId || !userData.groupId || userData.executions.length === 0) continue;
+      if (!isRecurringReminderRecipientAllowed(userData.userId, userData.groupId)) continue;
       if (!await hasProactiveConsent(userData.userId, "recurring")) continue;
 
       const lines = ["⏰ <b>Recordatorio de pagos próximos</b>\n"];
@@ -78,6 +80,7 @@ export async function GET(request: Request) {
 
     for (const userData of overdue) {
       if (!userData.telegramUserId || !userData.groupId || userData.executions.length === 0) continue;
+      if (!isRecurringReminderRecipientAllowed(userData.userId, userData.groupId)) continue;
       if (!await hasProactiveConsent(userData.userId, "recurring")) continue;
 
       const lines = ["🚨 <b>Pagos vencidos pendientes</b>\n"];

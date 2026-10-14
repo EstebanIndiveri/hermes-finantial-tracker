@@ -25,6 +25,7 @@ describe("GET /api/cron/recurring-reminders", () => {
       ...originalEnv,
       CRON_SECRET: "test-secret",
       TELEGRAM_BOT_TOKEN: "test-bot-token",
+      NOTIFICATIONS_ENABLED: "true",
     };
     global.fetch = jest.fn().mockResolvedValue({ ok: true }) as typeof fetch;
     (getUpcomingExecutions as jest.Mock).mockResolvedValue([]);
@@ -109,6 +110,39 @@ describe("GET /api/cron/recurring-reminders", () => {
     expect(getUpcomingExecutions).not.toHaveBeenCalled();
     expect(getOverdueExecutions).not.toHaveBeenCalled();
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("queues only the approved beta user and group in canary mode", async () => {
+    process.env = {
+      ...process.env,
+      NOTIFICATIONS_ENABLED: "false",
+      HERMES_BETA_ISOLATION_ASSERT: "true",
+      NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
+      TURSO_DATABASE_URL: "libsql://beta-hermes-esteban-indiveri.aws-us-east-2.turso.io",
+      TELEGRAM_BOT_ID: "8739389202",
+      RECURRING_REMINDER_CANARY_ENABLED: "true",
+      RECURRING_REMINDER_CANARY_USER_ID: "user-A",
+      RECURRING_REMINDER_CANARY_GROUP_ID: "group-A",
+    };
+    const candidate = (userId: string, groupId: string) => ({
+      userId, groupId, telegramUserId: `chat-${userId}`,
+      executions: [{ id: `exec-${userId}-${groupId}`, scheduledDate: "2026-08-25", amountArs: 100,
+        recurringExpense: { name: "Internet", amountArs: 100, category: null } }],
+    });
+    (getUpcomingExecutions as jest.Mock).mockResolvedValue([
+      candidate("user-A", "group-A"), candidate("user-B", "group-A"), candidate("user-A", "group-B"),
+    ]);
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/recurring-reminders", {
+      headers: { authorization: "Bearer test-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).notificationsQueued).toBe(1);
+    expect(enqueueRecurringReminder).toHaveBeenCalledTimes(1);
+    expect(enqueueRecurringReminder).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-A",
+      context: expect.objectContaining({ groupId: "group-A" }) }));
+    expect(hasProactiveConsent).toHaveBeenCalledTimes(1);
   });
 
   it("fails closed on an invalid notifications setting before recurring reads", async () => {

@@ -22,3 +22,10 @@ Antes de habilitar recordatorios recurrentes hay que agregar identidad durable p
 - Riesgos: un aviso agregado se descarta entero si un cargo cambió de estado antes del despacho; prioriza no enviar datos obsoletos. Un fallo incierto puede perder un aviso, nunca duplicarlo.
 - La operación durable liga la lista de ejecuciones, una huella de importe/nombre/categoría/fecha y la huella del texto; un contender con la misma identidad pero snapshot o mensaje distinto no puede completar su outbox. El despacho compara las huellas con los datos actuales. Si cambia un cargo, se descarta el aviso completo.
 - Pruebas: ausencia de permiso, replay/concurrencia, cambio de grupo/consentimiento/chat/estado, y respuesta incierta. No activar canary ni switch global, no crear cargos QA, no tocar el cron mensual o reintegros.
+
+## Siguiente subcorte: cerco canary en código (sin activar)
+
+- Actual: el switch global apagado impide probar un recordatorio recurrente real sin abrir también otros avisos proactivos.
+- Esperado: una excepción explícita, exclusiva de beta, para el usuario QA `esteban_beta_qa` y su `Mi espacio` propio. El cron filtra destinatarios antes de encolar y el dispatcher repite el mismo filtro antes de enviar. Una configuración parcial, otro proyecto/bot/base, o una mezcla con el switch global encendido falla cerrada.
+- Invariantes: los tres bindings del canary recurrente permanecen ausentes en el despliegue de este subcorte. No se configura el canary, no se toca `NOTIFICATIONS_ENABLED=false`, no se envía un Telegram ni se crea un movimiento. La activación requiere un corte separado con consentimiento recurrente y ejecución QA elegible verificados.
+- Pruebas: caso positivo aislado; usuario y grupo ajenos, flag parcial, cambio de grupo/consentimiento en despacho, build de beta con bindings ausentes o exactos y rechazo de valores distintos.

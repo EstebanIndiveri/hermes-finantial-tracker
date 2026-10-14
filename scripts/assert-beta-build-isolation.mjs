@@ -41,6 +41,7 @@ const APPROVED_DAILY_CANARY = Object.freeze({
   userId: "504b3827-a03e-49a6-acc6-c200f225ca80",
   groupId: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
 });
+const APPROVED_RECURRING_CANARY = APPROVED_DAILY_CANARY;
 
 const CHECK_NAMES = Object.freeze([
   "beta_app_origin",
@@ -51,6 +52,7 @@ const CHECK_NAMES = Object.freeze([
   "beta_runtime_modes",
   "beta_notifications_disabled",
   "daily_summary_canary_scope",
+  "recurring_reminder_canary_scope",
   "ars_mode_enabled",
   "required_secrets_present",
   "beta_secret_fingerprints_match",
@@ -71,6 +73,19 @@ function dailySummaryCanaryScopeValid(environment) {
     environment.DAILY_SUMMARY_CANARY_ENABLED === "true" &&
     environment.DAILY_SUMMARY_CANARY_USER_ID === APPROVED_DAILY_CANARY.userId &&
     environment.DAILY_SUMMARY_CANARY_GROUP_ID === APPROVED_DAILY_CANARY.groupId;
+}
+
+function recurringReminderCanaryScopeValid(environment) {
+  const keys = [
+    "RECURRING_REMINDER_CANARY_ENABLED",
+    "RECURRING_REMINDER_CANARY_USER_ID",
+    "RECURRING_REMINDER_CANARY_GROUP_ID",
+  ];
+  if (keys.every((key) => environment[key] === undefined)) return true;
+  return environment.NOTIFICATIONS_ENABLED === "false" &&
+    environment.RECURRING_REMINDER_CANARY_ENABLED === "true" &&
+    environment.RECURRING_REMINDER_CANARY_USER_ID === APPROVED_RECURRING_CANARY.userId &&
+    environment.RECURRING_REMINDER_CANARY_GROUP_ID === APPROVED_RECURRING_CANARY.groupId;
 }
 
 function databaseHost(value) {
@@ -129,6 +144,7 @@ export function evaluateBetaBuildIsolation(environment) {
     beta_runtime_modes: environment.AI_MODE === EXPECTED.aiMode && environment.OCR_MODE === EXPECTED.ocrMode,
     beta_notifications_disabled: environment.NOTIFICATIONS_ENABLED === EXPECTED.notificationsEnabled,
     daily_summary_canary_scope: dailySummaryCanaryScopeValid(environment),
+    recurring_reminder_canary_scope: recurringReminderCanaryScopeValid(environment),
     ars_mode_enabled: environment.ACT05_ARS_MODE_ENABLED === "true",
     required_secrets_present: REQUIRED_SECRETS.every((key) => nonempty(environment, key)),
     beta_secret_fingerprints_match: betaSecretFingerprintsMatch(environment),

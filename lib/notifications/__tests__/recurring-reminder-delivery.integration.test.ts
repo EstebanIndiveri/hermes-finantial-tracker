@@ -84,8 +84,38 @@ beforeEach(async () => {
 });
 
 async function deliver(fetchImpl: typeof fetch, at = now) {
-  return runWorker({ botId: "beta-bot", token: "test-token", now: () => at, fetchImpl });
+  return runWorker({ botId: process.env.TELEGRAM_BOT_ID ?? "beta-bot", token: "test-token", now: () => at, fetchImpl });
 }
+
+function useBetaCanary(groupId = "group-A") {
+  process.env = {
+    ...process.env,
+    NOTIFICATIONS_ENABLED: "false",
+    TELEGRAM_BOT_ID: "8739389202",
+    HERMES_BETA_ISOLATION_ASSERT: "true",
+    NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
+    TURSO_DATABASE_URL: "libsql://beta-hermes-esteban-indiveri.aws-us-east-2.turso.io",
+    RECURRING_REMINDER_CANARY_ENABLED: "true",
+    RECURRING_REMINDER_CANARY_USER_ID: "user-A",
+    RECURRING_REMINDER_CANARY_GROUP_ID: groupId,
+  };
+}
+
+it("sends only the beta canary recipient and still rechecks the scope at dispatch", async () => {
+  useBetaCanary();
+  expect(await enqueue(input)).toBe(true);
+  const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+  expect((await deliver(fetchImpl)).sent).toBe(1);
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+  await client.execute("DELETE FROM telegram_delivery_outbox");
+  await client.execute("DELETE FROM telegram_operations");
+  expect(await enqueue(input)).toBe(true);
+  useBetaCanary("group-B");
+  const rejectedFetch = jest.fn();
+  expect((await deliver(rejectedFetch)).dead).toBe(1);
+  expect(rejectedFetch).not.toHaveBeenCalled();
+});
 
 it("deduplicates concurrent cron intents and delivers only once", async () => {
   const results = await Promise.all(Array.from({ length: 5 }, () => enqueue(input)));

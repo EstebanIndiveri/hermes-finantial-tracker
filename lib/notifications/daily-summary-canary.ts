@@ -3,7 +3,7 @@ const BETA_ORIGIN = "https://hermes-finantial-tracker-z2.vercel.app";
 const BETA_DATABASE_HOST = "beta-hermes-esteban-indiveri.aws-us-east-2.turso.io";
 const BETA_BOT_ID = "8739389202";
 
-function isBetaRuntime(env: NodeJS.ProcessEnv): boolean {
+export function isBetaRuntime(env: NodeJS.ProcessEnv): boolean {
   if (env.HERMES_BETA_ISOLATION_ASSERT !== "true" ||
     env.NEXT_PUBLIC_APP_URL !== BETA_ORIGIN || env.TELEGRAM_BOT_ID !== BETA_BOT_ID) return false;
   try {

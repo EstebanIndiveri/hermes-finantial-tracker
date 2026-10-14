@@ -13,6 +13,7 @@ import { DAILY_SUMMARY_OPERATION_KIND, parseDailySummaryContext } from "@/lib/no
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 import { isDailySummaryRecipientAllowed } from "@/lib/notifications/daily-summary-canary";
 import { RECURRING_REMINDER_OPERATION_KIND, buildRecurringReminderSnapshotHash, parseRecurringReminderContext, recurringReminderMessageHash } from "@/lib/notifications/recurring-reminder-delivery";
+import { isRecurringReminderRecipientAllowed } from "@/lib/notifications/recurring-reminder-canary";
 import { getArgentinaDateKey } from "@/lib/utils/dates";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -107,7 +108,7 @@ async function recurringReminderRejection(row: TelegramDeliveryRow, claimedAt: n
   const context = parseRecurringReminderContext(operation.context);
   if (!context || row.action !== "send_message" ||
     recurringReminderMessageHash(row.text) !== context.messageHash) return "invalid_proactive_context";
-  if (process.env.NOTIFICATIONS_ENABLED !== "true") return "notifications_disabled";
+  if (!isRecurringReminderRecipientAllowed(operation.userId, context.groupId)) return "notifications_disabled";
   if (getArgentinaDateKey(new Date(claimedAt)) !== context.argentinaDate) return "reminder_expired";
   if (!await hasProactiveConsent(operation.userId, "recurring")) return "consent_revoked";
   const [user] = await db.select({
