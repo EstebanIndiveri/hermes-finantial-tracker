@@ -3058,3 +3058,14 @@ y observar la ventana 21:00–21:59 ART del 14/10 (00:00–00:59 UTC del 15/10)
 con el gasto QA `Test` aún elegible. No hacer un disparo manual ni fabricar
 otro movimiento; mantener cerco canary, switch global apagado y legacy
 intacto.
+
+**Restauración verificada (13:16 ART):** el commit
+`e0aef065d81a3ea23252ae04df309de9105736c8` se desplegó solo al
+proyecto beta, sin `--skip-domain`. El deployment
+`dpl_CQwmCoE24QQW19wYLuEcTi7WYc5k` está `READY` y sirve el alias beta;
+`crons.deploymentId` coincide y `/api/cron/daily-alerts` registra
+`0 0 * * *`. El build remoto aprobó once checks H04d y el paquete privado
+refrescado pasó con `postActivationRuntimeConsistent:true`,
+`isolationVerified:false` y los gaps beta preexistentes. La ventana normal
+de 21:00–21:59 ART del 14/10 será el siguiente corte automático, ya en
+el día UTC 15/10 y con el gasto QA `Test` del día Argentina 14/10 elegible.
