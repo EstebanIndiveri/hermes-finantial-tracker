@@ -3122,3 +3122,18 @@ duplicar el envío.
 `crons.deploymentId` y H04d. Después registrar la restauración y cerrar
 el corte de disparo automático, dejando la discrepancia de visibilidad
 condicionada al chequeo de Esteban.
+
+**Recibo de Esteban y restauración (14/10, 14:55 ART):** Esteban aportó
+captura del chat del bot beta con el resumen del miércoles 14/10 y
+Supermercado por ARS 2.000, visible a las 14:45 ART. Confirma recepción
+del único envío automático; no hubo disparo ni reenvío manual. El commit
+`01cef9792a239a4ef551b008f49674d25f9ee412` restauró el cron diario
+`0 0 * * *` solo en el proyecto beta. El deployment
+`dpl_BA5oRd3gGPHdyPNvk8EwTme991N1` está `READY` y sirve el alias
+canónico; `crons.deploymentId` coincide y la definición diaria apunta a
+su host. El build remoto aprobó los once checks H04d. El paquete privado
+refrescado devolvió `postActivationRuntimeConsistent:true` e
+`isolationVerified:false`, con los gaps beta preexistentes. El corte
+ACT-17 de **invocación y entrega automática del resumen diario QA** queda
+cerrado. Los demás avisos proactivos continúan apagados y requieren sus
+propios cortes antes de activarse; no se tocó legacy ni se borraron datos QA.
