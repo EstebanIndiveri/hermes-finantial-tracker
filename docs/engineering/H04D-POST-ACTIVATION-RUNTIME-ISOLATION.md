@@ -19,6 +19,14 @@ of deployed binding values. The reviewed runtime receipt must record the
 scope by technical IDs without tokens, and the residual remains
 `isolationVerified:false`.
 
+ACT-17 also permits an optional `recurringReminderCanary` declaration for
+that same exact QA user and group, independently of the daily canary. It
+requires the three `RECURRING_REMINDER_CANARY_*` bindings on a new beta
+Production deployment while `NOTIFICATIONS_ENABLED=false`. An absent or
+partial binding must not send anything. The cron and dispatcher enforce the
+same scope again at runtime. This declaration does not authorize recurrent
+notifications to other users or certify provider isolation.
+
 ## Input contract
 
 Call `validatePostActivationIsolation(input, { now })` from `scripts/validate-post-activation-isolation.mjs`. Its manifest has only provider metadata and non-secret runtime declarations. Every beta and production provider entry must refer to a reviewed redacted receipt under `evidence/`, include a SHA-256 digest, and be no more than seven days old. The beta Vercel receipt also covers deployment target, release SHA, and the runtime flag/mode inventory.

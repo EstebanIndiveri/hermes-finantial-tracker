@@ -132,6 +132,32 @@ test("accepts only an explicit one-user/one-group daily beta exception with glob
   assert.throws(() => validatePostActivationIsolation(scoped, { now }), (error) => error.code === "BETA_NOTIFICATIONS_ENABLED");
 });
 
+test("accepts only the approved recurring reminder canary beside the daily canary", () => {
+  const scoped = fixture();
+  scoped.beta.runtime.dailySummaryCanary = {
+    enabled: true,
+    userId: "504b3827-a03e-49a6-acc6-c200f225ca80",
+    groupId: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
+  };
+  scoped.beta.runtime.recurringReminderCanary = {
+    enabled: true,
+    userId: "504b3827-a03e-49a6-acc6-c200f225ca80",
+    groupId: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
+  };
+  const result = validatePostActivationIsolation(scoped, { now });
+  assert.ok(result.checks.includes("recurring-reminder-canary-scoped"));
+  for (const canary of [
+    { enabled: false, userId: scoped.beta.runtime.recurringReminderCanary.userId, groupId: scoped.beta.runtime.recurringReminderCanary.groupId },
+    { enabled: true, userId: "other-user", groupId: scoped.beta.runtime.recurringReminderCanary.groupId },
+    { enabled: true, userId: scoped.beta.runtime.recurringReminderCanary.userId, groupId: "other-group" },
+    { enabled: true, userId: scoped.beta.runtime.recurringReminderCanary.userId, groupId: scoped.beta.runtime.recurringReminderCanary.groupId, extra: true },
+  ]) {
+    const invalid = fixture();
+    invalid.beta.runtime.recurringReminderCanary = canary;
+    assert.throws(() => validatePostActivationIsolation(invalid, { now }));
+  }
+});
+
 test("rejects secret-bearing and unknown fields; never certifies from local declarations", () => {
   const input = fixture();
   input.beta.telegram.token = "must-not-be-present";

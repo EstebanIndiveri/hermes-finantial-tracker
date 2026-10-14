@@ -3272,6 +3272,21 @@ genera idempotentemente una ejecución `pending` para un recurrente mensual
 no automático cuyo vencimiento esté a tres días, solo para el usuario y grupo
 exactos del canary y con consentimiento recurrente; nunca crea transacciones.
 La regresión del día 18 falló antes y pasó después. Los bindings del canary
-siguen ausentes y no se ha enviado ningún recordatorio. Pendiente publicar
-ese código, reatestar H04d y verificar el grupo activo de Telegram antes de
-habilitar el canary para la ventana automática; no invocar el cron a mano.
+siguen ausentes y no se ha enviado ningún recordatorio. Este subcorte no
+invocó el cron a mano.
+
+**Publicación del subcorte:** commit `288125a632506db0de7720640e8af4c5b0d15e37`
+publicado únicamente a beta como `dpl_Cou5Uq2dom5VKyJ9iXmLgxLfVZBp`
+(`READY`, alias canónico). `crons.deploymentId` y los tres hosts coinciden con
+él; el recordatorio recurrente conserva `0 11 * * *` (ventana 08:00–08:59
+ART en Vercel Hobby). Pasaron 125 suites / 1.081 tests unitarios, TypeScript,
+lint sin errores, build local y los doce checks remotos. H04d privado se
+refrescó y validó con `postActivationRuntimeConsistent:true` e
+`isolationVerified:false`; no se presenta como certificación integral.
+`NOTIFICATIONS_ENABLED=false` y los tres bindings recurrentes ausentes:
+todavía no se materializó ni envió nada. En `Mi cuenta` QA, Telegram figura
+conectado y `Pagos recurrentes` está marcado. Esteban confirmó el 14/10 que
+`Mi espacio` ya era el grupo activo en Telegram, sin cambiarlo. El siguiente
+corte consiste en declarar el canary exacto en H04d, activar solo sus tres
+bindings beta, reatestar el deployment y observar el cron automático del
+15/10 sin invocación manual ni cargos financieros.
