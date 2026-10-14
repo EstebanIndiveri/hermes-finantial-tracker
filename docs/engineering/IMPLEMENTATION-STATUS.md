@@ -3137,3 +3137,45 @@ refrescado devolvió `postActivationRuntimeConsistent:true` e
 ACT-17 de **invocación y entrega automática del resumen diario QA** queda
 cerrado. Los demás avisos proactivos continúan apagados y requieren sus
 propios cortes antes de activarse; no se tocó legacy ni se borraron datos QA.
+
+### ACT-17 — recordatorios recurrentes: límite de grupo y entrega durable (14/10, 15:25 ART)
+
+El siguiente corte se separó en dos subcortes de estabilización, documentados
+en `docs/engineering/ACT-17-RECURRING-REMINDERS-BOUNDARY.md`. Primero, la
+consulta de candidatos dejó de mezclar ejecuciones de grupos distintos del
+mismo usuario: exige grupo Telegram activo y devuelve `groupId` explícito.
+La regresión de dos grupos falló antes de la corrección y pasó después.
+Commit `4241d48`.
+
+Después, `/api/cron/recurring-reminders` dejó de enviar directo a Telegram:
+encola una operación/outbox durable por usuario, grupo, tipo y día argentino.
+El dispatcher vuelve a verificar switch global, opt-in, bot y chat privado
+vinculados, grupo activo, membresía y estado/importe/nombre/fecha de las
+ejecuciones antes de enviar. Repeticiones, concurrencia, texto distinto para
+la misma identidad y resultados inciertos del proveedor no causan un segundo
+envío. La revisión independiente detectó una carrera entre operación y
+outbox, reproducida con prueba roja y corregida antes del despliegue; luego
+se añadió la comprobación de datos financieros editados. Commit `c41081a`.
+
+Verificación local final: 122 suites y 1.059 tests unitarios pasaron;
+TypeScript y lint dirigido sin errores, `git diff --check` limpio. Ambos
+commits están publicados en `codex/act05-currency-modes`. El despliegue fue
+**solo al proyecto beta** `prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`: release
+`c41081a94b1218813c13cfc3db5e356867a0c1b3`, deployment
+`dpl_6XJmY8NQe2YdV3ubYKZuwTBikJye` en estado `READY` y asociado al alias
+canónico `https://hermes-finantial-tracker-z2.vercel.app`. El build aprobó
+los once checks de aislamiento beta; `crons.deploymentId` coincide con el
+deployment y conservó `0 0 * * *` para resumen diario y `0 11 * * *` para
+recordatorios recurrentes. El paquete H04d privado actualizado pasó con
+`postActivationRuntimeConsistent:true`, `isolationVerified:false`; persisten
+los gaps conocidos de certificación independiente. `NOTIFICATIONS_ENABLED`
+continúa **false**. Este corte no produjo avisos recurrentes ni movimientos
+financieros QA; no modificó legacy ni eliminó datos QA.
+
+**Owner Codex / próximo corte:** diseñar un canary de recordatorios
+recurrentes limitado a usuario y grupo QA, con pruebas de no destinatarios
+ajenos, y verificar una ejecución automática y outbox antes de ampliar el
+alcance. Mantener envíos recurrentes apagados mientras no exista ese cerco;
+reintegros pendientes y cron mensual siguen fuera de este corte. Para un
+ensayo con entrega real se necesita una ejecución recurrente QA elegible y
+consentimiento explícito, sin fabricar movimientos de usuario.
