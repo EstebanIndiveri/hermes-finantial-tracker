@@ -3290,3 +3290,44 @@ conectado y `Pagos recurrentes` está marcado. Esteban confirmó el 14/10 que
 corte consiste en declarar el canary exacto en H04d, activar solo sus tres
 bindings beta, reatestar el deployment y observar el cron automático del
 15/10 sin invocación manual ni cargos financieros.
+
+### ACT-17 — activación recurrente limitada a QA (14/10, 18:00 ART)
+
+Esteban confirmó que el bot beta ya tenía `Mi espacio` activo. La web beta
+mostró Netflix ARS 3.000, día 18, solamente en ese espacio; en `Mi cuenta`
+Telegram está vinculado y `Pagos recurrentes` está marcado. Antes del 15/10
+hay cero ejecuciones pendientes, estado esperado: la materialización canary
+se produce tres días antes del vencimiento, no al guardar la definición.
+
+El validador H04d acepta ahora únicamente el `recurringReminderCanary` del
+usuario/grupo QA aprobados y rechaza datos parciales o ajenos; 117 pruebas
+del arnés, 125 suites / 1.081 tests unitarios, TypeScript y lint dirigido
+pasaron. Commit `54d89dc268f87c0147aaef8bc61245faef0225a2` publicado.
+Se agregaron **solo en el entorno Production del proyecto beta** los tres
+bindings `RECURRING_REMINDER_CANARY_{ENABLED,USER_ID,GROUP_ID}` exactos. No se
+cambió el switch global `NOTIFICATIONS_ENABLED=false` ni legacy. El
+deployment beta `dpl_GZwcUMDoxWaJLiU22PW15EDMmy6U` pasó los doce checks
+remotos y quedó READY con el alias; después se corrigió la leyenda de
+preferencias para reflejar el piloto acotado (commit
+`5583c47852bb3766a4898eb716b4e29da9869eea`, 125 suites / 1.081 tests,
+TypeScript y lint dirigido). Su deployment final
+`dpl_7MzoPtaMgYuS9tKxa5YC3uWNQ5Da` está READY en el alias canónico;
+`crons.deploymentId` y los tres hosts coinciden con él, con recurrentes en
+`0 11 * * *` (08:00–08:59 ART en Vercel Hobby). El build remoto volvió a
+aprobar los doce checks, incluido el canary recurrente y el switch global
+apagado. El paquete H04d privado actualizado para esta release pasó con
+`postActivationRuntimeConsistent:true` e `isolationVerified:false`; persisten
+los gaps de certificación independiente documentados.
+
+El cron Vercel de recurrentes encola avisos; el Worker Cloudflare beta ya
+activo cada cinco minutos despacha el outbox Telegram. La revisión de este
+subcorte confirmó esa ruta preexistente y las revalidaciones de grupo,
+consentimiento y ejecución pendiente en el dispatcher. No se invocó ningún
+cron manualmente, no se fabricó ningún movimiento ni se envió aún un
+recordatorio de Netflix. **Owner Codex:** observar el disparo automático del
+15/10, la creación única de `pending`, operación/outbox `cron:recurring`,
+entrega al único chat QA y cero destinatarios ajenos; registrar resultado o
+fallo. El seguimiento del hilo quedó reactivado para después de la ventana
+automática. Si Vercel no invoca o la entrega falla, diagnosticar sin reenviar
+un estado incierto. **Owner Esteban:** informar si recibe el aviso en el bot
+beta, sin cambiar el grupo Telegram hasta cerrar este corte.
