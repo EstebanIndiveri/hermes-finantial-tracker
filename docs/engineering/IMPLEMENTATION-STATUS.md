@@ -2948,3 +2948,32 @@ comparar el **próximo disparo programado** con este nuevo deployment.
 conciliar el evento redaccionado con operaciones/outbox, descartar otros
 destinatarios y separar `nothing_relevant` de una entrega real. Mantener
 `NOTIFICATIONS_ENABLED=false`, el canary y los datos QA; no tocar legacy.
+
+### ACT-17 — ventana automática extraordinaria, sin repetición de entrega (13/10, 23:26 ART)
+
+Para verificar el scheduler sin invocar manualmente el endpoint, se cambió
+temporalmente el cron beta `/api/cron/daily-alerts` de `0 0 * * *` a
+`40 2 * * *` (ventana de las 23:00–23:59 ART del 13/10). Se hizo push del
+commit `d17dd1a4428260c3b4809453ef1f449ec05cb8a3` y despliegue **solo**
+del proyecto beta, sin `--skip-domain`: `dpl_G4CJjV2acjKRUAXNa34k63xNF9pg`
+quedó `READY` y como destino del alias canónico. La lectura del proyecto
+confirmó `crons.deploymentId` igual al deployment vigente y schedule
+`40 2 * * *`. El build remoto aprobó once checks H04d y el paquete privado
+refrescado dio `postActivationRuntimeConsistent:true`,
+`isolationVerified:false`, con los gaps de certificación beta ya aceptados.
+`NOTIFICATIONS_ENABLED=false` y el cerco canary siguen intactos.
+
+El resumen del 13/10 para el usuario/grupo QA ya se entregó a las 22:50 ART
+mediante la prueba manual autorizada. La identidad diaria es determinista por
+bot, usuario y fecha; por eso el disparo automático de esta noche debe
+registrar `already_queued` y **no** enviar otro Telegram. La ejecución
+automática y la deduplicación son los criterios de este corte; una entrega
+nueva requiere una fecha elegible posterior. En Vercel Hobby el minuto del
+cron no es exacto: la ventana es la hora configurada.
+
+**Owner Codex:** a las 00:05 ART conciliar logs de request y evento
+`beta_daily_summary_canary_cron` con operación/outbox, confirmar cero
+destinatarios ajenos, restaurar el cron beta habitual de 21:00 ART mediante
+otro despliegue con H04d y mantener seguimiento hasta una entrega automática
+de fecha nueva. No ejecutar el endpoint a mano, no crear movimientos ni tocar
+legacy.
