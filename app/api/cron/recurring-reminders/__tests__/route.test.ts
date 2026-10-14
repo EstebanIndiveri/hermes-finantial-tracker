@@ -2,12 +2,17 @@ import { NextRequest } from "next/server";
 import { GET } from "../route";
 import { getUpcomingExecutions, getOverdueExecutions } from "@/lib/db/recurring-queries";
 import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
+import { enqueueRecurringReminder } from "@/lib/notifications/recurring-reminder-delivery";
 
 jest.mock("@/lib/db/recurring-queries", () => ({
   getUpcomingExecutions: jest.fn(),
   getOverdueExecutions: jest.fn(),
 }));
 jest.mock("@/lib/notifications/proactive-consent", () => ({ hasProactiveConsent: jest.fn() }));
+jest.mock("@/lib/notifications/recurring-reminder-delivery", () => ({
+  ...jest.requireActual("@/lib/notifications/recurring-reminder-delivery"),
+  enqueueRecurringReminder: jest.fn(),
+}));
 
 describe("GET /api/cron/recurring-reminders", () => {
   const originalEnv = process.env;
@@ -25,6 +30,7 @@ describe("GET /api/cron/recurring-reminders", () => {
     (getUpcomingExecutions as jest.Mock).mockResolvedValue([]);
     (getOverdueExecutions as jest.Mock).mockResolvedValue([]);
     jest.mocked(hasProactiveConsent).mockResolvedValue(true);
+    jest.mocked(enqueueRecurringReminder).mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -79,7 +85,7 @@ describe("GET /api/cron/recurring-reminders", () => {
       success: true,
       upcoming: 1,
       overdue: 1,
-      notificationsSent: 0,
+      notificationsQueued: 0,
     });
     expect(global.fetch).not.toHaveBeenCalled();
   });
@@ -98,7 +104,7 @@ describe("GET /api/cron/recurring-reminders", () => {
       reason: "notifications_disabled",
       upcoming: 0,
       overdue: 0,
-      notificationsSent: 0,
+      notificationsQueued: 0,
     });
     expect(getUpcomingExecutions).not.toHaveBeenCalled();
     expect(getOverdueExecutions).not.toHaveBeenCalled();
@@ -119,14 +125,16 @@ describe("GET /api/cron/recurring-reminders", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("sends upcoming and overdue telegram notifications and reports sent count", async () => {
+  it("queues upcoming and overdue reminders without calling Telegram", async () => {
     Date.now = jest.fn(() => new Date("2026-08-23T12:00:00.000Z").getTime());
     (getUpcomingExecutions as jest.Mock).mockResolvedValue([
       {
         userId: "u1",
+        groupId: "g1",
         telegramUserId: "tg-1",
         executions: [
           {
+            id: "exec-upcoming",
             scheduledDate: "2026-08-25",
             amountArs: null,
             recurringExpense: {
@@ -141,9 +149,11 @@ describe("GET /api/cron/recurring-reminders", () => {
     (getOverdueExecutions as jest.Mock).mockResolvedValue([
       {
         userId: "u2",
+        groupId: "g2",
         telegramUserId: "tg-2",
         executions: [
           {
+            id: "exec-overdue",
             scheduledDate: "2026-08-20",
             amountArs: 30000,
             recurringExpense: {
@@ -168,23 +178,37 @@ describe("GET /api/cron/recurring-reminders", () => {
       success: true,
       upcoming: 1,
       overdue: 1,
-      notificationsSent: 2,
+      notificationsQueued: 2,
     });
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      1,
-      "https://api.telegram.org/bottest-bot-token/sendMessage",
-      expect.objectContaining({
-        method: "POST",
-      })
-    );
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      2,
-      "https://api.telegram.org/bottest-bot-token/sendMessage",
-      expect.objectContaining({
-        method: "POST",
-      })
-    );
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(enqueueRecurringReminder).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      userId: "u1", chatId: "tg-1", context: expect.objectContaining({
+        groupId: "g1", reminderKind: "upcoming", executionIds: ["exec-upcoming"],
+      }),
+    }));
+    expect(enqueueRecurringReminder).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      userId: "u2", chatId: "tg-2", context: expect.objectContaining({
+        groupId: "g2", reminderKind: "overdue", executionIds: ["exec-overdue"],
+      }),
+    }));
+  });
+
+  it("never calls Telegram directly from the cron, even when a reminder is eligible", async () => {
+    process.env.NOTIFICATIONS_ENABLED = "true";
+    (getUpcomingExecutions as jest.Mock).mockResolvedValue([{
+      userId: "u1",
+      groupId: "g1",
+      telegramUserId: "tg-1",
+      executions: [{ id: "exec-1", scheduledDate: "2026-08-25", amountArs: 100,
+        recurringExpense: { name: "Internet", amountArs: 100, category: null } }],
+    }]);
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/recurring-reminders", {
+      headers: { authorization: "Bearer test-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it("escapes configurable recurring labels in both reminder types", async () => {
@@ -199,28 +223,26 @@ describe("GET /api/cron/recurring-reminders", () => {
       },
     };
     (getUpcomingExecutions as jest.Mock).mockResolvedValue([
-      { userId: "u1", telegramUserId: "tg-1", executions: [execution] },
+      { userId: "u1", groupId: "g1", telegramUserId: "tg-1", executions: [{ id: "exec-1", ...execution }] },
     ]);
     (getOverdueExecutions as jest.Mock).mockResolvedValue([
-      { userId: "u1", telegramUserId: "tg-1", executions: [execution] },
+      { userId: "u1", groupId: "g1", telegramUserId: "tg-1", executions: [{ id: "exec-1", ...execution }] },
     ]);
 
     await GET(new NextRequest("http://localhost/api/cron/recurring-reminders", {
       headers: { authorization: "Bearer test-secret" },
     }));
 
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-    for (const [, options] of (global.fetch as jest.Mock).mock.calls) {
-      const body = JSON.parse(options.body);
-      expect(body.parse_mode).toBe("HTML");
-      expect(body.text).toContain("&lt;icon&gt; <b>A &lt;b&gt;&amp; B</b>");
-      expect(body.text).not.toContain("<icon>");
+    expect(enqueueRecurringReminder).toHaveBeenCalledTimes(2);
+    for (const [input] of jest.mocked(enqueueRecurringReminder).mock.calls) {
+      expect(input.message).toContain("&lt;icon&gt; <b>A &lt;b&gt;&amp; B</b>");
+      expect(input.message).not.toContain("<icon>");
     }
   });
 
   it("suppresses both reminder types when the recipient has not opted in", async () => {
     process.env.NOTIFICATIONS_ENABLED = "true";
-    const data = [{ userId: "user-A", telegramUserId: "telegram-A", executions: [{}] }];
+    const data = [{ userId: "user-A", groupId: "group-A", telegramUserId: "telegram-A", executions: [{}] }];
     (getUpcomingExecutions as jest.Mock).mockResolvedValue(data);
     (getOverdueExecutions as jest.Mock).mockResolvedValue(data);
     jest.mocked(hasProactiveConsent).mockResolvedValue(false);
@@ -232,5 +254,6 @@ describe("GET /api/cron/recurring-reminders", () => {
     expect(response.status).toBe(200);
     expect(hasProactiveConsent).toHaveBeenCalledWith("user-A", "recurring");
     expect(global.fetch).not.toHaveBeenCalled();
+    expect(enqueueRecurringReminder).not.toHaveBeenCalled();
   });
 });

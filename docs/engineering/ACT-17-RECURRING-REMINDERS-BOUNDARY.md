@@ -13,3 +13,12 @@ Clasificación: estabilización beta. Owner: Codex. No habilita envíos.
 - Excluido: deduplicación/outbox, canary de recurrentes, recordatorios de reintegros y el cron mensual de ejecución. Esos envíos siguen apagados en beta.
 
 Antes de habilitar recordatorios recurrentes hay que agregar identidad durable por destinatario/grupo/tipo/día, consentimiento y membresía revalidados al despacho, destino privado vinculado sin relink, y pruebas de repetición/concurrencia/fallo incierto del proveedor.
+
+## Siguiente subcorte: entrega durable (sin activación)
+
+- Actual: aun con candidatos separados, cada ejecución del cron llama directamente a Telegram; una repetición puede enviar dos mensajes y un cambio de membresía o consentimiento entre lectura y llamada queda sin revalidar.
+- Esperado: encolar un aviso por usuario, grupo, tipo (`upcoming`/`overdue`) y día argentino con identidad permanente; repetición y concurrencia encolan como máximo una vez. El worker comprueba antes de enviar el switch global, consentimiento, bot, chat privado, grupo activo, membresía y que todas las ejecuciones sigan pendientes y correspondan al grupo. Un estado incierto del proveedor no provoca reenvío.
+- Archivos: nueva entrega de recurrentes, cron de recordatorios, dispatcher común y pruebas aisladas. Sin migración ni nuevas dependencias.
+- Riesgos: un aviso agregado se descarta entero si un cargo cambió de estado antes del despacho; prioriza no enviar datos obsoletos. Un fallo incierto puede perder un aviso, nunca duplicarlo.
+- La operación durable liga la lista de ejecuciones, una huella de importe/nombre/categoría/fecha y la huella del texto; un contender con la misma identidad pero snapshot o mensaje distinto no puede completar su outbox. El despacho compara las huellas con los datos actuales. Si cambia un cargo, se descarta el aviso completo.
+- Pruebas: ausencia de permiso, replay/concurrencia, cambio de grupo/consentimiento/chat/estado, y respuesta incierta. No activar canary ni switch global, no crear cargos QA, no tocar el cron mensual o reintegros.

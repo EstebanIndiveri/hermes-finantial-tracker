@@ -6,12 +6,14 @@ import {
   type TelegramDeliveryRow,
 } from "@/lib/telegram/outbox";
 import { db } from "@/lib/db/client";
-import { telegram_operations, users } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { categories, group_members, recurringExecutions, recurringExpenses, telegram_operations, users } from "@/lib/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 import { DAILY_SUMMARY_OPERATION_KIND, parseDailySummaryContext } from "@/lib/notifications/daily-summary-delivery";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
 import { isDailySummaryRecipientAllowed } from "@/lib/notifications/daily-summary-canary";
+import { RECURRING_REMINDER_OPERATION_KIND, buildRecurringReminderSnapshotHash, parseRecurringReminderContext, recurringReminderMessageHash } from "@/lib/notifications/recurring-reminder-delivery";
+import { getArgentinaDateKey } from "@/lib/utils/dates";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const MAX_ATTEMPTS = 8;
@@ -87,6 +89,73 @@ async function dailySummaryRejection(row: TelegramDeliveryRow): Promise<string |
   const authorizedGroupId = await resolveAuthorizedTelegramGroup(operation.userId, user.activeGroupId);
   if (authorizedGroupId !== context.groupId) return "group_changed";
   return null;
+}
+
+async function recurringReminderRejection(row: TelegramDeliveryRow, claimedAt: number): Promise<string | null> {
+  const [operation] = await db.select({
+    botId: telegram_operations.bot_id,
+    updateId: telegram_operations.update_id,
+    kind: telegram_operations.operation_kind,
+    status: telegram_operations.status,
+    resourceType: telegram_operations.resource_type,
+    userId: telegram_operations.resource_id,
+    context: telegram_operations.result_json,
+  }).from(telegram_operations).where(eq(telegram_operations.operation_id, row.operation_id)).limit(1);
+  if (!operation || operation.botId !== row.bot_id || operation.updateId !== row.update_id ||
+    operation.kind !== RECURRING_REMINDER_OPERATION_KIND || operation.status !== "committed" ||
+    operation.resourceType !== "recurring_reminder" || !operation.userId) return "invalid_proactive_context";
+  const context = parseRecurringReminderContext(operation.context);
+  if (!context || row.action !== "send_message" ||
+    recurringReminderMessageHash(row.text) !== context.messageHash) return "invalid_proactive_context";
+  if (process.env.NOTIFICATIONS_ENABLED !== "true") return "notifications_disabled";
+  if (getArgentinaDateKey(new Date(claimedAt)) !== context.argentinaDate) return "reminder_expired";
+  if (!await hasProactiveConsent(operation.userId, "recurring")) return "consent_revoked";
+  const [user] = await db.select({
+    telegramId: users.telegram_user_id,
+    activeGroupId: users.active_telegram_group_id,
+  }).from(users).where(eq(users.id, operation.userId)).limit(1);
+  if (!user || user.telegramId !== row.chat_id) return "recipient_changed";
+  if (user.activeGroupId !== context.groupId) return "group_changed";
+
+  const executions = await db.select({
+    id: recurringExecutions.id,
+    status: recurringExecutions.status,
+    scheduledDate: recurringExecutions.scheduledDate,
+    amountArs: recurringExecutions.amountArs,
+    userId: recurringExpenses.userId,
+    groupId: recurringExpenses.groupId,
+    recurringName: recurringExpenses.name,
+    recurringAmount: recurringExpenses.amountArs,
+    categoryEmoji: categories.emoji,
+  }).from(recurringExecutions)
+    .innerJoin(recurringExpenses, eq(recurringExecutions.recurringExpenseId, recurringExpenses.id))
+    .leftJoin(categories, eq(recurringExpenses.categoryId, categories.id))
+    .innerJoin(group_members, and(
+      eq(group_members.user_id, recurringExpenses.userId),
+      eq(group_members.group_id, recurringExpenses.groupId),
+    ))
+    .where(inArray(recurringExecutions.id, context.executionIds));
+  if (executions.length !== context.executionIds.length ||
+    executions.some((execution) => execution.status !== "pending" ||
+      execution.userId !== operation.userId || execution.groupId !== context.groupId ||
+      (context.reminderKind === "upcoming"
+        ? execution.scheduledDate !== getUpcomingReminderDate(context.argentinaDate)
+        : execution.scheduledDate >= context.argentinaDate))) return "reminder_changed";
+  if (buildRecurringReminderSnapshotHash(executions.map((execution) => ({
+    id: execution.id,
+    scheduledDate: execution.scheduledDate,
+    amountArs: execution.amountArs,
+    recurringName: execution.recurringName,
+    recurringAmount: execution.recurringAmount,
+    categoryEmoji: execution.categoryEmoji,
+  }))) !== context.snapshotHash) return "reminder_changed";
+  return null;
+}
+
+function getUpcomingReminderDate(argentinaDate: string): string {
+  const date = new Date(`${argentinaDate}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 3);
+  return date.toISOString().slice(0, 10);
 }
 
 function providerBody(value: unknown): TelegramProviderBody {
@@ -191,12 +260,16 @@ export async function dispatchClaimedTelegramDelivery({
 
   const claimedAt = now();
   const isDailySummary = row.update_id.startsWith("cron:daily:");
-  if (isDailySummary) {
+  const isRecurringReminder = row.update_id.startsWith("cron:recurring:");
+  const isAtMostOnceProactive = isDailySummary || isRecurringReminder;
+  if (isAtMostOnceProactive) {
     // A recovered lease may follow a provider-accepted request whose response
     // never reached us. Do not call sendMessage twice for this beta alert.
     const rejection = row.attempt_count > 1
       ? "delivery_uncertain"
-      : await dailySummaryRejection(row);
+      : isDailySummary
+        ? await dailySummaryRejection(row)
+        : await recurringReminderRejection(row, claimedAt);
     if (rejection) {
       const changed = await markTelegramDeliveryDead({
         id: row.id,
@@ -209,7 +282,7 @@ export async function dispatchClaimedTelegramDelivery({
     }
   }
   if (!token) {
-    if (isDailySummary) {
+    if (isAtMostOnceProactive) {
       const changed = await markTelegramDeliveryDead({
         id: row.id,
         leaseToken,
@@ -245,7 +318,7 @@ export async function dispatchClaimedTelegramDelivery({
     return summary;
   }
 
-  if (isDailySummary) {
+  if (isAtMostOnceProactive) {
     const changed = await markTelegramDeliveryDead({
       id: row.id,
       leaseToken,
