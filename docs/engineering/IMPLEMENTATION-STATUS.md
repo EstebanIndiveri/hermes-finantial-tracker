@@ -2785,3 +2785,38 @@ diagnosticar el disparador beta antes
 de realizar otra prueba de entrega. Conservar los recibos QA y no promover el
 switch global ni tocar legacy. El seguimiento del hilo se reprogramó para
 22:05 ART, sin alterar la configuración de Vercel.
+
+### ACT-17 — destino real del cron y corte de observación (13/10, 21:54 ART)
+
+Una nueva lectura de logs del **proyecto beta** mostró el pedido
+`/api/cron/daily-alerts` a las 00:43:37 UTC del 14/10 (21:43:37 ART), con
+HTTP 200, pero atribuido al deployment anterior
+`dpl_7wQhEjfYbqKWC8BnTqrFT3s8Td13` (creado el 12/10 a las 23:07 ART).
+No hubo entrada del mismo pedido en el deployment del canary
+`dpl_4BDbtrarrNHpRVz39U8TzXZqBEks`, creado el 13/10 a las 17:16 ART.
+El alias visible `hermes-finantial-tracker-z2.vercel.app` sí resuelve al
+deployment nuevo; esta reasignación manual del alias no demuestra que el
+scheduler esté invocando ese build. El registro obtenido fue de middleware,
+sin evento `beta_daily_summary_canary_cron`; un HTTP 200 aislado no prueba
+que el handler nuevo haya construido un resumen.
+
+En `beta-hermes` continuó exactamente una operación diaria técnica, creada
+19:54:44 UTC y entregada 19:55:27 UTC al Telegram **privado** de
+`esteban_beta_qa`, con contexto de grupo `Mi espacio` propio
+`b5b15f53-f964-4c12-99ca-88fbbee23c55`. No apareció operación diaria
+nueva ni para este usuario ni para otros. La cuenta QA tiene ahora seleccionado
+el grupo `test` (`6a7c238e-8467-4333-8e7e-7db2c626aa07`), fuera del
+alcance autorizado del canary personal; no se conoce a partir de esta foto
+cuándo cambió de grupo respecto de las 21:43. Un mensaje diario para `test`
+debe quedar bloqueado por diseño.
+
+**Diagnóstico:** el disparo programado existió, pero la evidencia lo ubica
+en un build beta anterior, no en el canary. La reprogramación del seguimiento
+de Codex a 22:05 no alteró el cron Vercel y no podía reparar el destino.
+El corte diario real sigue sin validar. **Owner Codex:** confirmar el mecanismo
+de promoción `Current` del proyecto beta, distinguirlo de `alias set`,
+reatestar H04d si se modifica el deployment servido al scheduler y volver
+a probar solo con grupo/usuario autorizado y contenido elegible. Mantener
+`NOTIFICATIONS_ENABLED=false`, conservar QA, no tocar legacy ni afirmar entrega.
+Se pausó el seguimiento automático de este horario: repetir la lectura de
+logs sin corregir el destino no cerraría el corte.
