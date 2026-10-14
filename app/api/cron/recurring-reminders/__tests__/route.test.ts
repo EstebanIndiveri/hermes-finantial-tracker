@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { GET } from "../route";
 import { getUpcomingExecutions, getOverdueExecutions } from "@/lib/db/recurring-queries";
+import { materializeCanaryUpcomingExecutions } from "@/lib/notifications/recurring-canary-materialization";
 import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 import { enqueueRecurringReminder } from "@/lib/notifications/recurring-reminder-delivery";
 
@@ -8,6 +9,7 @@ jest.mock("@/lib/db/recurring-queries", () => ({
   getUpcomingExecutions: jest.fn(),
   getOverdueExecutions: jest.fn(),
 }));
+jest.mock("@/lib/notifications/recurring-canary-materialization", () => ({ materializeCanaryUpcomingExecutions: jest.fn() }));
 jest.mock("@/lib/notifications/proactive-consent", () => ({ hasProactiveConsent: jest.fn() }));
 jest.mock("@/lib/notifications/recurring-reminder-delivery", () => ({
   ...jest.requireActual("@/lib/notifications/recurring-reminder-delivery"),
@@ -35,6 +37,7 @@ describe("GET /api/cron/recurring-reminders", () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     process.env = originalEnv;
     global.fetch = originalFetch;
     Date.now = originalDateNow;
@@ -64,6 +67,7 @@ describe("GET /api/cron/recurring-reminders", () => {
     expect(response.status).toBe(401);
     expect(getUpcomingExecutions).not.toHaveBeenCalled();
     expect(getOverdueExecutions).not.toHaveBeenCalled();
+    expect(materializeCanaryUpcomingExecutions).not.toHaveBeenCalled();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
@@ -109,10 +113,12 @@ describe("GET /api/cron/recurring-reminders", () => {
     });
     expect(getUpcomingExecutions).not.toHaveBeenCalled();
     expect(getOverdueExecutions).not.toHaveBeenCalled();
+    expect(materializeCanaryUpcomingExecutions).not.toHaveBeenCalled();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it("queues only the approved beta user and group in canary mode", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-10-15T11:00:00.000Z"));
     process.env = {
       ...process.env,
       NOTIFICATIONS_ENABLED: "false",
@@ -142,7 +148,31 @@ describe("GET /api/cron/recurring-reminders", () => {
     expect(enqueueRecurringReminder).toHaveBeenCalledTimes(1);
     expect(enqueueRecurringReminder).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-A",
       context: expect.objectContaining({ groupId: "group-A" }) }));
-    expect(hasProactiveConsent).toHaveBeenCalledTimes(1);
+    expect(hasProactiveConsent).toHaveBeenCalledTimes(2);
+    expect(materializeCanaryUpcomingExecutions).toHaveBeenCalledWith("user-A", "group-A", "2026-10-18");
+  });
+
+  it("does not materialize an occurrence when the QA user has not opted in", async () => {
+    process.env = {
+      ...process.env,
+      NOTIFICATIONS_ENABLED: "false",
+      HERMES_BETA_ISOLATION_ASSERT: "true",
+      NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
+      TURSO_DATABASE_URL: "libsql://beta-hermes-esteban-indiveri.aws-us-east-2.turso.io",
+      TELEGRAM_BOT_ID: "8739389202",
+      RECURRING_REMINDER_CANARY_ENABLED: "true",
+      RECURRING_REMINDER_CANARY_USER_ID: "user-A",
+      RECURRING_REMINDER_CANARY_GROUP_ID: "group-A",
+    };
+    jest.mocked(hasProactiveConsent).mockResolvedValue(false);
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/recurring-reminders", {
+      headers: { authorization: "Bearer test-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(materializeCanaryUpcomingExecutions).not.toHaveBeenCalled();
+    expect(enqueueRecurringReminder).not.toHaveBeenCalled();
   });
 
   it("fails closed on an invalid notifications setting before recurring reads", async () => {

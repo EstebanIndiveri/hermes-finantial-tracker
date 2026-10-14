@@ -3253,3 +3253,25 @@ canary de recordatorios, `NOTIFICATIONS_ENABLED` y envíos siguen apagados;
 no se generaron cargos ni se modificó legacy. La activación se retoma en un
 subcorte separado tras verificar consentimiento, ejecución pendiente elegible
 y aislamiento del destinatario.
+
+**Cierre del límite web:** commit `af25b9069f6648a28ec0890071c0e39de1485675`
+publicado y desplegado solo al proyecto beta como
+`dpl_8vUCm989Zgme5EoNqcFGszDi4N93` (`READY`, alias canónico). El build
+remoto pasó doce checks de aislamiento, incluidos el switch global apagado y
+el cerco recurrente sin bindings. `crons.deploymentId` y los tres hosts
+coinciden con el deployment; horarios `0 0 * * *`, `0 11 * * *` y
+`0 3 1 * *`. La atestación H04d privada actualizada pasó con
+`postActivationRuntimeConsistent:true`, `isolationVerified:false` y los gaps
+conocidos. En la sesión QA, Netflix ARS 3.000 aparece solo en `Mi espacio`;
+al seleccionar `test` la lista pasa a cero, y después se restauró
+`Mi espacio`. Con ello queda identificado el grupo de la definición sin
+moverla. Octubre sigue mostrando cero ejecuciones pendientes.
+
+**Owner Codex / materialización canary preparada:** el siguiente código
+genera idempotentemente una ejecución `pending` para un recurrente mensual
+no automático cuyo vencimiento esté a tres días, solo para el usuario y grupo
+exactos del canary y con consentimiento recurrente; nunca crea transacciones.
+La regresión del día 18 falló antes y pasó después. Los bindings del canary
+siguen ausentes y no se ha enviado ningún recordatorio. Pendiente publicar
+ese código, reatestar H04d y verificar el grupo activo de Telegram antes de
+habilitar el canary para la ventana automática; no invocar el cron a mano.

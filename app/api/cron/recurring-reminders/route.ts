@@ -7,6 +7,13 @@ import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 import { buildRecurringReminderSnapshotHash, enqueueRecurringReminder } from "@/lib/notifications/recurring-reminder-delivery";
 import { getRecurringReminderScope, isRecurringReminderRecipientAllowed } from "@/lib/notifications/recurring-reminder-canary";
 import { getArgentinaDateKey } from "@/lib/utils/dates";
+import { materializeCanaryUpcomingExecutions } from "@/lib/notifications/recurring-canary-materialization";
+
+function upcomingDateKey(today: string): string {
+  const date = new Date(`${today}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 3);
+  return date.toISOString().slice(0, 10);
+}
 
 function reminderSnapshotHash(executions: RecurringExecutionWithDetails[]): string {
   return buildRecurringReminderSnapshotHash(executions.map((execution) => ({
@@ -28,7 +35,8 @@ export async function GET(request: Request) {
   if (notificationsMode === "invalid") {
     return NextResponse.json({ error: "Notifications unavailable" }, { status: 503 });
   }
-  if (getRecurringReminderScope().mode === "off") {
+  const scope = getRecurringReminderScope();
+  if (scope.mode === "off") {
     return NextResponse.json({
       success: true,
       skipped: true,
@@ -40,6 +48,9 @@ export async function GET(request: Request) {
   }
 
   try {
+    if (scope.mode === "canary" && await hasProactiveConsent(scope.userId, "recurring")) {
+      await materializeCanaryUpcomingExecutions(scope.userId, scope.groupId, upcomingDateKey(getArgentinaDateKey()));
+    }
     const upcoming = await getUpcomingExecutions(3);
     const overdue = await getOverdueExecutions();
 
