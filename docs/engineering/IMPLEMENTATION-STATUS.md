@@ -2977,3 +2977,25 @@ destinatarios ajenos, restaurar el cron beta habitual de 21:00 ART mediante
 otro despliegue con H04d y mantener seguimiento hasta una entrega automática
 de fecha nueva. No ejecutar el endpoint a mano, no crear movimientos ni tocar
 legacy.
+
+### ACT-17 — ventana extraordinaria sin invocación observada (14/10, 00:05 ART)
+
+La consulta read-only de logs del proyecto beta para 02:00–03:05 UTC no
+mostró ningún request `/api/cron/daily-alerts` ni el evento
+`beta_daily_summary_canary_cron`, aunque sí mostró los workers de outbox en
+el deployment `dpl_G4CJjV2acjKRUAXNa34k63xNF9pg`. La lectura del registro
+Vercel confirmó que `crons.deploymentId` y los hosts apuntaban a ese
+deployment y que el schedule seguía siendo `40 2 * * *`. En `beta-hermes`
+permanecieron exactamente las dos operaciones/outbox diarias QA ya conocidas,
+ambas `sent`; ninguna operación diaria de otros usuarios. **No hay evidencia
+de invocación programada ni de un segundo envío.**
+
+El schedule temporal se registró a las 23:24 ART, ya dentro de la hora en
+que Vercel Hobby podía ejecutar una tarea diaria con minuto no garantizado.
+Es plausible que el instante elegido por el scheduler hubiera quedado antes
+de ese registro, pero los recibos no prueban esa causa: este ensayo queda
+**inconcluso**, no validado. El siguiente corte observará un cron registrado
+antes de comenzar su ventana, sin ejecuciones manuales. **Owner Codex:**
+restaurar `0 0 * * *` y reatestar/desplegar beta, después observar la
+siguiente ventana de 21:00–21:59 ART con contenido elegible de fecha nueva.
+Mantener `NOTIFICATIONS_ENABLED=false`, el canary QA y legacy intactos.
