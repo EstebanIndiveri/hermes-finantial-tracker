@@ -3011,3 +3011,32 @@ refrescado pasó con `postActivationRuntimeConsistent:true` e
 manualmente el cron ni se creó ningún movimiento. El próximo disparo
 automático normal, si Vercel lo ejecuta, corresponde a la ventana
 21:00–21:59 ART del 14/10.
+
+### ACT-17 — ensayo automático de mediodía preparado (14/10, 00:37 ART)
+
+Esteban creó el gasto QA `Test` por ARS 2.000 en Supermercado, activo,
+fechado 14/10 y asociado a su `Mi espacio` personal autorizado
+(`b5b15f53-f964-4c12-99ca-88fbbee23c55`). La cuenta
+`esteban_beta_qa` tiene ese grupo Telegram activo, opt-in de resumen diario
+y todavía cero operaciones diarias para la nueva fecha Argentina. No se
+creó ni editó ningún movimiento durante este corte.
+
+Por pedido de Esteban se adelantó **temporalmente** el cron Vercel beta a
+`40 15 * * *`, equivalente a 12:40 ART nominal; el equipo `eindi-acme` es
+Hobby, por lo que su ventana efectiva es 12:00–12:59 ART. Se hizo push del
+commit `679c4a56061d53af493925731cdfaed1eabe90fd` y deploy solo del
+proyecto beta, sin `--skip-domain`. El deployment
+`dpl_gt5Lctk1xdCmujVzPQuhj8SsTfjh` está `READY`, sirve el alias beta,
+pasó once checks H04d remotos y coincide con `crons.deploymentId`; la
+definición diaria apunta a su host y schedule `40 15 * * *`. El paquete
+privado H04d actualizado pasó con `postActivationRuntimeConsistent:true`,
+`isolationVerified:false` y los gaps beta aceptados; el switch global
+permanece apagado.
+
+El cron diario había tenido una ejecución previa a las 00:43 UTC del 14/10
+bajo el horario anterior; Vercel Hobby limita la frecuencia a una vez por
+día y no garantiza minuto exacto. Los recibos no establecen si reprogramar
+el mismo cron dentro del día concederá otra ejecución. **Owner Codex:**
+observar a las 13:10 ART logs, evento, operación y outbox sin invocación
+manual, descartar destinatarios ajenos, restaurar `0 0 * * *` con H04d y
+seguir la ventana normal si no hubo disparo. Legacy y datos QA intactos.
