@@ -36,3 +36,9 @@ Antes de habilitar recordatorios recurrentes hay que agregar identidad durable p
 - Esperado: en modo canary, el cron de recordatorios puede materializar de manera idempotente una ejecución **pendiente**, únicamente para las definiciones mensuales no automáticas del usuario y grupo QA cuyo vencimiento sea exactamente dentro de tres días. Luego ejecuta la lectura y entrega normal. No se toca el generador general ni su rama de confirmación financiera.
 - Invariantes: la materialización exige canary completo y grupo/membresía válidos; nunca crea una transacción, nunca marca pagado, no alcanza otros usuarios/grupos ni definiciones `autoConfirm`. Con canary apagado no lee ni escribe. El dispatcher revalida el estado antes de cualquier envío. Los bindings siguen ausentes y `NOTIFICATIONS_ENABLED=false` en este subcorte.
 - Pruebas: regresión del vencimiento del 18 sin ejecución previa, repetición sin duplicado, exclusión de grupo/autoConfirm/frecuencias distintas, ningún insert con canary apagado y pruebas existentes de entrega/outbox.
+
+## Regresión adicional: concurrencia local de materialización
+
+- Dos llamadas lanzadas con `Promise.all` contra un archivo libSQL temporal para el mismo Netflix QA y vencimiento del 18/10 dejan una sola ejecución `pending`, sin `transaction_id` y sin transacciones. La restricción única `(recurring_expense_id, scheduled_date)` también está presente en la base de prueba.
+- Con el canary apagado, o tras cambiar el grupo activo de Telegram, no se crea ejecución. La prueba es local y no invoca cron ni proveedor; no fuerza una barrera entre las dos llamadas, por lo que no constituye una demostración exhaustiva de todas las intercalaciones posibles.
+- Owner Codex: conservar esta regresión y observar el cron automático del 15/10 antes de cerrar la activación. Owner Esteban: confirmar si recibe el aviso QA; no hace falta crear otro movimiento.

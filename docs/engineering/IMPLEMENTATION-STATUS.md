@@ -3331,3 +3331,23 @@ fallo. El seguimiento del hilo quedó reactivado para después de la ventana
 automática. Si Vercel no invoca o la entrega falla, diagnosticar sin reenviar
 un estado incierto. **Owner Esteban:** informar si recibe el aviso en el bot
 beta, sin cambiar el grupo Telegram hasta cerrar este corte.
+
+### ACT-17 — regresión local de concurrencia, sin cambio de deployment (14/10)
+
+Se agregó una prueba de integración con libSQL temporal que lanza dos
+materializaciones del mismo Netflix QA mediante `Promise.all`: queda una sola
+ejecución `pending` del 18/10 por ARS 3.000, sin transacción asociada ni filas
+en `transactions`. También comprueba cero escrituras con canary apagado y
+tras cambiar el grupo Telegram. Usa la restricción única de ejecución/fecha;
+no impone una barrera de sincronización entre llamadas, por lo que no pretende
+probar todas las carreras posibles. Revisión independiente: sin bloqueo.
+Pasaron 117 pruebas del arnés, 126 suites / 1.083 tests Jest, TypeScript y
+lint dirigido. Este corte solo modifica prueba y documentación: no invoca el
+cron, no crea movimientos QA, no cambia bindings ni despliega. El deployment
+beta operativo sigue siendo `dpl_7MzoPtaMgYuS9tKxa5YC3uWNQ5Da`.
+
+**Owner Codex:** observar la ventana recurrente automática del 15/10,
+conciliar ejecución/outbox/despacho y destinatario único, y registrar éxito o
+fallo antes de cualquier activación adicional. **Owner Esteban:** informar si
+recibe el aviso en el bot beta; no necesita hacer otra acción ahora. Se
+conservan los datos QA y `NOTIFICATIONS_ENABLED=false`; legacy intacto.
