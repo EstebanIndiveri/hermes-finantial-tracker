@@ -47,3 +47,9 @@ Antes de habilitar recordatorios recurrentes hay que agregar identidad durable p
 
 - Con el canary beta limitado al usuario QA, una intención de recordatorio ya encolada para otro miembro del **mismo grupo**, que sí tiene Telegram, membresía y consentimiento válidos, se descarta en el dispatcher antes de llamar al proveedor. El outbox queda `dead`; ninguna respuesta privada llega al chat ajeno.
 - Esta prueba local no habilita destinatarios adicionales ni demuestra entrega real del aviso QA. Owner Codex: conservar el aislamiento y reconciliar el único destinatario tras el cron automático. Owner Esteban: reportar solo la recepción del bot beta si ocurre.
+
+## Siguiente corte local: recibo redactado del cron
+
+- Con el canary activo, el cron deja un único evento estructurado `beta_recurring_reminder_canary_cron` al terminar correctamente. Solo contiene la fecha argentina y uno de `queued`, `not_queued` o `nothing_relevant`; no incluye usuario, grupo, chat, importe, categoría ni texto.
+- `not_queued` significa que hubo un candidato autorizado pero el intento no creó una nueva fila de outbox; no prueba por sí solo que el mensaje ya se entregó. La conciliación de operación, outbox y Worker sigue siendo obligatoria.
+- Este código queda local hasta concluir la ventana automática del 15/10 con el deployment ya atestado. Owner Codex: observar ese deployment sin usar el nuevo evento como expectativa, luego decidir promoción beta con gates y H04d. Owner Esteban: ninguna acción adicional antes del resultado.

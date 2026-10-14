@@ -38,6 +38,7 @@ describe("GET /api/cron/recurring-reminders", () => {
 
   afterEach(() => {
     jest.useRealTimers();
+    jest.restoreAllMocks();
     process.env = originalEnv;
     global.fetch = originalFetch;
     Date.now = originalDateNow;
@@ -118,6 +119,7 @@ describe("GET /api/cron/recurring-reminders", () => {
   });
 
   it("queues only the approved beta user and group in canary mode", async () => {
+    const info = jest.spyOn(console, "info").mockImplementation(() => undefined);
     jest.useFakeTimers().setSystemTime(new Date("2026-10-15T11:00:00.000Z"));
     process.env = {
       ...process.env,
@@ -150,9 +152,21 @@ describe("GET /api/cron/recurring-reminders", () => {
       context: expect.objectContaining({ groupId: "group-A" }) }));
     expect(hasProactiveConsent).toHaveBeenCalledTimes(2);
     expect(materializeCanaryUpcomingExecutions).toHaveBeenCalledWith("user-A", "group-A", "2026-10-18");
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "beta_recurring_reminder_canary_cron", argentinaDate: "2026-10-15", outcome: "queued",
+    }));
+
+    jest.mocked(enqueueRecurringReminder).mockResolvedValue(false);
+    await GET(new NextRequest("http://localhost/api/cron/recurring-reminders", {
+      headers: { authorization: "Bearer test-secret" },
+    }));
+    expect(info).toHaveBeenLastCalledWith(JSON.stringify({
+      event: "beta_recurring_reminder_canary_cron", argentinaDate: "2026-10-15", outcome: "not_queued",
+    }));
   });
 
   it("does not materialize an occurrence when the QA user has not opted in", async () => {
+    const info = jest.spyOn(console, "info").mockImplementation(() => undefined);
     process.env = {
       ...process.env,
       NOTIFICATIONS_ENABLED: "false",
@@ -173,6 +187,9 @@ describe("GET /api/cron/recurring-reminders", () => {
     expect(response.status).toBe(200);
     expect(materializeCanaryUpcomingExecutions).not.toHaveBeenCalled();
     expect(enqueueRecurringReminder).not.toHaveBeenCalled();
+    expect(JSON.parse(info.mock.calls[0][0] as string)).toEqual({
+      event: "beta_recurring_reminder_canary_cron", argentinaDate: expect.any(String), outcome: "nothing_relevant",
+    });
   });
 
   it("fails closed on an invalid notifications setting before recurring reads", async () => {

@@ -55,12 +55,14 @@ export async function GET(request: Request) {
     const overdue = await getOverdueExecutions();
 
     let notificationsQueued = 0;
+    let canaryCandidateSeen = false;
     const argentinaDate = getArgentinaDateKey();
 
     for (const userData of upcoming) {
       if (!userData.telegramUserId || !userData.groupId || userData.executions.length === 0) continue;
       if (!isRecurringReminderRecipientAllowed(userData.userId, userData.groupId)) continue;
       if (!await hasProactiveConsent(userData.userId, "recurring")) continue;
+      if (scope.mode === "canary") canaryCandidateSeen = true;
 
       const lines = ["⏰ <b>Recordatorio de pagos próximos</b>\n"];
       for (const exec of userData.executions) {
@@ -93,6 +95,7 @@ export async function GET(request: Request) {
       if (!userData.telegramUserId || !userData.groupId || userData.executions.length === 0) continue;
       if (!isRecurringReminderRecipientAllowed(userData.userId, userData.groupId)) continue;
       if (!await hasProactiveConsent(userData.userId, "recurring")) continue;
+      if (scope.mode === "canary") canaryCandidateSeen = true;
 
       const lines = ["🚨 <b>Pagos vencidos pendientes</b>\n"];
       for (const exec of userData.executions) {
@@ -128,6 +131,12 @@ export async function GET(request: Request) {
       if (queued) notificationsQueued++;
     }
 
+    if (scope.mode === "canary") {
+      const outcome = notificationsQueued > 0 ? "queued" :
+        canaryCandidateSeen ? "not_queued" : "nothing_relevant";
+      // Scheduled-run receipt only; never log recipient, group, amounts or text.
+      console.info(JSON.stringify({ event: "beta_recurring_reminder_canary_cron", argentinaDate, outcome }));
+    }
     return NextResponse.json({
       success: true,
       upcoming: upcoming.length,

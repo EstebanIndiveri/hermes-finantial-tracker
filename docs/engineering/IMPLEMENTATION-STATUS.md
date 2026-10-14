@@ -3368,3 +3368,20 @@ operativo continúa siendo `dpl_7MzoPtaMgYuS9tKxa5YC3uWNQ5Da`.
 exactamente un chat QA, o explicar cualquier fallo sin reenvío incierto.
 **Owner Esteban:** avisar si llega el recordatorio beta; ninguna acción previa
 es necesaria. `NOTIFICATIONS_ENABLED=false` permanece intacto.
+
+### ACT-17 — recibo redactado de recurrentes preparado localmente (14/10)
+
+La ruta del cron canary registra, solo tras completar correctamente, un
+evento `beta_recurring_reminder_canary_cron` con fecha argentina y resultado
+cerrado `queued`, `not_queued` o `nothing_relevant`. No registra IDs, chat,
+grupo, importes ni contenido. `not_queued` no equivale automáticamente a
+entrega previa; la conciliación durable continúa siendo necesaria. La prueba
+dirigida cubre los tres resultados. **Este cambio no está desplegado** y no
+debe esperarse ese evento en la ejecución automática del 15/10: allí se
+revisarán request, operación/outbox y Worker del deployment ya atestado.
+Pasaron 117 pruebas del arnés, 126 suites / 1.084 tests Jest, TypeScript,
+lint dirigido y build local con Node 22.
+
+**Owner Codex:** preservar el deployment de la prueba automática y decidir
+después un pase beta separado con H04d. **Owner
+Esteban:** ninguna acción nueva; reportar si recibe el recordatorio QA.
