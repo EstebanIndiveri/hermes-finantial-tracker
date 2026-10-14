@@ -5,7 +5,7 @@ it("distinguishes opt-in Telegram preferences from the existing browser Push pil
   const html = renderToStaticMarkup(<ProactiveNotificationsSection />);
   expect(html).toContain("Avisos proactivos de Telegram");
   expect(html).toContain("Estas opciones están desmarcadas por defecto");
-  expect(html).toContain("el resumen diario solo se envía a cuentas y grupos de prueba habilitados");
-  expect(html).toContain("Los avisos proactivos de pagos recurrentes y reintegros siguen apagados");
+  expect(html).toContain("el resumen diario y los recordatorios recurrentes solo se envían a cuentas y grupos de prueba habilitados");
+  expect(html).toContain("Los avisos de reintegros siguen apagados");
   expect(html).not.toContain("notificaciones del navegador");
 });

@@ -86,7 +86,7 @@ export function ProactiveNotificationsSection() {
         Elegí qué avisos querés recibir. Estas opciones están desmarcadas por defecto y los avisos solo llegan a tu Telegram vinculado.
       </p>
       <p style={{ fontSize: "0.78rem", color: "var(--htext2)", margin: "0 0 16px" }}>
-        En este piloto, el resumen diario solo se envía a cuentas y grupos de prueba habilitados. Los avisos proactivos de pagos recurrentes y reintegros siguen apagados. Guardar una preferencia no envía un aviso ahora.
+        En este piloto, el resumen diario y los recordatorios recurrentes solo se envían a cuentas y grupos de prueba habilitados. Los avisos de reintegros siguen apagados. Guardar una preferencia no envía un aviso ahora.
       </p>
 
       {loading ? (
