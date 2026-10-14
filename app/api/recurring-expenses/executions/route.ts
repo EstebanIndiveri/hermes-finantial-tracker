@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifySession } from "@/lib/auth/session";
-import { getSessionCookieName } from "@/lib/auth/session-cookie";
+import { getRecurringWebContext } from "@/lib/recurring/web-group-context";
 import {
   getPendingExecutions,
   getMonthExecutions,
@@ -13,24 +12,24 @@ import {
  */
 export async function GET(req: NextRequest) {
   try {
-    const cookie = req.cookies.get(getSessionCookieName())?.value;
-    const userId = cookie ? await verifySession(cookie) : null;
-    
-    if (!userId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const context = await getRecurringWebContext(req);
+    if (context.error) return context.error;
+    const { userId, groupId } = context;
 
     const { searchParams } = new URL(req.url);
     const month = searchParams.get("month") ?? undefined;
+    if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
+    }
     const pendingOnly = searchParams.get("pending") === "true";
     const includeStats = searchParams.get("stats") === "true";
 
     const executions = pendingOnly
-      ? await getPendingExecutions(userId, month)
-      : await getMonthExecutions(userId, month);
+      ? await getPendingExecutions(userId, month, groupId)
+      : await getMonthExecutions(userId, month, groupId);
 
     if (includeStats) {
-      const stats = await getRecurringStats(userId);
+      const stats = await getRecurringStats(userId, groupId, month);
       return NextResponse.json({ executions, stats });
     }
 

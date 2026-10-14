@@ -96,7 +96,7 @@ interface EditCandidate {
   categoryId: string | null;
 }
 
-export function RecurringList({ month: _month }: { month?: string } = {}) {
+export function RecurringList({ month }: { month?: string } = {}) {
   const [expenses, setExpenses] = useState<RecurringExpense[]>([]);
   const [pending, setPending] = useState<RecurringExecution[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -120,7 +120,7 @@ export function RecurringList({ month: _month }: { month?: string } = {}) {
   useEffect(() => {
     void fetchData();
     void fetchCategories();
-  }, []);
+  }, [month]);
 
   async function fetchCategories() {
     try {
@@ -137,8 +137,8 @@ export function RecurringList({ month: _month }: { month?: string } = {}) {
   async function fetchData() {
     try {
       const [expensesRes, executionsRes] = await Promise.all([
-        fetch("/api/recurring-expenses?stats=true"),
-        fetch("/api/recurring-expenses/executions"),
+        fetch(`/api/recurring-expenses?stats=true${month ? `&month=${encodeURIComponent(month)}` : ""}`),
+        fetch(`/api/recurring-expenses/executions${month ? `?month=${encodeURIComponent(month)}` : ""}`),
       ]);
 
       if (expensesRes.ok) {

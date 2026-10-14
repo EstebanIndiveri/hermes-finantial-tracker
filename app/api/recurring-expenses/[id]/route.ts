@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifySession } from "@/lib/auth/session";
-import { getSessionCookieName } from "@/lib/auth/session-cookie";
+import { getRecurringWebContext } from "@/lib/recurring/web-group-context";
 import {
   getRecurringExpenseById,
   updateRecurringExpense,
@@ -31,12 +30,9 @@ interface RouteParams {
  */
 export async function GET(req: NextRequest, { params }: RouteParams) {
   try {
-    const cookie = req.cookies.get(getSessionCookieName())?.value;
-    const userId = cookie ? await verifySession(cookie) : null;
-    
-    if (!userId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const context = await getRecurringWebContext(req);
+    if (context.error) return context.error;
+    const { userId, groupId } = context;
 
     const { id } = await params;
     const expense = await getRecurringExpenseById(id);
@@ -49,7 +45,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     }
 
     // Verify ownership
-    if (expense.userId !== userId) {
+    if (expense.userId !== userId || expense.groupId !== groupId) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
@@ -69,12 +65,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
  */
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
   try {
-    const cookie = req.cookies.get(getSessionCookieName())?.value;
-    const userId = cookie ? await verifySession(cookie) : null;
-    
-    if (!userId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const context = await getRecurringWebContext(req);
+    if (context.error) return context.error;
+    const { userId, groupId } = context;
 
     const { id } = await params;
     const existing = await getRecurringExpenseById(id);
@@ -86,7 +79,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (existing.userId !== userId) {
+    if (existing.userId !== userId || existing.groupId !== groupId) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
@@ -118,12 +111,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
  */
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
   try {
-    const cookie = req.cookies.get(getSessionCookieName())?.value;
-    const userId = cookie ? await verifySession(cookie) : null;
-    
-    if (!userId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const context = await getRecurringWebContext(req);
+    if (context.error) return context.error;
+    const { userId, groupId } = context;
 
     const { id } = await params;
     const existing = await getRecurringExpenseById(id);
@@ -135,7 +125,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (existing.userId !== userId) {
+    if (existing.userId !== userId || existing.groupId !== groupId) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
@@ -157,12 +147,9 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
  */
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
-    const cookie = req.cookies.get(getSessionCookieName())?.value;
-    const userId = cookie ? await verifySession(cookie) : null;
-    
-    if (!userId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const context = await getRecurringWebContext(req);
+    if (context.error) return context.error;
+    const { userId, groupId } = context;
 
     const { id } = await params;
     const { searchParams } = new URL(req.url);
@@ -184,7 +171,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (existing.userId !== userId) {
+    if (existing.userId !== userId || existing.groupId !== groupId) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 

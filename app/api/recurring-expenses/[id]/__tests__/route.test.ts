@@ -4,9 +4,13 @@ import { NextRequest } from "next/server";
 const mockVerifySession = jest.fn();
 const mockGetRecurringExpenseById = jest.fn();
 const mockDeleteRecurringExpense = jest.fn();
+const mockMembership = jest.fn();
 
 jest.mock("@/lib/auth/session", () => ({
   verifySession: (...args: unknown[]) => mockVerifySession(...args),
+}));
+jest.mock("@/lib/groups/permissions", () => ({
+  getGroupMembership: (...args: unknown[]) => mockMembership(...args),
 }));
 
 jest.mock("@/lib/db/recurring-queries", () => ({
@@ -21,11 +25,13 @@ describe("DELETE /api/recurring-expenses/[id]", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockMembership.mockResolvedValue({ group_id: "group-1", user_id: "user-1" });
   });
 
   function makeRequest() {
     const request = new NextRequest("http://localhost:3000/api/recurring-expenses/rec-1", {
       method: "DELETE",
+      headers: { "x-group-id": "group-1" },
     });
     request.cookies.set("hermes_session", "valid-session");
     return request;
@@ -64,7 +70,7 @@ describe("DELETE /api/recurring-expenses/[id]", () => {
 
   it("deletes the recurring expense and returns success", async () => {
     mockVerifySession.mockResolvedValue("user-1");
-    mockGetRecurringExpenseById.mockResolvedValue({ id: "rec-1", userId: "user-1", name: "Netflix" });
+    mockGetRecurringExpenseById.mockResolvedValue({ id: "rec-1", userId: "user-1", groupId: "group-1", name: "Netflix" });
     mockDeleteRecurringExpense.mockResolvedValue(true);
 
     const response = await DELETE(makeRequest(), params);
@@ -72,5 +78,13 @@ describe("DELETE /api/recurring-expenses/[id]", () => {
     expect(response.status).toBe(200);
     expect(mockDeleteRecurringExpense).toHaveBeenCalledWith("rec-1");
     expect(await response.json()).toEqual({ success: true });
+  });
+
+  it("does not delete a recurrence owned by this user in another group", async () => {
+    mockVerifySession.mockResolvedValue("user-1");
+    mockGetRecurringExpenseById.mockResolvedValue({ id: "rec-1", userId: "user-1", groupId: "group-2", name: "Netflix" });
+    const response = await DELETE(makeRequest(), params);
+    expect(response.status).toBe(403);
+    expect(mockDeleteRecurringExpense).not.toHaveBeenCalled();
   });
 });

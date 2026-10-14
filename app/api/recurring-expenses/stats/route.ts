@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRecurringStats } from "@/lib/db/recurring-queries";
-import { verifySession } from "@/lib/auth/session";
-import { getSessionCookieName } from "@/lib/auth/session-cookie";
+import { getRecurringWebContext } from "@/lib/recurring/web-group-context";
 
 /**
  * GET /api/recurring-expenses/stats
@@ -9,14 +8,11 @@ import { getSessionCookieName } from "@/lib/auth/session-cookie";
  */
 export async function GET(req: NextRequest) {
   try {
-    const cookie = req.cookies.get(getSessionCookieName())?.value;
-    const userId = cookie ? await verifySession(cookie) : null;
-    
-    if (!userId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const context = await getRecurringWebContext(req);
+    if (context.error) return context.error;
+    const { userId, groupId } = context;
 
-    const stats = await getRecurringStats(userId);
+    const stats = await getRecurringStats(userId, groupId);
 
     return NextResponse.json({ stats });
   } catch (error) {

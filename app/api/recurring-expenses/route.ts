@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifySession } from "@/lib/auth/session";
-import { getSessionCookieName } from "@/lib/auth/session-cookie";
+import { getRecurringWebContext } from "@/lib/recurring/web-group-context";
 import {
   getUserRecurringExpenses,
   createRecurringExpense,
   getRecurringStats,
 } from "@/lib/db/recurring-queries";
-import { db } from "@/lib/db/client";
-import { users, groups, group_members } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 const CreateRecurringSchema = z.object({
@@ -22,30 +18,23 @@ const CreateRecurringSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
-async function getGroupIdForUser(userId: string): Promise<string | null> {
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, userId),
-  });
-  return user?.active_telegram_group_id ?? null;
-}
-
 /**
  * GET /api/recurring-expenses
  * List all recurring expenses for the authenticated user
  */
 export async function GET(req: NextRequest) {
   try {
-    const cookie = req.cookies.get(getSessionCookieName())?.value;
-    const userId = cookie ? await verifySession(cookie) : null;
-    
-    if (!userId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const context = await getRecurringWebContext(req);
+    if (context.error) return context.error;
+    const { userId, groupId } = context;
 
     const { searchParams } = new URL(req.url);
     const activeOnly = searchParams.get("active") === "true";
-    const groupId = searchParams.get("groupId") ?? await getGroupIdForUser(userId) ?? undefined;
     const includeStats = searchParams.get("stats") === "true";
+    const month = searchParams.get("month");
+    if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
+    }
 
     const expenses = await getUserRecurringExpenses(userId, {
       activeOnly,
@@ -53,7 +42,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (includeStats) {
-      const stats = await getRecurringStats(userId);
+      const stats = await getRecurringStats(userId, groupId, month ?? undefined);
       return NextResponse.json({ expenses, stats });
     }
 
@@ -73,12 +62,9 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const cookie = req.cookies.get(getSessionCookieName())?.value;
-    const userId = cookie ? await verifySession(cookie) : null;
-    
-    if (!userId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const context = await getRecurringWebContext(req);
+    if (context.error) return context.error;
+    const { userId, groupId } = context;
 
     const body = await req.json();
     const parsed = CreateRecurringSchema.safeParse(body);
@@ -89,8 +75,6 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-
-    const groupId = await getGroupIdForUser(userId);
 
     const expense = await createRecurringExpense({
       userId,

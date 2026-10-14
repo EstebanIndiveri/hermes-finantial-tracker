@@ -474,7 +474,8 @@ export async function createMonthlyExecutions(
  */
 export async function getPendingExecutions(
   userId: string,
-  month?: string
+  month?: string,
+  groupId?: string,
 ): Promise<RecurringExecutionWithDetails[]> {
   const targetMonth = month ?? getCurrentMonth();
 
@@ -506,6 +507,7 @@ export async function getPendingExecutions(
     .where(
       and(
         eq(recurringExpenses.userId, userId),
+        ...(groupId ? [eq(recurringExpenses.groupId, groupId)] : []),
         eq(recurringExecutions.status, "pending"),
         sql`substr(${recurringExecutions.scheduledDate}, 1, 7) = ${targetMonth}`
       )
@@ -543,7 +545,8 @@ export async function getPendingExecutions(
  */
 export async function getMonthExecutions(
   userId: string,
-  month?: string
+  month?: string,
+  groupId?: string,
 ): Promise<RecurringExecutionWithDetails[]> {
   const targetMonth = month ?? getCurrentMonth();
 
@@ -567,10 +570,15 @@ export async function getMonthExecutions(
     })
     .from(recurringExecutions)
     .innerJoin(recurringExpenses, eq(recurringExecutions.recurringExpenseId, recurringExpenses.id))
+    .innerJoin(group_members, and(
+      eq(group_members.group_id, recurringExpenses.groupId),
+      eq(group_members.user_id, recurringExpenses.userId),
+    ))
     .leftJoin(categories, eq(recurringExpenses.categoryId, categories.id))
     .where(
       and(
         eq(recurringExpenses.userId, userId),
+        ...(groupId ? [eq(recurringExpenses.groupId, groupId)] : []),
         sql`substr(${recurringExecutions.scheduledDate}, 1, 7) = ${targetMonth}`
       )
     )
@@ -607,6 +615,7 @@ async function getExecutionForActor(
   executionId: string,
   actorUserId: string,
   executor: RecurringQueryExecutor = db,
+  requiredGroupId?: string,
 ) {
   const results = await executor
     .select({
@@ -633,6 +642,7 @@ async function getExecutionForActor(
       and(
         eq(recurringExecutions.id, executionId),
         eq(recurringExpenses.userId, actorUserId),
+        ...(requiredGroupId ? [eq(recurringExpenses.groupId, requiredGroupId)] : []),
       ),
     )
     .limit(1);
@@ -655,6 +665,8 @@ export interface ConfirmExecutionResult {
 export interface ConfirmExecutionOptions {
   /** A batch operation can own the single user-facing response. */
   enqueuePrimaryResponse?: boolean;
+  /** Web actions must stay within the middleware-selected group. */
+  requiredGroupId?: string;
 }
 
 class RecurringConfirmationRejected extends Error {
@@ -697,7 +709,7 @@ export async function confirmExecution(
       async (tx) => {
         // Revalidate both ownership and pending status on the same transaction
         // that creates the transaction and commits the operation registry row.
-        const execution = await getExecutionForActor(executionId, actorUserId, tx);
+        const execution = await getExecutionForActor(executionId, actorUserId, tx, options?.requiredGroupId);
         if (!execution) throw new RecurringConfirmationRejected("not_found");
         if (execution.status !== "pending") throw new RecurringConfirmationRejected("processed");
 
@@ -774,7 +786,7 @@ export async function confirmExecution(
 
   try {
     return await db.transaction(async (tx) => {
-      const execution = await getExecutionForActor(executionId, actorUserId, tx);
+      const execution = await getExecutionForActor(executionId, actorUserId, tx, options?.requiredGroupId);
       if (!execution) throw new RecurringConfirmationRejected("not_found");
       if (execution.status !== "pending") throw new RecurringConfirmationRejected("processed");
 
@@ -823,8 +835,9 @@ export async function confirmExecution(
 export async function skipExecution(
   executionId: string,
   actorUserId: string,
+  requiredGroupId?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const execution = await getExecutionForActor(executionId, actorUserId);
+  const execution = await getExecutionForActor(executionId, actorUserId, db, requiredGroupId);
   if (!execution) {
     return { success: false, error: "Ejecución no encontrada" };
   }
@@ -956,10 +969,9 @@ async function createTransactionFromRecurring(
 /**
  * Get recurring expense statistics for a user
  */
-export async function getRecurringStats(userId: string): Promise<RecurringStats> {
-  const all = await getUserRecurringExpenses(userId);
-  const month = getCurrentMonth();
-  const executions = await getMonthExecutions(userId, month);
+export async function getRecurringStats(userId: string, groupId?: string, month = getCurrentMonth()): Promise<RecurringStats> {
+  const all = await getUserRecurringExpenses(userId, { groupId });
+  const executions = await getMonthExecutions(userId, month, groupId);
 
   const active = all.filter((r) => r.isActive);
   const paused = all.filter((r) => !r.isActive);

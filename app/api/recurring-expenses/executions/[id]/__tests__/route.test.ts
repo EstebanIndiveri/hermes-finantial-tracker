@@ -4,9 +4,13 @@ import { POST } from "../route";
 const mockVerifySession = jest.fn();
 const mockConfirmExecution = jest.fn();
 const mockSkipExecution = jest.fn();
+const mockMembership = jest.fn();
 
 jest.mock("@/lib/auth/session", () => ({
   verifySession: (...args: unknown[]) => mockVerifySession(...args),
+}));
+jest.mock("@/lib/groups/permissions", () => ({
+  getGroupMembership: (...args: unknown[]) => mockMembership(...args),
 }));
 
 jest.mock("@/lib/db/recurring-queries", () => ({
@@ -23,8 +27,9 @@ function makeRequest(action: "confirm" | "skip", body?: unknown): NextRequest {
         ? {}
         : {
             body: JSON.stringify(body),
-            headers: { "content-type": "application/json" },
+            headers: { "content-type": "application/json", "x-group-id": "group-a" },
           }),
+    ...(body === undefined ? { headers: { "x-group-id": "group-a" } } : {}),
     },
   );
   request.cookies.set("hermes_session", "valid-session");
@@ -36,6 +41,7 @@ describe("POST /api/recurring-expenses/executions/[id]", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockMembership.mockResolvedValue({ group_id: "group-a", user_id: "user-a" });
   });
 
   it("does not dispatch an execution without an authenticated actor", async () => {
@@ -57,7 +63,7 @@ describe("POST /api/recurring-expenses/executions/[id]", () => {
 
     const response = await POST(makeRequest("confirm", { amount: 12500 }), params);
 
-    expect(mockConfirmExecution).toHaveBeenCalledWith("exec-b", "user-a", 12500);
+    expect(mockConfirmExecution).toHaveBeenCalledWith("exec-b", "user-a", 12500, undefined, { requiredGroupId: "group-a" });
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "Ejecución no encontrada" });
   });
@@ -68,7 +74,7 @@ describe("POST /api/recurring-expenses/executions/[id]", () => {
 
     const response = await POST(makeRequest("skip"), params);
 
-    expect(mockSkipExecution).toHaveBeenCalledWith("exec-b", "user-b");
+    expect(mockSkipExecution).toHaveBeenCalledWith("exec-b", "user-b", "group-a");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true });
   });
@@ -79,7 +85,7 @@ describe("POST /api/recurring-expenses/executions/[id]", () => {
 
     const response = await POST(makeRequest("confirm"), params);
 
-    expect(mockConfirmExecution).toHaveBeenCalledWith("exec-b", "user-a", undefined);
+    expect(mockConfirmExecution).toHaveBeenCalledWith("exec-b", "user-a", undefined, undefined, { requiredGroupId: "group-a" });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true, transactionId: "tx-1" });
   });

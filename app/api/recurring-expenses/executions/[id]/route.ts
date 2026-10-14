@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifySession } from "@/lib/auth/session";
-import { getSessionCookieName } from "@/lib/auth/session-cookie";
+import { getRecurringWebContext } from "@/lib/recurring/web-group-context";
 import { confirmExecution, skipExecution } from "@/lib/db/recurring-queries";
 import { z } from "zod";
 
@@ -18,12 +17,9 @@ interface RouteParams {
  */
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
-    const cookie = req.cookies.get(getSessionCookieName())?.value;
-    const userId = cookie ? await verifySession(cookie) : null;
-    
-    if (!userId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+    const context = await getRecurringWebContext(req);
+    if (context.error) return context.error;
+    const { userId, groupId } = context;
 
     const { id } = await params;
     const { searchParams } = new URL(req.url);
@@ -34,7 +30,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       const parsed = ConfirmSchema.safeParse(body);
       const amount = parsed.success ? parsed.data.amount : undefined;
 
-      const result = await confirmExecution(id, userId, amount);
+      const result = await confirmExecution(id, userId, amount, undefined, { requiredGroupId: groupId });
 
       if (!result.success) {
         return NextResponse.json({ error: result.error }, { status: 400 });
@@ -47,7 +43,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     if (action === "skip") {
-      const result = await skipExecution(id, userId);
+      const result = await skipExecution(id, userId, groupId);
 
       if (!result.success) {
         return NextResponse.json({ error: result.error }, { status: 400 });

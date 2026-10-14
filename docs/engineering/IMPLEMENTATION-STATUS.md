@@ -3226,3 +3226,30 @@ importe y fecha de vencimiento apropiados, o autorizar un fixture QA concreto.
 **Owner Codex:** con esa validación, comprobar la ejecución en beta-hermes,
 actualizar H04d, activar solo el canary exacto y observar el cron automático
 sin ampliar destinatarios.
+
+### ACT-17 — Netflix QA y límite web de recurrentes (14/10)
+
+Esteban creó Netflix por ARS 3.000, vencimiento día 18, desde la web beta
+con `Mi espacio` seleccionado. La pantalla mostró un activo y cero ejecuciones
+pendientes. La prueba de cambio a `test` reveló que Netflix seguía visible:
+la API creaba con el grupo activo de Telegram y listaba/contaba ejecuciones
+de varios grupos, sin respetar el selector web. No hay evidencia suficiente
+para afirmar todavía en qué `groupId` se almacenó esa fila ni para activar
+un recordatorio.
+
+El contrato de estabilización está en
+`docs/engineering/ACT-17-RECURRING-WEB-GROUP-BOUNDARY.md`. Las rutas web de
+recurrentes ahora toman el grupo validado por middleware, filtran lista,
+estadísticas y ejecuciones, y exigen ese grupo para CRUD y confirmación/omisión
+por ID. El selector de mes pasa su mes a las consultas. La regresión de grupo
+falló antes de la corrección y pasó después; 124 suites / 1.076 tests
+unitarios, TypeScript, lint sin errores y build local pasaron en Node 22.
+
+**Owner Codex:** publicar el corte solo en beta y comprobar con la sesión QA
+si Netflix aparece únicamente en `Mi espacio`; conciliar el `groupId` real
+antes de mover o materializar nada. Una definición recurrente no crea por sí
+sola una ejecución mensual; el cron de generación no está programado. El
+canary de recordatorios, `NOTIFICATIONS_ENABLED` y envíos siguen apagados;
+no se generaron cargos ni se modificó legacy. La activación se retoma en un
+subcorte separado tras verificar consentimiento, ejecución pendiente elegible
+y aislamiento del destinatario.
