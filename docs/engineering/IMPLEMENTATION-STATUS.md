@@ -2820,3 +2820,49 @@ a probar solo con grupo/usuario autorizado y contenido elegible. Mantener
 `NOTIFICATIONS_ENABLED=false`, conservar QA, no tocar legacy ni afirmar entrega.
 Se pausó el seguimiento automático de este horario: repetir la lectura de
 logs sin corregir el destino no cerraría el corte.
+
+### ACT-17 — registro del cron reparado en beta (14/10/2026)
+
+La consulta autenticada `GET /v9/projects/prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`
+confirmó la causa operativa: `crons.deploymentId` aún era
+`dpl_7wQhEjfYbqKWC8BnTqrFT3s8Td13` y las tres definiciones apuntaban al
+host generado de ese deployment. Aunque el alias visible y el estado
+`Current` resolvían al build nuevo `dpl_4BDbtrarrNHpRVz39U8TzXZqBEks`,
+`vercel promote` devolvió 409 («already the current production deployment»).
+Por tanto, la explicación anterior de que faltaba promoverlo era incompleta:
+el **registro del scheduler** seguía obsoleto; la evidencia no demuestra por
+qué Vercel lo conservó tras `--skip-domain` y `alias set`.
+
+Se publicó el mismo código (HEAD `0a9040ec7dd371f38530c79f8bf61f51bb2d3d2f`,
+solo documentación adicional desde el build anterior) mediante
+`vercel deploy --prod` **sin** `--skip-domain`, exclusivamente en el proyecto
+beta. El deployment `dpl_CuKg4ct2wGWXX2soiesvi18Pj6nh` quedó `READY`; su
+build pasó los once checks de aislamiento, incluida la huella de secretos,
+`beta_notifications_disabled` y `daily_summary_canary_scope`. La lectura
+posterior del proyecto mostró `crons.deploymentId` igual a ese nuevo ID y
+las tres definiciones con su host generado. Ambos dominios beta resuelven
+al nuevo deployment; el alias legacy siguió en
+`dpl_Ga5jL5Vh7tP2NoaVRw6cobcTDUVx` `READY`.
+
+Se renovó el paquete H04d privado `/private/tmp/hermes-h04d-daily.eUVL42/`
+para el nuevo ID y SHA. El validador pasó con
+`postActivationRuntimeConsistent:true`, `isolationVerified:false` y la
+excepción diaria limitada a un usuario/grupo QA; este resultado no equivale
+a una certificación independiente de secretos en runtime.
+
+Una sola ejecución manual con `vercel crons run /api/cron/daily-alerts` a
+01:34:17 UTC entró al **nuevo** deployment y registró el evento redaccionado
+`beta_daily_summary_canary_cron` para 2026-10-13 con
+`outcome:nothing_relevant`. La comprobación previa de la fila
+`active_telegram_group_id` mostró en ese instante el grupo personal
+`b5b15f53-f964-4c12-99ca-88fbbee23c55`; una lectura anterior lo había
+mostrado como `test`, sin timestamp de cambio disponible. No se creó ninguna
+operación diaria nueva: sigue un único outbox técnico `sent` del 13/10 y
+cero operaciones diarias de otros usuarios. `nothing_relevant` prueba que el
+handler actual respondió, **no** una entrega de resumen real. No se crearon
+movimientos financieros ni se modificó legacy.
+
+**Owner Codex, abierto:** observar el siguiente disparo *programado* y
+confirmar que usa este deployment; la prueba integral de entrega requiere
+contenido elegible en el grupo canary o una decisión explícita para mover el
+alcance QA. El switch `NOTIFICATIONS_ENABLED` permanece `false`.
