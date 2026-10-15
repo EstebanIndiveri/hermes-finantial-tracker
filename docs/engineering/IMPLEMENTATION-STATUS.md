@@ -3686,3 +3686,23 @@ operación/outbox, un solo chat QA y cero destinatarios ajenos. Sin cron
 manual, reenvío incierto, cambio de `created_at` ni más movimientos. Un
 `nothing_relevant` antes de la elegibilidad es correcto. **Owner Esteban:**
 ninguna acción para esta prueba; los datos QA se conservan hasta el cierre.
+
+### ACT-17 — snapshot read-only para cierre de reintegro (15/10)
+
+Se agregó `scripts/beta-reimbursement-reminder-snapshot.mjs` como control
+reproducible de la base `beta-hermes`. Primero valida la cuenta y el ID/host
+Turso beta; ejecuta SQL fijo `SELECT` y devuelve solo agregados, sin IDs de
+chats, solicitudes, importes ni mensajes. Compara el fixture QA con
+consentimiento, membresías y antigüedad estricta; cuenta todas las
+operaciones/outbox de recordatorios, detecta alcance ajeno, chat incorrecto
+y duplicado **por día argentino** sin confundir entregas de días distintos.
+Seis pruebas locales cubren identidad, CLI de solo lectura, elegibilidad,
+ausencia de fixture, destinatario ajeno y duplicación. El snapshot real beta
+antes de tres días mostró `awaiting_eligibility`, solicitud pending activa,
+dos miembros, consentimiento y chat vigentes, cero operaciones/outbox.
+
+**Owner Codex:** usar este control junto al historial Vercel `requests` y
+runtime al revisar la ventana del 18/10; un `sent` aislado no reemplaza la
+prueba de invocación automática ni el recibo de Telegram. **Owner Esteban:**
+ninguna acción. La activación y el seguimiento temporal siguen separados de
+este corte de observabilidad; legacy no se consultó ni modificó.

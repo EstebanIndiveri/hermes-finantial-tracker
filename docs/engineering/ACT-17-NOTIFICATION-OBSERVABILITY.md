@@ -1,11 +1,13 @@
-# ACT-17 — observabilidad del piloto beta sin envíos proactivos
+# ACT-17 — observabilidad del piloto beta con canaries cercados
 
 ## Alcance y estado
 
-El outbox Telegram conserva respuestas a acciones iniciadas por usuarios;
-`NOTIFICATIONS_ENABLED=false` mantiene apagados resumen diario, recurrentes
-y recordatorios proactivos. El outbox Web Push transaccional del canary es
-independiente. Leer las colas no equivale a activar ninguno de esos envíos.
+El outbox Telegram conserva respuestas a acciones iniciadas por usuarios.
+`NOTIFICATIONS_ENABLED=false` mantiene apagado el envío proactivo general;
+hay canaries beta separados para resumen diario, recurrentes y recordatorio
+de reintegro, cada uno acotado a usuario/grupo QA. El outbox Web Push
+transaccional del canary es independiente. Leer las colas no equivale a
+ampliar ninguno de esos envíos.
 
 ## Control read-only por corte
 
@@ -24,6 +26,29 @@ y no muestra texto, IDs de filas, chats, endpoints ni payloads. No prueba
 que las credenciales Turso sean de solo lectura: la seguridad del control
 depende además de que el código solo ejecuta `SELECT` y de usar el perfil
 beta aislado. Si falla, no interpretar una salida parcial como evidencia.
+
+### Conciliación acotada del recordatorio de reintegro QA
+
+El control específico de ACT-17 está en
+`scripts/beta-reimbursement-reminder-snapshot.mjs`:
+
+```bash
+node scripts/beta-reimbursement-reminder-snapshot.mjs --config-path /private/tmp/hermes-beta-turso.2flp53
+```
+
+Verifica primero la identidad Turso beta y después ejecuta una única consulta
+`SELECT` fija, limitada a la solicitud QA aprobada. Emite solo elegibilidad,
+conteos de operación/outbox, destinatarios fuera de alcance y un veredicto;
+no emite ID, chat, importe ni texto. `awaiting_eligibility` antes de superar
+estrictamente tres días es correcto. `eligible_unqueued` después de la
+ventana automática requiere investigar el request de Vercel; `queued` exige
+observar el worker; `sent` significa una entrega **de ese día argentino**.
+`duplicate_today`, `scope_violation`, `dead`, `fixture_missing` u
+`operation_without_delivery` son anomalías que detienen el cierre. Las
+entregas de días anteriores se cuentan, pero no se confunden con duplicados
+del día actual. Este snapshot no prueba por sí solo que Vercel invocó el
+cron ni que Telegram mostró el mensaje: contrastar el historial `requests`,
+el evento de runtime si aún existe y el recibo del proveedor. Owner Codex.
 
 La lectura manual siguiente sigue siendo una referencia para diagnosticar
 un fallo del comando, nunca una autorización para usar el perfil legacy.
@@ -70,10 +95,10 @@ un fallo del comando, nunca una autorización para usar el perfil legacy.
 ## Puerta de activación
 
 Este control es una fotografía, no un monitor permanente ni un SLA.
-Mantener el kill switch proactivo apagado hasta cerrar la revisión del
-worker/outbox en una ventana suficiente, conservar opt-in individual y
-acordar con Esteban el alcance de activación en beta. Chats de sesiones
-siguen excluidos hasta tener vínculo chat-grupo comprobable.
+Mantener el switch proactivo **general** apagado; los tres canaries QA ya
+activados requieren sus propios scopes, opt-in individual y conciliación
+de cada entrega. Ampliar destinatarios exige otro corte y autorización.
+Chats de sesiones siguen excluidos hasta tener vínculo chat-grupo comprobable.
 
 ## Estado de ejecución del scheduler Push
 
