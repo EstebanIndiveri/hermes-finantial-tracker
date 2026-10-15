@@ -3627,3 +3627,26 @@ membresía y regresiones, si Esteban quiere ese flujo. **Owner Esteban:**
 decidir si desea esa mejora de producto; la creación y el pago del reintegro
 existente ya se validaron y no deben repetirse por confusión con el
 recordatorio.
+
+### ACT-17 — fixture de recordatorio de reintegro en `test` (15/10)
+
+Esteban autorizó que Codex complete el ensayo sin intervención suya. Contrato:
+un gasto sintético de ARS 1 desde QA2 en `test`, solicitud pendiente a QA1,
+sin alterar `Mi espacio`, solicitudes previas, legacy ni la fecha de creación.
+Se verificó antes que QA1 pertenece a `test`, tiene Telegram vinculado y
+consentimiento `reimbursements=1`. Por la UI beta, el partner de `test` pasó
+temporalmente de QA2 a QA1; QA2 guardó el gasto con «Requiere reintegro»;
+después se restauró el partner a QA2. La consulta a `beta-hermes` confirmó
+solicitud `_UbIZ-RWblrBnknp6G3T5`, `pending`, ARS 1, solicitante QA2,
+pagador QA1 y grupo `test`; el partner original quedó restaurado y la
+solicitud previa QA1→QA2 no cambió. Se conservan los datos QA del piloto.
+
+Las regresiones del gate de build y de H04d primero fallaron al reemplazar
+el grupo autorizado de reintegros por `test` y pasaron tras cambiar solo ese
+allowlist. Resumen diario y recurrentes siguen autorizados únicamente en
+`Mi espacio` propio. **Owner Codex:** completar gates, publicación y
+atestación solo beta, activar exclusivamente los tres bindings de canary de
+reintegros con `NOTIFICATIONS_ENABLED=false`, y observar el primer cron
+automático posterior a tres días estrictos de antigüedad. Conciliar request,
+operación/outbox, entrega a QA1 y ausencia de otros destinatarios. No forzar
+el cron ni modificar `created_at` para adelantar esta prueba.

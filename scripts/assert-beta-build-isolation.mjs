@@ -42,7 +42,10 @@ const APPROVED_DAILY_CANARY = Object.freeze({
   groupId: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
 });
 const APPROVED_RECURRING_CANARY = APPROVED_DAILY_CANARY;
-const APPROVED_REIMBURSEMENT_CANARY = APPROVED_DAILY_CANARY;
+const APPROVED_REIMBURSEMENT_CANARY = Object.freeze({
+  userId: "504b3827-a03e-49a6-acc6-c200f225ca80",
+  groupId: "6a7c238e-8467-4333-8e7e-7db2c626aa07",
+});
 
 const CHECK_NAMES = Object.freeze([
   "beta_app_origin",

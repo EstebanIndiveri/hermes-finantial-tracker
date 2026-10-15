@@ -101,3 +101,24 @@ ajenos. Ambos fallan cerrado; ni las pruebas locales ni el manifiesto
 constituyen un recibo de activación. Owner Codex: verificar estos gates,
 publicarlos en un pase beta posterior y preparar la prueba con un reintegro
 QA inequívoco antes de habilitar los bindings.
+
+## Cuarto subcorte: fixture QA en `test` (15/10)
+
+Contrato: probar exclusivamente el recordatorio proactivo que falta, no
+repetir la creación/pago de ACT-06. El grupo `test`
+(`6a7c238e-8467-4333-8e7e-7db2c626aa07`) tiene a QA1 como owner y QA2
+como member. QA1 está vinculado a Telegram y aceptó recordatorios de
+reintegros. Se cambió temporalmente el partner de QA2 a QA1, QA2 creó por la
+web un gasto QA de ARS 1 con reintegro, y se restauró el partner original QA2.
+La solicitud `_UbIZ-RWblrBnknp6G3T5` quedó `pending`, con QA2 solicitante y
+QA1 pagador; el pagador persistido no cambió al restaurar el grupo. No se
+modificó `Mi espacio` ni ninguna solicitud previa.
+
+El gate de build y H04d ahora deben aceptar **solo** QA1 + `test` para el
+canary de reintegros, mientras resumen diario y recurrentes siguen limitados
+a QA1 + `Mi espacio`. `NOTIFICATIONS_ENABLED` permanece `false`. La solicitud
+recién creada no es elegible hasta superar estrictamente tres días de edad;
+no anticipar `created_at` ni invocar el cron para simular el tiempo. Owner
+Codex: desplegar el gate beta atestado, activar los tres bindings exactos y
+conciliar la primera ventana automática elegible con request de Vercel,
+operación/outbox, entrega solo a QA1 y cero destinatarios ajenos.
