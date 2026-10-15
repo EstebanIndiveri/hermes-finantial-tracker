@@ -3492,19 +3492,18 @@ recurrentes del día para otros usuarios o grupos. No se invocó el endpoint ni
 se reenvió nada durante esta observación; `NOTIFICATIONS_ENABLED=false`, los
 datos QA y legacy permanecieron intactos.
 
-**Límite de atestación:** la coincidencia de horario, schedule y operación es
-consistente con el disparo automático, pero la consulta histórica de logs de
-Vercel no devolvió el request de las 11:45 UTC (la consulta con ventana pasada
-respondió 400 y la consulta relativa solo mostró logs recientes). Por ello,
-la entrega y el aislamiento están comprobados; el origen automático **aún no
-tiene un recibo directo** de request o historial de ejecución. El evento
-`beta_recurring_reminder_canary_cron` tampoco se esperaba en este deployment:
-su instrumentación sigue solo local. **Owner Codex, abierto:** obtener el
-recibo del historial de Cron Jobs del deployment beta, o capturar en una
-ventana posterior un request antes de que expire la retención; después cerrar
-este corte y considerar por separado el pase beta instrumentado y el canary
-de reintegros. **Owner Esteban:** ninguna acción requerida para la entrega;
-solo desbloquear el Mac si se necesita revisar el dashboard Vercel desde UI.
+**Corrección de procedencia:** la consulta inicial a `runtime` respondió 400
+por retención, pero la fuente separada `requests` sí devolvió un único `GET
+/api/cron/recurring-reminders` a las 11:45:24.087 UTC: HTTP 200,
+`clientUserAgent=vercel-cron/1.0`, deployment
+`dpl_7MzoPtaMgYuS9tKxa5YC3uWNQ5Da`, request ID
+`wmp8n-1792064724087-943e230da842`. La operación se creó dos segundos
+después y el único outbox QA quedó `sent` a las 11:46. Esto acredita el
+origen automático sin inferirlo solo por horario. El evento redactado
+`beta_recurring_reminder_canary_cron` no existía aún en ese deployment, pero
+no es condición para cerrar esta entrega. **Owner Codex:** conservar la
+observación del siguiente ciclo solicitada por Esteban. **Owner Esteban:**
+ninguna acción requerida.
 
 ### ACT-17 — aceptación de la entrega recurrente y límite del historial (15/10)
 
@@ -3513,20 +3512,16 @@ Netflix ARS 3.000, vencimiento 18/10, recibido a las 08:46 ART. Coincide con
 la operación y el acuse durable ya conciliados. Se reconsultó solo el proyecto
 Vercel beta: `crons.deploymentId=dpl_7MzoPtaMgYuS9tKxa5YC3uWNQ5Da`,
 recurrentes `0 11 * * *`, scheduler habilitado y host del mismo deployment.
-El historial de runtime de las 08:46 ya no está disponible: Vercel Hobby
-retiene una hora de logs; la vista «View Logs» de Cron Jobs usa esos mismos
-runtime logs, no un historial independiente. La operación en beta, el horario
-programado, la ausencia de invocación manual el 15/10 por Codex y el recibo
-visual son evidencia suficiente para **aceptar el comportamiento funcional**
-del cron → outbox → Telegram en el único usuario QA, sin duplicados ni cargos.
-No constituyen un recibo directo del user-agent/request de Vercel, que queda
-como límite explícito de procedencia y se cubrirá con instrumentación
-redactada en la siguiente release beta.
+El historial `runtime` de las 08:46 ya no estaba disponible: Vercel Hobby
+retiene una hora de esa fuente. **Eso no implica que el request fuera
+ilegible**: `requests` sí devolvió el disparo del scheduler de las 08:45:24
+ART, HTTP 200 y `vercel-cron/1.0` (detalle arriba). Request, operación beta,
+único outbox QA y recibo visual cierran tanto procedencia como entrega del
+cron → outbox → Telegram, sin duplicados ni cargos.
 
-**Owner Codex, corte funcional cerrado:** promover por separado la
-instrumentación `beta_recurring_reminder_canary_cron` y el nuevo flujo durable
-de recordatorios de reintegro, sin habilitar aún su canary ni el switch global;
-atestación H04d y nueva ventana automática para el recibo de origen. **Owner
+**Owner Codex, corte recurrente cerrado:** mantener la observación solicitada
+para el siguiente ciclo automático y continuar por separado el canary de
+reintegros, sin habilitar aún sus bindings ni el switch global. **Owner
 Esteban:** ninguna acción adicional para Netflix. Legacy y datos QA siguen
 intactos.
 
@@ -3541,9 +3536,9 @@ resumen diario `0 0 * * *`, recurrentes `0 11 * * *` y tipo de cambio
 `0 3 1 * *`. El build emitió `beta_build_isolation_attested` con `passed:true`
 y sin checks fallidos. Previo al pase pasaron 117/117 del arnés, 128 suites /
 1.112 tests, TypeScript, lint dirigido y build. El nuevo evento redactado
-`beta_recurring_reminder_canary_cron` deberá observarse en una ventana
-automática posterior: este pase no crea retroactivamente el recibo histórico
-del 15/10. No se invocó ningún cron manualmente.
+`beta_recurring_reminder_canary_cron` podrá observarse en una ventana
+automática posterior, pero no se necesita para acreditar el request histórico
+del 15/10, recuperado de `requests`. No se invocó ningún cron manualmente.
 
 El inventario de bindings beta previo al despliegue no contenía ninguna
 `REIMBURSEMENT_REMINDER_CANARY_*`; la consulta beta tampoco halló reintegros
@@ -3564,3 +3559,44 @@ bindings ausentes, y solo después preparar un fixture QA y activar el canal
 acotado con nueva atestación. **Owner Esteban:** ninguna acción ahora; se
 pedirá validación solo si el fixture o la recepción final requieren su
 intervención.
+
+### ACT-17 — corrección del recibo y gate de reintegros publicado (15/10)
+
+El request automático del recordatorio Netflix **sí existe** en el historial
+Vercel `requests`: 15/10 11:45:24.087 UTC, GET a
+`/api/cron/recurring-reminders`, HTTP 200, `vercel-cron/1.0`, ID
+`wmp8n-1792064724087-943e230da842`, deployment anterior
+`dpl_7MzoPtaMgYuS9tKxa5YC3uWNQ5Da`. La búsqueda en `runtime` de esa
+misma ventana devuelve 400 por retención Hobby; la primera conclusión de
+«sin recibo directo» confundió esas dos fuentes. Queda corregida arriba.
+El corte Netflix queda cerrado también en procedencia; no se forzó un envío.
+
+El gate de activación de reintegros (`66e76011d3a7d9a0e7ef8887f0a58f8f00c252c3`)
+se promovió **solo en beta** a `dpl_DbkoF9Ep4gm5JLmjBw3nN2XiTLnU`, READY;
+alias canónico y `crons.deploymentId` coinciden. Siguen `0 0 * * *` para
+resumen, `0 11 * * *` para recurrentes y `0 3 1 * *` para cotización. El
+build emitió `beta_build_isolation_attested` con `passed:true`, incluido
+`reimbursement_reminder_canary_scope` y `failedChecks:[]`. La verificación
+local previa pasó 128 suites / 1.112 tests, arnés, TypeScript, lint dirigido,
+build y `git diff --check`. H04d revalidado con recibos redaccionados del
+nuevo deployment: `ok:true`, `postActivationRuntimeConsistent:true`,
+`isolationVerified:false`, `certificationState:not-certified`. No se añadieron
+bindings `REIMBURSEMENT_REMINDER_CANARY_*`; no hubo envío de reintegros,
+movimiento ni cambio en legacy.
+
+**Preflight de siguiente corte, solo lectura en `beta-hermes`:** el grupo QA
+`Mi espacio` propio del pagador aprobado contiene a `esteban_beta_qa` como
+owner y `esteban_beta_qa2` como member. El pagador QA tiene consentimiento de
+reintegros activo. Hay cinco solicitudes pending sin pagador y tres pagadas
+a Sabri, pero **cero pending asignadas al pagador QA**; ninguna debe usarse
+por reinterpretación. Un fixture nuevo por el flujo normal necesitaría
+solicitante QA2, pagador QA1, grupo exacto, consentimiento y más de tres días
+de antigüedad antes de un recordatorio. No se creó ni alteró un reintegro.
+
+**Owner Codex:** seguimiento automático del 16/10 a las 09:20 ART, leyendo
+`requests` y `runtime` para el deployment vigente y conciliando outbox;
+`nothing_relevant` y ningún Telegram nuevo pueden ser correctos. Después,
+preparar el fixture QA por el flujo normal y activar el canary acotado en un
+corte separado con nueva atestación; no tocar las solicitudes existentes.
+**Owner Esteban:** ninguna acción ahora; se le pedirá validación antes de una
+entrega QA que requiera su cuenta o dispositivo.
