@@ -3600,3 +3600,30 @@ preparar el fixture QA por el flujo normal y activar el canary acotado en un
 corte separado con nueva atestación; no tocar las solicitudes existentes.
 **Owner Esteban:** ninguna acción ahora; se le pedirá validación antes de una
 entrega QA que requiera su cuenta o dispositivo.
+
+### ACT-17 — reutilización de pruebas de reintegro (15/10)
+
+Se revisaron los cortes ya realizados antes de proponer otro fixture:
+ACT-06/R-DELIVERY quedó cerrado para gasto con reintegro originado por
+Telegram y por web, entrega a Sabri, pago/callback y aviso al solicitante.
+Además, el canary Web Push de ARS 1 en `test` probó una notificación durable
+a QA2. Esas pruebas **no equivalen** a un recordatorio proactivo para una
+solicitud aún `pending` con pagador QA1: los casos con Sabri están `paid` o
+siguen dirigidos a Sabri; el caso `test` tiene pagador QA2 sin Telegram.
+
+La conciliación actual de `beta-hermes` halló en `Mi espacio` de QA1 cinco
+pendientes sin pagador y tres pagadas a Sabri; en `test`, una pendiente de
+QA1 a QA2. Cero solicitudes pending dirigidas a QA1 en el grupo canary.
+No se reasignó ni modificó ninguna solicitud previa. La revisión de la UI
+detectó una restricción adicional: `HermesExpenseForm` ofrece «Requiere
+reintegro» pero no envía `payerId`; el grupo QA `Mi espacio` no tiene
+`partner_id`. Por ello, incluso desde la sesión Safari de QA2, un gasto nuevo
+quedaría **sin pagador** y no sería elegible para este canary. Se retiró la
+propuesta de crearlo así, antes de enviar el formulario; tampoco se cambió
+el partner del grupo como atajo. **Owner Codex:** mantener el canary apagado,
+conservar la observación del cron recurrente del 16/10 y proponer un corte
+separado de selección explícita de pagador en la web beta, con validación de
+membresía y regresiones, si Esteban quiere ese flujo. **Owner Esteban:**
+decidir si desea esa mejora de producto; la creación y el pago del reintegro
+existente ya se validaron y no deben repetirse por confusión con el
+recordatorio.
