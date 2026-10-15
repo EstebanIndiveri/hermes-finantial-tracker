@@ -195,10 +195,13 @@ export default async function DashboardPage({
           </div>
         </div>
         </> : <div className="h-status-info" role="status">
-          <div className="h-status-main">Datos contables no disponibles</div>
+          <div className="h-status-main">{settings ? "Datos contables no disponibles" : `Falta configurar ${monthLabel}`}</div>
           <div className="h-status-sub">
-            {settings ? "Revisá la configuración y los movimientos de este mes." : "Configurá este mes desde Ajustes para ver tu balance."}
+            {settings ? "Revisá la configuración y los movimientos de este mes." : `El mes de ${monthLabel} todavía no está configurado para este grupo. Hermes no copia automáticamente presupuestos ni metas del mes anterior.`}
           </div>
+          {!settings && <a href={`/dashboard/settings?month=${month}`}>
+            Configurar {monthLabel}
+          </a>}
         </div>}
       </div>
 
@@ -284,7 +287,8 @@ export default async function DashboardPage({
               exchangeRate={mode === "USD_ARS" ? summary?.exchange_rate ?? null : null}
               month={month}
             /> : <p className="h-form-hint">
-              El registro está pausado hasta corregir los datos del mes. <a href={`/dashboard/settings?month=${month}`}>Revisar ajustes</a>.
+              {settings ? "El registro está pausado hasta corregir los datos del mes." : "El registro está pausado hasta configurar este mes."}{" "}
+              <a href={`/dashboard/settings?month=${month}`}>{settings ? "Revisar ajustes" : `Configurar ${monthLabel}`}</a>.
             </p>}
           </div>
         </div>

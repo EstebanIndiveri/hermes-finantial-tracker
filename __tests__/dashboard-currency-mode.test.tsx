@@ -105,4 +105,16 @@ describe("dashboard accounting currency", () => {
     expect(markup).toContain("Tipo de cambio ingresado manualmente");
     expect(projectionLookup).not.toHaveBeenCalled();
   });
+
+  it("guides a new month to its own settings without showing prior-month values", async () => {
+    settingsLookup.mockResolvedValue(null);
+    legacySummaryLookup.mockResolvedValue(null);
+
+    const markup = await renderDashboard();
+
+    expect(markup).toContain("octubre de 2026 todavía no está configurado");
+    expect(markup).toContain('href="/dashboard/settings?month=2026-10"');
+    expect(markup).toContain("Configurar octubre de 2026");
+    expect(markup).not.toContain("Copiar automáticamente");
+  });
 });

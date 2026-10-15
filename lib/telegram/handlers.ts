@@ -5,6 +5,7 @@ import { getActiveMonthArgentina, getArgentinaDate } from "@/lib/utils/dates";
 import { getAccountingMonthProjection, getMonthSummary, getCategoryBreakdown } from "@/lib/finance/summaries";
 import type { MonthProjection } from "@/lib/finance/month-projection";
 import { formatARS } from "@/lib/finance/formatters";
+import { missingMonthSettingsMessage } from "@/lib/finance/month-setup-message";
 import { calculateCategoryStatus, calculateMonthStatus } from "@/lib/finance/rules";
 import { formatResumen, formatDisponible, formatPuedo } from "./formatters";
 import { ocrTelegramPhoto, ocrTelegramDocument } from "./ocr";
@@ -832,6 +833,7 @@ export async function handleTelegramMessage(
 
   if (text === "/resumen") {
     const accounting = await getTelegramMonthCurrency(groupId, month);
+    if (accounting.mode === "UNCONFIGURED") return { text: missingMonthSettingsMessage(month) };
     if (accounting.mode === "ARS_ARS") {
       if (!accounting.projection || accounting.savingGoalYellow == null) return { text: ARS_QUERY_UNAVAILABLE_MESSAGE };
       return {
@@ -851,7 +853,7 @@ export async function handleTelegramMessage(
       };
     }
     const summary = await getMonthSummary(groupId, month);
-    if (!summary) return { text: "No hay configuración para este mes. Configurá desde la web." };
+    if (!summary) return { text: USD_MONTH_UNAVAILABLE_MESSAGE };
     if (!hasUsableUsdMonthSummary(summary)) return { text: USD_MONTH_UNAVAILABLE_MESSAGE };
     return { text: formatResumen({ month, ...summary }) };
   }
@@ -2138,6 +2140,7 @@ export async function handleTelegramMessage(
   // ── query_summary → /resumen ──
   if (parsed.intent === "query_summary") {
     const accounting = await getTelegramMonthCurrency(groupId, month);
+    if (accounting.mode === "UNCONFIGURED") return { text: missingMonthSettingsMessage(month) };
     if (accounting.mode === "ARS_ARS") {
       if (!accounting.projection || accounting.savingGoalYellow == null) return { text: ARS_QUERY_UNAVAILABLE_MESSAGE };
       return {
@@ -2157,7 +2160,7 @@ export async function handleTelegramMessage(
       };
     }
     const summary = await getMonthSummary(groupId, month);
-    if (!summary) return { text: "No hay configuración para este mes. Configurá desde la web." };
+    if (!summary) return { text: USD_MONTH_UNAVAILABLE_MESSAGE };
     if (!hasUsableUsdMonthSummary(summary)) return { text: USD_MONTH_UNAVAILABLE_MESSAGE };
     return { text: formatResumen({ month, ...summary }) };
   }

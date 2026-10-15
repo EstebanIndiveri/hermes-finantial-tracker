@@ -158,4 +158,29 @@ describe("Telegram queries in ARS_ARS mode", () => {
     expect(natural.text).toContain("modo ARS está desactivado");
     expect(mockUsdSummary).not.toHaveBeenCalled();
   });
+
+  it("guides both summary paths to configure the current group and month", async () => {
+    mockDb.query.monthly_settings.findFirst.mockResolvedValue(null);
+    mockParser.mockResolvedValue(queryResult("query_summary"));
+
+    const command = await message("/resumen");
+    const natural = await message("dame el resumen del mes");
+
+    for (const response of [command, natural]) {
+      expect(response.text).toContain("Octubre de 2026 todavía no está configurado en este grupo");
+      expect(response.text).toContain("Dashboard → Ajustes del mes");
+      expect(response.text).toContain("no copia automáticamente presupuestos ni metas");
+    }
+    expect(mockUsdSummary).not.toHaveBeenCalled();
+  });
+
+  it("does not call an incomplete configured month an unconfigured month", async () => {
+    mockDb.query.monthly_settings.findFirst.mockResolvedValue({ currency_mode: "USD_ARS" });
+    mockUsdSummary.mockResolvedValue(null);
+
+    const response = await message("/resumen");
+
+    expect(response.text).toContain("configuración USD/ARS válida");
+    expect(response.text).not.toContain("no copia automáticamente presupuestos");
+  });
 });

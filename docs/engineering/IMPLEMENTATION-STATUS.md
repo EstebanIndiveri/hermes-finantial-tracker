@@ -3724,3 +3724,24 @@ con `vercel-cron/1.0` y se concilia con runtime y Turso.
 no confundir ausencia de runtime por retención con ausencia de request.
 **Owner Esteban:** ninguna acción. Este corte no cambia deployment, cron,
 datos financieros ni legacy.
+
+### ACT-16 — orientación para mes sin configuración (15/10)
+
+El corte local [ACT-16-MONTH-SETUP-GUIDANCE.md](ACT-16-MONTH-SETUP-GUIDANCE.md)
+distingue mes ausente de configuración incompleta. El dashboard nombra el
+período y ofrece un enlace a Ajustes preservando `month`; `/resumen` y la
+consulta natural de Telegram indican mes y grupo sin prometer valores
+copiados. El registro web permanece pausado. Las pruebas dirigidas cubren
+ambos canales y el cambio de año; no hubo escrituras financieras ni cambio
+de schema, cron o flag.
+
+Verificación local: harness 130/130, Jest 129 suites y 1117 pruebas,
+typecheck y build aprobados; lint 0 errores/61 advertencias preexistentes.
+El detector de interfaz no reportó hallazgos en la página cambiada. No se
+realizó inspección visual de un mes faltante en beta ni se desplegó aún.
+
+**Owner Codex:** completar gates, publicar solo en beta con H04d y observar
+el próximo estado vacío QA sin borrar configuración existente. **Owner
+Esteban:** decidir en un corte de producto separado si se ofrecen valores
+del mes anterior para copiar; mientras tanto no hay rollover automático.
+El seguimiento ACT-17 del 16/10 y 18/10 continúa bajo Codex sin cambios.
