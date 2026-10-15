@@ -3745,3 +3745,27 @@ el próximo estado vacío QA sin borrar configuración existente. **Owner
 Esteban:** decidir en un corte de producto separado si se ofrecen valores
 del mes anterior para copiar; mientras tanto no hay rollover automático.
 El seguimiento ACT-17 del 16/10 y 18/10 continúa bajo Codex sin cambios.
+
+### ACT-16 — estado inicial de Ajustes sin rollover implícito (15/10)
+
+El siguiente subcorte local mantiene el contrato anterior y mejora Ajustes:
+la respuesta mensual `null` ya no se confunde visualmente con una
+configuración guardada de ceros. El owner ve el orden de carga; Member ve
+una indicación de pedir ayuda al owner. Al cambiar de mes, los datos de la
+respuesta anterior quedan ocultos hasta cargar la nueva, evitando
+mostrar o editar importes bajo el período equivocado. La prueba dirigida
+reproduce el estado ausente y esa transición. No cambia API, persistencia,
+cron, flags ni datos QA.
+
+Verificación local: harness 130/130, Jest 129 suites y 1120 pruebas,
+typecheck y build aprobados; lint 0 errores/61 advertencias preexistentes.
+El detector de interfaz no reportó hallazgos. El primer typecheck coincidió
+con la regeneración de `.next/types` durante el build; repetido en secuencia
+con Node 22, aprobó. No hubo despliegue ni cambios de datos.
+
+**Owner Codex:** integrar en la misma publicación
+beta diferida de ACT-16 y comprobar el estado cuando surja un mes/grupo QA
+sin ajustes, sin borrar datos para fabricarlo. **Owner Esteban:** se mantiene
+solo la decisión de producto sobre proponer/copiar valores previos; no es
+requisito para este aviso seguro. El deployment ACT-17 vigente se conserva
+hasta sus ventanas de observación.

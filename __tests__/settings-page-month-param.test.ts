@@ -69,6 +69,7 @@ describe("settings month param wiring", () => {
       1000,
       null,
       null,
+      { query: "?month=2026-08", exists: true },
     );
 
     const markup = renderToStaticMarkup(createElement(SettingsPageClient));
@@ -81,6 +82,7 @@ describe("settings month param wiring", () => {
       { currency_mode: "ARS_ARS", income_ars: 100000, saving_goal_ars: 20000, saving_goal_yellow_ars: 10000, exchange_rate: null },
       [], {}, null, false, "owner", "ARS_ARS", true, false,
       "100000", "0", "20000", "10000", 100000, null, null,
+      { query: "?month=2026-08", exists: true },
     );
     const markup = renderToStaticMarkup(createElement(SettingsPageClient));
     expect(markup).toContain("Ingreso mensual (ARS)");
@@ -92,5 +94,48 @@ describe("settings month param wiring", () => {
     const markup = renderToStaticMarkup(createElement(HermesSidebar));
 
     expect(markup).toContain('href="/dashboard/settings?month=2026-08"');
+  });
+
+  it("guides a missing month without implying that prior settings were copied", () => {
+    mockSettingsStateQueue.push(
+      { currency_mode: "USD_ARS", income_usd: 0, exchange_rate: null },
+      [], {}, null, false, "owner", "USD_ARS", false, false,
+      "0", "0", "0", "0", 0, null, null,
+      { query: "?month=2026-08", exists: false },
+    );
+
+    const markup = renderToStaticMarkup(createElement(SettingsPageClient));
+
+    expect(markup).toContain("agosto de 2026 todavía no tiene configuración");
+    expect(markup).toContain("Guardá primero el ingreso y la moneda");
+    expect(markup).toContain("no copia automáticamente");
+  });
+
+  it("never shows settings from a previous month under a new month label", () => {
+    mockSettingsStateQueue.push(
+      { currency_mode: "USD_ARS", income_usd: 1234, exchange_rate: 1000 },
+      [], {}, null, false, "owner", "USD_ARS", false, false,
+      "1234", "1000", "0", "0", 1234, null, null,
+      { query: "?month=2026-07", exists: true },
+    );
+
+    const markup = renderToStaticMarkup(createElement(SettingsPageClient));
+
+    expect(markup).not.toContain("1234");
+    expect(markup).not.toContain("Editando agosto de 2026");
+  });
+
+  it("does not instruct a read-only member to save the missing month", () => {
+    mockSettingsStateQueue.push(
+      { currency_mode: "USD_ARS", income_usd: 0, exchange_rate: null },
+      [], {}, null, false, "member", "USD_ARS", false, false,
+      "0", "0", "0", "0", 0, null, null,
+      { query: "?month=2026-08", exists: false },
+    );
+
+    const markup = renderToStaticMarkup(createElement(SettingsPageClient));
+
+    expect(markup).toContain("Pedile al owner que configure este mes");
+    expect(markup).not.toContain("Guardá primero el ingreso");
   });
 });

@@ -62,6 +62,7 @@ export function SettingsPageClient() {
 
   // Inline validation errors for semáforo
   const [thresholdError, setThresholdError] = useState<string | null>(null);
+  const [loadedMonth, setLoadedMonth] = useState<{ query: string; exists: boolean } | null>(null);
   const isReadOnly = userRole === "member";
   const isArs = selectedMode === "ARS_ARS";
   const modeNotSaved = settings?.currency_mode !== selectedMode;
@@ -89,6 +90,7 @@ export function SettingsPageClient() {
         currency_mode: "USD_ARS", income_usd: 0, income_ars: null, exchange_rate: null,
         saving_goal_usd: 0, saving_goal_ars: null, saving_goal_yellow: 0, saving_goal_yellow_ars: null,
       };
+      setLoadedMonth({ query: monthQuery, exists: response.data !== null });
       const mode = loaded.currency_mode ?? "USD_ARS";
       setSettings(loaded);
       setSelectedMode(mode);
@@ -163,6 +165,7 @@ export function SettingsPageClient() {
       if (res.ok) {
         const updated = await res.json() as MonthlySettings;
         setSettings(updated);
+        setLoadedMonth({ query: monthQuery, exists: true });
         setIncomeRaw(String(income));
         if (!isArs) setExchangeRaw(String(exchange));
         setSavedIncome(income);
@@ -236,7 +239,7 @@ export function SettingsPageClient() {
     </div>
   );
 
-  if (!settings) return <SettingsLoading />;
+  if (!settings || loadedMonth?.query !== monthQuery) return <SettingsLoading />;
 
   return (
     <div style={{ width: "100%" }}>
@@ -251,6 +254,18 @@ export function SettingsPageClient() {
         </div>
         <MonthSelectorGeneric basePath="/dashboard/settings" month={month ?? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`} />
       </div>
+
+      {loadedMonth.exists === false && (
+        <div role="status" style={{ background: "var(--haccent-soft)", border: "1px solid var(--hborder)", borderRadius: 10, padding: "14px 16px", marginBottom: 20, color: "var(--htext1)" }}>
+          <strong style={{ display: "block", fontSize: 14, marginBottom: 4 }}>{monthLabel} todavía no tiene configuración en este grupo.</strong>
+          <span style={{ fontSize: 13, lineHeight: 1.5 }}>
+            {isReadOnly
+              ? "Pedile al owner que configure este mes para poder ver el balance."
+              : "Guardá primero el ingreso y la moneda; después definí las metas y los presupuestos."}
+            {" Hermes no copia automáticamente los valores del mes anterior."}
+          </span>
+        </div>
+      )}
 
       {isReadOnly && (
         <div style={{ background: "var(--haccent-soft)", border: "1px solid var(--haccent)", borderRadius: 10, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "var(--htext2)", display: "flex", alignItems: "center", gap: 8 }}>

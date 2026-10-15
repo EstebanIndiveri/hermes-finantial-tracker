@@ -15,11 +15,21 @@ mes/grupo y la ruta de navegación. Si la configuración existe pero el
 resumen no puede calcularse, se conserva el diagnóstico de configuración
 incompleta en vez de afirmar falsamente que el mes no existe.
 
+En Ajustes, la carga conserva la distinción entre fila inexistente y un
+formulario provisional con ceros. Un aviso del mes seleccionado guía al
+owner a guardar primero ingreso y moneda, luego metas y presupuestos. Si
+la sesión es Member, indica pedirle la configuración al owner sin sugerir
+una escritura que no puede hacer. Al navegar entre meses, la UI muestra
+loading hasta que la respuesta corresponda al nuevo `monthQuery`: no
+presenta valores del mes anterior con la etiqueta del nuevo período.
+Guardar la configuración mensual cambia el aviso a estado existente.
+
 No se copia ningún dato, no se crean movimientos, no se cambia el período
 activo ni se añade una regla de rollover automático. Las consultas usan el
 grupo ya autorizado por cada canal. El cambio no requiere schema, cron,
 secreto ni nueva flag. Pruebas cubren estado vacío web, enlace del mes,
-`/resumen`, lenguaje natural, configuración incompleta y cruce de año.
+`/resumen`, lenguaje natural, configuración incompleta, cruce de año,
+estado ausente/existente en Ajustes y protección ante datos obsoletos.
 
 ## Puerta pendiente
 
