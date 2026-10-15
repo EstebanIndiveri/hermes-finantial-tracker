@@ -3706,3 +3706,21 @@ runtime al revisar la ventana del 18/10; un `sent` aislado no reemplaza la
 prueba de invocación automática ni el recibo de Telegram. **Owner Esteban:**
 ninguna acción. La activación y el seguimiento temporal siguen separados de
 este corte de observabilidad; legacy no se consultó ni modificó.
+
+### ACT-17 — límite de procedencia del cron Vercel (15/10)
+
+El control read-only `scripts/beta-cron-log-snapshot.mjs` verifica el proyecto
+beta, alias READY, `crons.deploymentId` y schedule antes de resumir registros
+del cron diario o recurrente en una ventana UTC de una hora. Las cinco
+pruebas locales cubren proyecto/deployment ajeno, ventana inválida o
+incompleta, HTTP 200/5xx, salida malformada y redacción. Una lectura real
+de una ventana sin cron devolvió cero registros, como se esperaba. La CLI
+Vercel JSON no incluye `clientUserAgent`; por diseño el resultado HTTP 200
+queda como `origin_unverified` y no se presenta como prueba de invocación
+automática. La procedencia se confirma separadamente en Vercel `requests`
+con `vercel-cron/1.0` y se concilia con runtime y Turso.
+
+**Owner Codex:** aplicar ambos controles en las ventanas del 16/10 y 18/10;
+no confundir ausencia de runtime por retención con ausencia de request.
+**Owner Esteban:** ninguna acción. Este corte no cambia deployment, cron,
+datos financieros ni legacy.

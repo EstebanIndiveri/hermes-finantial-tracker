@@ -50,6 +50,31 @@ del día actual. Este snapshot no prueba por sí solo que Vercel invocó el
 cron ni que Telegram mostró el mensaje: contrastar el historial `requests`,
 el evento de runtime si aún existe y el recibo del proveedor. Owner Codex.
 
+### Historial Vercel: request observado no equivale a disparo automático
+
+`scripts/beta-cron-log-snapshot.mjs` consulta una ventana UTC de hasta una
+hora para `daily` o `recurring`. Ejemplo para el cron diario del 18/10,
+21:00–21:59 ART:
+
+```bash
+node scripts/beta-cron-log-snapshot.mjs --cron daily --since 2026-10-19T00:00:00.000Z --until 2026-10-19T01:00:00.000Z
+```
+
+El control verifica el ID del proyecto beta, el deployment READY del alias
+canónico y el `crons.deploymentId` con su schedule antes de leer logs.
+Restringe proyecto, entorno, ventana y ruta; no devuelve mensajes, IDs de
+requests ni datos financieros. Distingue ningún registro, HTTP 200, error,
+registro no clasificado y ventana incompleta. La CLI de logs no expone
+`clientUserAgent` en el JSON de este control: por eso un 200 se marca
+`http_200_observed_origin_unverified`, **nunca** «automático probado».
+Para atribuir el disparo hay que revisar además
+`clientUserAgent=vercel-cron/1.0` en el historial `requests` de Vercel para
+el mismo deployment, ruta y hora. El evento redactado de runtime y las
+filas durables de Turso corroboran el procesamiento, pero no sustituyen
+ese dato. La ausencia de runtime por retención no demuestra que no haya
+existido un request; la disponibilidad del historial se verifica aparte.
+Owner Codex; no invocar el endpoint durante este diagnóstico.
+
 La lectura manual siguiente sigue siendo una referencia para diagnosticar
 un fallo del comando, nunca una autorización para usar el perfil legacy.
 
