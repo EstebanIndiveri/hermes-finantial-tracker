@@ -3450,3 +3450,26 @@ No se desplegó ni configuró el canary. **Owner Codex:** implementar el outbox
 y la revalidación de reintegros como subcorte local separado, con nuevas
 pruebas de entrega antes de cualquier publicación. La prueba automática de
 Netflix del 15/10 sigue sobre el deployment operativo anterior.
+
+**Segundo subcorte local completado (14/10):** la ruta diaria dejó de enviar
+recordatorios de reintegro directamente; ahora encola una intención durable
+por solicitud, pagador y fecha argentina. En modo canary consulta solo el
+pagador QA configurado y verifica el grupo del gasto fuente. El dispatcher
+vuelve a comprobar scope, consentimiento, chat privado, solicitud pendiente,
+asignación, antigüedad, importe, gasto activo, grupo, ambas membresías y
+snapshot; rechaza cambios y reintentos inciertos antes de Telegram. El
+canary puede operar independientemente del resumen diario, y su recibo de
+cron informa solo conteos redactados `queued`, `alreadyQueued`, `failed`.
+La integración local cubre deduplicación concurrente, envío QA, revocaciones,
+cambio de datos, caducidad, adulteración y fallo incierto del proveedor.
+Revisión independiente Luna sin defecto crítico; sus dos pedidos (recibo
+redactado y prueba de canary independiente) quedaron incorporados. Pasaron
+117/117 del arnés, 128 suites / 1.112 tests Jest, TypeScript, lint dirigido
+y `git diff --check`.
+
+**Sin publicación ni activación:** no se modificaron bindings, deployment,
+cron, datos financieros ni legacy; `NOTIFICATIONS_ENABLED=false` permanece.
+**Owner Codex:** observar el disparo automático de Netflix del 15/10 en el
+deployment beta operativo y conciliar un único envío QA/cero ajenos antes de
+considerar este pase beta separado con gates/H04d. **Owner Esteban:** avisar
+si recibe el recordatorio automático; no requiere otra acción previa.

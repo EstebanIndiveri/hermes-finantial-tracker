@@ -9,13 +9,14 @@ import { isIncomeCategory } from "@/lib/finance/income";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
 import { enqueueDailySummary } from "@/lib/notifications/daily-summary-delivery";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
-import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
+import { getUserById } from "@/lib/notifications/telegram";
 import { isCronRequestAuthorized } from "@/lib/auth/cron";
 import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 import { getGroupMembership } from "@/lib/groups/permissions";
 import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 import { getDailySummaryScope, isDailySummaryRecipientAllowed } from "@/lib/notifications/daily-summary-canary";
-import { getReimbursementReminderScope } from "@/lib/notifications/reimbursement-reminder-canary";
+import { getReimbursementReminderScope, isReimbursementReminderRecipientAllowed } from "@/lib/notifications/reimbursement-reminder-canary";
+import { buildReimbursementReminderMessage, buildReimbursementReminderSnapshotHash, enqueueReimbursementReminder } from "@/lib/notifications/reimbursement-reminder-delivery";
 
 /**
  * Daily cron job for proactive Telegram alerts.
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
   // malformed configuration never inherits the legacy default-on behavior.
   const scope = getDailySummaryScope();
   const reimbursementScope = getReimbursementReminderScope();
-  if (scope.mode === "off") {
+  if (scope.mode === "off" && reimbursementScope.mode === "off") {
     return NextResponse.json({
       ok: true,
       skipped: true,
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
     const isMonday = new Date(`${todayStr}T12:00:00Z`).getUTCDay() === 1;
 
     // Get all users (personal app — typically one)
-    const allUsers = await db.select().from(users);
+    const allUsers = scope.mode === "off" ? [] : await db.select().from(users);
     const results: { userId: string; sent: boolean; reason?: string }[] = [];
 
     for (const user of allUsers) {
@@ -188,10 +189,9 @@ export async function GET(req: NextRequest) {
     // Reimbursement reminders — alert payers for reimbursements pending > 3 days
     const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
     const reimbursementCutoff = Date.now() - THREE_DAYS_MS;
+    const reimbursementOutcome = { queued: 0, alreadyQueued: 0, failed: 0 };
 
-    // The canary is intentionally not wired to this direct-send path. It may
-    // only be activated after a durable outbox and dispatcher revalidation exist.
-    const pendingOldReimbursements = reimbursementScope.mode === "global" ? await db
+    const pendingOldReimbursements = reimbursementScope.mode === "off" ? [] : await db
       .select({
         id: reimbursementRequests.id,
         transactionId: reimbursementRequests.transactionId,
@@ -205,12 +205,16 @@ export async function GET(req: NextRequest) {
         and(
           eq(reimbursementRequests.status, "pending"),
           lt(reimbursementRequests.createdAt, reimbursementCutoff),
+          reimbursementScope.mode === "canary"
+            ? eq(reimbursementRequests.payerId, reimbursementScope.payerId)
+            : undefined,
         ),
-      ) : [];
+      );
 
     for (const reimbursement of pendingOldReimbursements) {
       // Only send to assigned payers (not open reimbursements)
       if (!reimbursement.payerId) continue;
+      if (reimbursementScope.mode === "canary" && reimbursement.payerId !== reimbursementScope.payerId) continue;
       if (!await hasProactiveConsent(reimbursement.payerId, "reimbursements")) continue;
 
       // A pending request may outlive group membership. Never disclose its
@@ -221,6 +225,7 @@ export async function GET(req: NextRequest) {
         deletedAt: transactions.deleted_at,
       }).from(transactions).where(eq(transactions.id, reimbursement.transactionId)).limit(1);
       if (!source?.groupId || source.status !== "active" || source.deletedAt !== null) continue;
+      if (!isReimbursementReminderRecipientAllowed(reimbursement.payerId, source.groupId)) continue;
       const [payerMembership, requesterMembership] = await Promise.all([
         getGroupMembership(reimbursement.payerId, source.groupId),
         getGroupMembership(reimbursement.requesterId, source.groupId),
@@ -231,20 +236,37 @@ export async function GET(req: NextRequest) {
       
       try {
         const requester = await getUserById(reimbursement.requesterId);
+        const payer = await getUserById(reimbursement.payerId);
+        if (!payer?.telegram_user_id) continue;
         const requesterName = requester?.name ?? "Alguien";
-        
-        await notifyReimbursementReminder(
-          reimbursement.payerId,
+        const snapshotHash = buildReimbursementReminderSnapshotHash({
+          requestId: reimbursement.id,
+          transactionId: reimbursement.transactionId,
+          payerId: reimbursement.payerId,
+          requesterId: reimbursement.requesterId,
+          groupId: source.groupId,
+          amount: reimbursement.amount,
+          createdAt: reimbursement.createdAt,
           requesterName,
-          reimbursement.amount,
-          daysPending,
-        );
-      } catch (err) {
-        console.error("Error sending reimbursement reminder:", {
-          reimbursementId: reimbursement.id,
-          message: err instanceof Error ? err.message : "Unknown error",
         });
+        const queued = await enqueueReimbursementReminder({
+          payerId: reimbursement.payerId,
+          chatId: payer.telegram_user_id,
+          context: { requestId: reimbursement.id, groupId: source.groupId,
+            argentinaDate: todayStr, snapshotHash },
+          message: buildReimbursementReminderMessage(requesterName, reimbursement.amount, daysPending),
+        });
+        reimbursementOutcome[queued ? "queued" : "alreadyQueued"] += 1;
+      } catch {
+        reimbursementOutcome.failed += 1;
+        console.error("Error queueing reimbursement reminder");
       }
+    }
+
+    if (reimbursementScope.mode === "canary") {
+      // Redacted receipt only: never include request, recipient, group or amounts.
+      console.info(JSON.stringify({ event: "beta_reimbursement_reminder_canary_cron",
+        argentinaDate: todayStr, ...reimbursementOutcome }));
     }
 
     if (scope.mode === "canary") {

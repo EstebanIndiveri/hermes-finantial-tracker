@@ -5,7 +5,8 @@ import { getMonthSummary, getCategoryBreakdown, getAccountingMonthProjection } f
 import { enqueueDailySummary } from "@/lib/notifications/daily-summary-delivery";
 import { buildDailyAlert } from "@/lib/telegram/alerts";
 import { resolveAuthorizedTelegramGroup } from "@/lib/telegram/authorized-group-context";
-import { notifyReimbursementReminder, getUserById } from "@/lib/notifications/telegram";
+import { getUserById } from "@/lib/notifications/telegram";
+import { enqueueReimbursementReminder } from "@/lib/notifications/reimbursement-reminder-delivery";
 import { getGroupMembership } from "@/lib/groups/permissions";
 import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 
@@ -26,7 +27,12 @@ jest.mock("@/lib/finance/summaries", () => ({ getMonthSummary: jest.fn(), getCat
 jest.mock("@/lib/notifications/daily-summary-delivery", () => ({ enqueueDailySummary: jest.fn() }));
 jest.mock("@/lib/telegram/alerts", () => ({ buildDailyAlert: jest.fn() }));
 jest.mock("@/lib/telegram/authorized-group-context", () => ({ resolveAuthorizedTelegramGroup: jest.fn() }));
-jest.mock("@/lib/notifications/telegram", () => ({ notifyReimbursementReminder: jest.fn(), getUserById: jest.fn() }));
+jest.mock("@/lib/notifications/telegram", () => ({ getUserById: jest.fn() }));
+jest.mock("@/lib/notifications/reimbursement-reminder-delivery", () => ({
+  enqueueReimbursementReminder: jest.fn(),
+  buildReimbursementReminderSnapshotHash: jest.fn(() => "snapshot"),
+  buildReimbursementReminderMessage: jest.fn(() => "reminder"),
+}));
 jest.mock("@/lib/groups/permissions", () => ({ getGroupMembership: jest.fn() }));
 jest.mock("@/lib/notifications/proactive-consent", () => ({ hasProactiveConsent: jest.fn() }));
 
@@ -60,7 +66,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(resolveAuthorizedTelegramGroup).not.toHaveBeenCalled();
     expect(enqueueDailySummary).not.toHaveBeenCalled();
     expect(getUserById).not.toHaveBeenCalled();
-    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+    expect(enqueueReimbursementReminder).not.toHaveBeenCalled();
   });
 
   it("continues with daily processing for the exact configured token", async () => {
@@ -120,7 +126,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     });
     expect(db.select).not.toHaveBeenCalled();
     expect(enqueueDailySummary).not.toHaveBeenCalled();
-    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+    expect(enqueueReimbursementReminder).not.toHaveBeenCalled();
   });
 
   it("skips a missing proactive flag instead of using the legacy default", async () => {
@@ -154,7 +160,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
 
     expect(response.status).toBe(200);
     expect(getGroupMembership).toHaveBeenCalledWith("former-member", "group-old");
-    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+    expect(enqueueReimbursementReminder).not.toHaveBeenCalled();
   });
 
   it("reminds a current payer only when the requester still belongs to the source group", async () => {
@@ -172,7 +178,8 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     (getGroupMembership as jest.Mock)
       .mockResolvedValueOnce({ group_id: "group-current", user_id: "payer", role: "member" })
       .mockResolvedValueOnce({ group_id: "group-current", user_id: "requester", role: "owner" });
-    (getUserById as jest.Mock).mockResolvedValue({ name: "Requester" });
+    (getUserById as jest.Mock).mockImplementation(async (id: string) =>
+      id === "payer" ? { telegram_user_id: "private-payer" } : { name: "Requester" });
 
     const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
       headers: { authorization: "Bearer cron-secret" },
@@ -181,7 +188,12 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(response.status).toBe(200);
     expect(getGroupMembership).toHaveBeenCalledWith("payer", "group-current");
     expect(getGroupMembership).toHaveBeenCalledWith("requester", "group-current");
-    expect(notifyReimbursementReminder).toHaveBeenCalledWith("payer", "Requester", 130, expect.any(Number));
+    expect(enqueueReimbursementReminder).toHaveBeenCalledWith(expect.objectContaining({
+      payerId: "payer",
+      chatId: "private-payer",
+      context: expect.objectContaining({ requestId: "reimb-current", groupId: "group-current" }),
+      message: "reminder",
+    }));
   });
 
   it("fails closed on an invalid notifications setting before database work", async () => {
@@ -220,7 +232,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(buildDailyAlert).not.toHaveBeenCalled();
     expect(resolveAuthorizedTelegramGroup).not.toHaveBeenCalled();
     expect(enqueueDailySummary).not.toHaveBeenCalled();
-    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+    expect(enqueueReimbursementReminder).not.toHaveBeenCalled();
   });
 
   function setupDailyProcessing(users: Array<Record<string, unknown>>) {
@@ -310,9 +322,10 @@ describe("GET /api/cron/daily-alerts authorization", () => {
         { userId: "user-B", reason: "outside_canary" },
       ] });
       expect(enqueueDailySummary).toHaveBeenCalledTimes(1);
-      expect(db.select).toHaveBeenCalledTimes(1);
-      expect(notifyReimbursementReminder).not.toHaveBeenCalled();
-      const receipt = String(info.mock.calls[0]?.[0]);
+      expect(db.select).toHaveBeenCalledTimes(2);
+      expect(enqueueReimbursementReminder).not.toHaveBeenCalled();
+      const receipt = String(info.mock.calls.map((call) => call[0]).find((line) =>
+        String(line).includes("beta_daily_summary_canary_cron")));
       expect(JSON.parse(receipt)).toEqual({
         event: "beta_daily_summary_canary_cron",
         argentinaDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
@@ -321,6 +334,59 @@ describe("GET /api/cron/daily-alerts authorization", () => {
       expect(receipt).not.toContain("user-A");
       expect(receipt).not.toContain("telegram-A");
       expect(receipt).not.toContain("resolved-group");
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("runs a reimbursement-only beta canary without scanning daily users", async () => {
+    const info = jest.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      process.env = {
+        ...originalEnv, CRON_SECRET: "cron-secret", NOTIFICATIONS_ENABLED: "false",
+        HERMES_BETA_ISOLATION_ASSERT: "true",
+        NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
+        TURSO_DATABASE_URL: "libsql://beta-hermes-esteban-indiveri.aws-us-east-2.turso.io",
+        TELEGRAM_BOT_ID: "8739389202",
+        REIMBURSEMENT_REMINDER_CANARY_ENABLED: "true",
+        REIMBURSEMENT_REMINDER_CANARY_PAYER_ID: "payer",
+        REIMBURSEMENT_REMINDER_CANARY_GROUP_ID: "group-current",
+      };
+      delete process.env.DAILY_SUMMARY_CANARY_ENABLED;
+      delete process.env.DAILY_SUMMARY_CANARY_USER_ID;
+      delete process.env.DAILY_SUMMARY_CANARY_GROUP_ID;
+      (db.select as jest.Mock)
+        .mockReturnValueOnce({ from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([{
+          id: "reimb-current", transactionId: "transaction-current", payerId: "payer",
+          requesterId: "requester", amount: 130, createdAt: Date.now() - 4 * 24 * 60 * 60 * 1000,
+        }]) })) })
+        .mockReturnValueOnce({ from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([{
+          groupId: "group-current", status: "active", deletedAt: null,
+        }]) })) })) });
+      (getGroupMembership as jest.Mock).mockResolvedValue({ group_id: "group-current" });
+      (getUserById as jest.Mock).mockImplementation(async (id: string) =>
+        id === "payer" ? { telegram_user_id: "private-payer" } : { name: "Requester" });
+      (enqueueReimbursementReminder as jest.Mock).mockResolvedValue(true);
+
+      const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+        headers: { authorization: "Bearer cron-secret" },
+      }));
+      expect(await response.json()).toEqual({ ok: true, results: [] });
+      expect(enqueueDailySummary).not.toHaveBeenCalled();
+      expect(enqueueReimbursementReminder).toHaveBeenCalledTimes(1);
+      expect(enqueueReimbursementReminder).toHaveBeenCalledWith(expect.objectContaining({
+        payerId: "payer", chatId: "private-payer",
+        context: expect.objectContaining({ requestId: "reimb-current", groupId: "group-current" }),
+      }));
+      const receipt = String(info.mock.calls.find((call) =>
+        String(call[0]).includes("beta_reimbursement_reminder_canary_cron"))?.[0]);
+      expect(JSON.parse(receipt)).toEqual({
+        event: "beta_reimbursement_reminder_canary_cron",
+        argentinaDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        queued: 1, alreadyQueued: 0, failed: 0,
+      });
+      expect(receipt).not.toContain("private-payer");
+      expect(receipt).not.toContain("group-current");
     } finally {
       info.mockRestore();
     }
@@ -350,7 +416,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(response.status).toBe(200);
     expect(db.select).toHaveBeenCalledTimes(1);
     expect(enqueueDailySummary).toHaveBeenCalledTimes(1);
-    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+    expect(enqueueReimbursementReminder).not.toHaveBeenCalled();
   });
 
   it("fails closed for reimbursement bindings mixed with the global switch", async () => {
@@ -367,7 +433,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
 
     expect(response.status).toBe(200);
     expect(db.select).toHaveBeenCalledTimes(1);
-    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+    expect(enqueueReimbursementReminder).not.toHaveBeenCalled();
   });
 
   it("does not prepare a daily canary if its active group changed", async () => {
@@ -408,7 +474,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     expect(response.status).toBe(200);
     expect(hasProactiveConsent).toHaveBeenCalledWith("payer", "reimbursements");
     expect(getGroupMembership).not.toHaveBeenCalled();
-    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+    expect(enqueueReimbursementReminder).not.toHaveBeenCalled();
   });
 
   it("uses each user's linked private Telegram ID instead of a stale chat or TELEGRAM_CHAT_ID", async () => {

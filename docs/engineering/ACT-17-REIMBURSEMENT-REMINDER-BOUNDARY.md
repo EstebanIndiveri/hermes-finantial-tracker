@@ -65,3 +65,26 @@ local hasta cerrar el ensayo automático de Netflix. Las pruebas dirigidas
 cubren la ausencia de bindings en la ruta, el canary configurado sin envío y
 los fallos cerrados del helper. El siguiente subcorte debe implementar la
 entrega durable y su dispatcher antes de conectar el modo canary al cron.
+
+## Segundo subcorte local: intención durable y revalidación
+
+La ruta diaria ya no llama directamente a Telegram para reintegros. Un scope
+independiente permite encolar únicamente solicitudes pendientes de más de
+tres días, con pagador asignado, consentimiento, gasto fuente activo y ambas
+membresías vigentes. En canary, la consulta se acota al pagador configurado y
+el grupo fuente se coteja antes de encolar; el resumen diario puede estar
+apagado sin impedir el canal de reintegros.
+
+La identidad estable usa bot, solicitud, pagador y fecha argentina. La
+operación conserva hash del snapshot y del texto; el outbox tiene una sola
+fila por identidad. En el despacho se vuelven a comprobar scope, fecha,
+consentimiento, chat privado, solicitud pendiente y asignada, antigüedad,
+importe, gasto fuente activo/grupo, ambas membresías y nombre del solicitante.
+Un cambio o una segunda tentativa incierta termina en `dead` antes de llamar
+a Telegram. El cron canary deja un recibo agregado y redactado con conteos
+`queued`, `alreadyQueued` y `failed`, sin IDs ni contenido financiero.
+
+La implementación permanece **solo local**, sin bindings de canary, despliegue
+ni envíos. La ventana automática de Netflix del 15/10 sigue sobre el
+deployment beta previamente atestado. Tras conciliarla, el pase beta de este
+subcorte requiere revisión de gates/H04d y una activación QA separada.
