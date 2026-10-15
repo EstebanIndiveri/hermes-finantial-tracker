@@ -84,7 +84,20 @@ Un cambio o una segunda tentativa incierta termina en `dead` antes de llamar
 a Telegram. El cron canary deja un recibo agregado y redactado con conteos
 `queued`, `alreadyQueued` y `failed`, sin IDs ni contenido financiero.
 
-La implementación permanece **solo local**, sin bindings de canary, despliegue
-ni envíos. La ventana automática de Netflix del 15/10 sigue sobre el
-deployment beta previamente atestado. Tras conciliarla, el pase beta de este
-subcorte requiere revisión de gates/H04d y una activación QA separada.
+La implementación se publicó en beta después de conciliar la entrega de
+Netflix del 15/10, pero **sin bindings del canary** ni envíos de reintegros.
+`NOTIFICATIONS_ENABLED=false` permanece. El despliegue incorpora además el
+evento redactado del cron recurrente para obtener un recibo directo en una
+ventana futura. La activación QA de reintegros sigue siendo un corte separado:
+requiere un fixture elegible, nueva atestación de bindings y conciliación de
+un único destinatario.
+
+## Tercer subcorte: gates de activación, todavía sin activar
+
+El assert de build acepta los tres bindings de reintegros solo si son
+completos, apuntan al pagador/grupo QA aprobados y el switch global sigue
+apagado. H04d acepta la declaración opcional equivalente y rechaza campos
+ajenos. Ambos fallan cerrado; ni las pruebas locales ni el manifiesto
+constituyen un recibo de activación. Owner Codex: verificar estos gates,
+publicarlos en un pase beta posterior y preparar la prueba con un reintegro
+QA inequívoco antes de habilitar los bindings.

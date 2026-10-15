@@ -158,6 +158,26 @@ test("accepts only the approved recurring reminder canary beside the daily canar
   }
 });
 
+test("accepts only the approved reimbursement payer and group as an explicit beta exception", () => {
+  const scoped = fixture();
+  scoped.beta.runtime.reimbursementReminderCanary = {
+    enabled: true,
+    payerId: "504b3827-a03e-49a6-acc6-c200f225ca80",
+    groupId: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
+  };
+  assert.ok(validatePostActivationIsolation(scoped, { now }).checks.includes("reimbursement-reminder-canary-scoped"));
+  for (const canary of [
+    { ...scoped.beta.runtime.reimbursementReminderCanary, enabled: false },
+    { ...scoped.beta.runtime.reimbursementReminderCanary, payerId: "other-payer" },
+    { ...scoped.beta.runtime.reimbursementReminderCanary, groupId: "other-group" },
+    { ...scoped.beta.runtime.reimbursementReminderCanary, extra: true },
+  ]) {
+    const invalid = fixture();
+    invalid.beta.runtime.reimbursementReminderCanary = canary;
+    assert.throws(() => validatePostActivationIsolation(invalid, { now }));
+  }
+});
+
 test("rejects secret-bearing and unknown fields; never certifies from local declarations", () => {
   const input = fixture();
   input.beta.telegram.token = "must-not-be-present";

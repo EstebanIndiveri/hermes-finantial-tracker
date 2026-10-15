@@ -3473,3 +3473,94 @@ cron, datos financieros ni legacy; `NOTIFICATIONS_ENABLED=false` permanece.
 deployment beta operativo y conciliar un único envío QA/cero ajenos antes de
 considerar este pase beta separado con gates/H04d. **Owner Esteban:** avisar
 si recibe el recordatorio automático; no requiere otra acción previa.
+
+### ACT-17 — conciliación del recordatorio Netflix del 15/10 (08:46 ART)
+
+Consulta de solo lectura limitada a `beta-hermes` y al proyecto Vercel beta
+`prj_MAAh80ZRdBzQGCANu5sSGdGp8DPF`. El alias beta continúa en
+`dpl_7MzoPtaMgYuS9tKxa5YC3uWNQ5Da`, con el cron de recurrentes registrado
+en `0 11 * * *` (ventana 08:00–08:59 ART). La definición activa Netflix de
+`esteban_beta_qa` en `Mi espacio` propio es única, por ARS 3.000, día 18 y sin
+autoconfirmación. Existe exactamente una ejecución `pending` para el 18/10 y
+ninguna transacción materializada.
+
+El 15/10 se creó a las 11:45:26 UTC una operación `cron:recurring` de tipo
+`upcoming` ligada a esa única ejecución. Su única fila de outbox se despachó
+al chat privado del mismo usuario a las 11:46:00 UTC (08:46 ART): `sent`, un
+intento y acuse del proveedor. La conciliación no encontró operaciones
+recurrentes del día para otros usuarios o grupos. No se invocó el endpoint ni
+se reenvió nada durante esta observación; `NOTIFICATIONS_ENABLED=false`, los
+datos QA y legacy permanecieron intactos.
+
+**Límite de atestación:** la coincidencia de horario, schedule y operación es
+consistente con el disparo automático, pero la consulta histórica de logs de
+Vercel no devolvió el request de las 11:45 UTC (la consulta con ventana pasada
+respondió 400 y la consulta relativa solo mostró logs recientes). Por ello,
+la entrega y el aislamiento están comprobados; el origen automático **aún no
+tiene un recibo directo** de request o historial de ejecución. El evento
+`beta_recurring_reminder_canary_cron` tampoco se esperaba en este deployment:
+su instrumentación sigue solo local. **Owner Codex, abierto:** obtener el
+recibo del historial de Cron Jobs del deployment beta, o capturar en una
+ventana posterior un request antes de que expire la retención; después cerrar
+este corte y considerar por separado el pase beta instrumentado y el canary
+de reintegros. **Owner Esteban:** ninguna acción requerida para la entrega;
+solo desbloquear el Mac si se necesita revisar el dashboard Vercel desde UI.
+
+### ACT-17 — aceptación de la entrega recurrente y límite del historial (15/10)
+
+Esteban aportó `File (232).png`: el bot beta muestra el recordatorio de
+Netflix ARS 3.000, vencimiento 18/10, recibido a las 08:46 ART. Coincide con
+la operación y el acuse durable ya conciliados. Se reconsultó solo el proyecto
+Vercel beta: `crons.deploymentId=dpl_7MzoPtaMgYuS9tKxa5YC3uWNQ5Da`,
+recurrentes `0 11 * * *`, scheduler habilitado y host del mismo deployment.
+El historial de runtime de las 08:46 ya no está disponible: Vercel Hobby
+retiene una hora de logs; la vista «View Logs» de Cron Jobs usa esos mismos
+runtime logs, no un historial independiente. La operación en beta, el horario
+programado, la ausencia de invocación manual el 15/10 por Codex y el recibo
+visual son evidencia suficiente para **aceptar el comportamiento funcional**
+del cron → outbox → Telegram en el único usuario QA, sin duplicados ni cargos.
+No constituyen un recibo directo del user-agent/request de Vercel, que queda
+como límite explícito de procedencia y se cubrirá con instrumentación
+redactada en la siguiente release beta.
+
+**Owner Codex, corte funcional cerrado:** promover por separado la
+instrumentación `beta_recurring_reminder_canary_cron` y el nuevo flujo durable
+de recordatorios de reintegro, sin habilitar aún su canary ni el switch global;
+atestación H04d y nueva ventana automática para el recibo de origen. **Owner
+Esteban:** ninguna acción adicional para Netflix. Legacy y datos QA siguen
+intactos.
+
+### ACT-17 — pase beta instrumentado, sin activar reintegros (15/10)
+
+Se promovió exclusivamente el proyecto beta a
+`dpl_2o2HF9NwHN4zykva22SU22zKHHFL` (release
+`f3a04f00839d99f040f598d8bd6c857fde2f9e77`), READY y con el alias
+`hermes-finantial-tracker-z2.vercel.app` apuntando al mismo deployment.
+La configuración del proyecto confirma `crons.deploymentId` igual a ese ID;
+resumen diario `0 0 * * *`, recurrentes `0 11 * * *` y tipo de cambio
+`0 3 1 * *`. El build emitió `beta_build_isolation_attested` con `passed:true`
+y sin checks fallidos. Previo al pase pasaron 117/117 del arnés, 128 suites /
+1.112 tests, TypeScript, lint dirigido y build. El nuevo evento redactado
+`beta_recurring_reminder_canary_cron` deberá observarse en una ventana
+automática posterior: este pase no crea retroactivamente el recibo histórico
+del 15/10. No se invocó ningún cron manualmente.
+
+El inventario de bindings beta previo al despliegue no contenía ninguna
+`REIMBURSEMENT_REMINDER_CANARY_*`; la consulta beta tampoco halló reintegros
+pending elegibles del pagador QA en `Mi espacio`. Por ello el nuevo flujo
+durable de recordatorios quedó **publicado pero apagado**, sin mensaje de
+reintegro ni movimiento financiero creado. El runner H04d local sobre
+recibos redaccionados del pase retornó `ok:true`,
+`postActivationRuntimeConsistent:true`, `isolationVerified:false` y
+`certificationState:not-certified`: no se eleva a certificación. Global
+`NOTIFICATIONS_ENABLED=false`; legacy intacto.
+
+**Owner Codex, siguiente observación:** verificar en la próxima ventana
+automática de recurrentes el evento redactado del deployment vigente y cero
+destinatarios no QA; un `nothing_relevant` sería esperable si no hay nueva
+ejecución elegible. **Owner Codex, siguiente corte separado:** completar y
+publicar el gate build/H04d para un futuro canary de reintegros, mantener
+bindings ausentes, y solo después preparar un fixture QA y activar el canal
+acotado con nueva atestación. **Owner Esteban:** ninguna acción ahora; se
+pedirá validación solo si el fixture o la recepción final requieren su
+intervención.

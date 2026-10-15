@@ -7,11 +7,13 @@ const TELEGRAM_KEYS = ["botId", "username", "webhookUrl"];
 const RUNTIME_KEYS = ["flags", "aiMode", "ocrMode", "notificationsEnabled"];
 const DAILY_CANARY_KEYS = ["enabled", "userId", "groupId"];
 const RECURRING_CANARY_KEYS = ["enabled", "userId", "groupId"];
+const REIMBURSEMENT_CANARY_KEYS = ["enabled", "payerId", "groupId"];
 const APPROVED_DAILY_CANARY = Object.freeze({
   userId: "504b3827-a03e-49a6-acc6-c200f225ca80",
   groupId: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
 });
 const APPROVED_RECURRING_CANARY = Object.freeze({ ...APPROVED_DAILY_CANARY });
+const APPROVED_REIMBURSEMENT_CANARY = Object.freeze({ ...APPROVED_DAILY_CANARY });
 const FLAG_KEYS = ["inbox", "outbox", "worker"];
 const EVIDENCE_ROOT_KEYS = ["beta", "production"];
 const EVIDENCE_KEYS = { beta: ["vercel", "turso", "telegram", "runtime"], production: ["vercel", "turso", "telegram"] };
@@ -139,6 +141,7 @@ export function validatePostActivationIsolation(input, { now = Date.now() } = {}
     ...RUNTIME_KEYS,
     ...(beta.runtime?.dailySummaryCanary === undefined ? [] : ["dailySummaryCanary"]),
     ...(beta.runtime?.recurringReminderCanary === undefined ? [] : ["recurringReminderCanary"]),
+    ...(beta.runtime?.reimbursementReminderCanary === undefined ? [] : ["reimbursementReminderCanary"]),
   ], "beta.runtime");
   exactKeys(beta.runtime.flags, FLAG_KEYS, "beta.runtime.flags");
 
@@ -216,6 +219,15 @@ export function validatePostActivationIsolation(input, { now = Date.now() } = {}
       fail("INVALID_RECURRING_CANARY", "beta.runtime.recurringReminderCanary", "Recurring reminder exception must target the approved beta user and group.");
     }
   }
+  if (beta.runtime.reimbursementReminderCanary !== undefined) {
+    const canary = beta.runtime.reimbursementReminderCanary;
+    exactKeys(canary, REIMBURSEMENT_CANARY_KEYS, "beta.runtime.reimbursementReminderCanary");
+    if (canary.enabled !== true ||
+      canary.payerId !== APPROVED_REIMBURSEMENT_CANARY.userId ||
+      canary.groupId !== APPROVED_REIMBURSEMENT_CANARY.groupId) {
+      fail("INVALID_REIMBURSEMENT_CANARY", "beta.runtime.reimbursementReminderCanary", "Reimbursement reminder exception must target the approved beta payer and group.");
+    }
+  }
 
   checkEvidence(beta.evidence, now);
 
@@ -237,6 +249,7 @@ export function validatePostActivationIsolation(input, { now = Date.now() } = {}
       "global-proactive-notifications-disabled",
       ...(beta.runtime.dailySummaryCanary ? ["daily-summary-canary-scoped"] : []),
       ...(beta.runtime.recurringReminderCanary ? ["recurring-reminder-canary-scoped"] : []),
+      ...(beta.runtime.reimbursementReminderCanary ? ["reimbursement-reminder-canary-scoped"] : []),
       "beta-and-production-provider-receipts-referenced-and-fresh",
       "runtime-flag-values-remain-declarations-until-receipts-are-reviewed",
       "no-secret-values-in-contract",

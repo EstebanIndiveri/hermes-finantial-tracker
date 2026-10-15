@@ -27,6 +27,16 @@ partial binding must not send anything. The cron and dispatcher enforce the
 same scope again at runtime. This declaration does not authorize recurrent
 notifications to other users or certify provider isolation.
 
+The reimbursement-reminder pilot has a separate optional
+`reimbursementReminderCanary` declaration with `enabled:true`, the approved
+QA `payerId` and `groupId`. It corresponds to the three
+`REIMBURSEMENT_REMINDER_CANARY_*` beta Production bindings; no declaration or
+bindings means this channel stays off. The build assertion rejects partial
+or out-of-scope bindings while the dispatcher rechecks scope and eligibility
+before Telegram. This exception does not enable global notifications or
+certify a delivered reminder. It must not be declared until an intentional
+QA activation with fresh provider receipts.
+
 ## Input contract
 
 Call `validatePostActivationIsolation(input, { now })` from `scripts/validate-post-activation-isolation.mjs`. Its manifest has only provider metadata and non-secret runtime declarations. Every beta and production provider entry must refer to a reviewed redacted receipt under `evidence/`, include a SHA-256 digest, and be no more than seven days old. The beta Vercel receipt also covers deployment target, release SHA, and the runtime flag/mode inventory.

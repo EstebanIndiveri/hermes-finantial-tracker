@@ -131,6 +131,33 @@ test("accepts only the approved recurring reminder canary when the broad switch 
   assert.ok(evaluateBetaBuildIsolation({ ...validEnvironment, RECURRING_REMINDER_CANARY_ENABLED: "true" }).failedChecks.includes("recurring_reminder_canary_scope"));
 });
 
+test("accepts only the approved reimbursement reminder payer and group", () => {
+  const scoped = {
+    ...validEnvironment,
+    REIMBURSEMENT_REMINDER_CANARY_ENABLED: "true",
+    REIMBURSEMENT_REMINDER_CANARY_PAYER_ID: "504b3827-a03e-49a6-acc6-c200f225ca80",
+    REIMBURSEMENT_REMINDER_CANARY_GROUP_ID: "b5b15f53-f964-4c12-99ca-88fbbee23c55",
+  };
+  assert.equal(evaluateBetaBuildIsolation(scoped).passed, true);
+  assert.equal(evaluateBetaBuildIsolation({
+    ...scoped,
+    DAILY_SUMMARY_CANARY_ENABLED: "true",
+    DAILY_SUMMARY_CANARY_USER_ID: scoped.REIMBURSEMENT_REMINDER_CANARY_PAYER_ID,
+    DAILY_SUMMARY_CANARY_GROUP_ID: scoped.REIMBURSEMENT_REMINDER_CANARY_GROUP_ID,
+    RECURRING_REMINDER_CANARY_ENABLED: "true",
+    RECURRING_REMINDER_CANARY_USER_ID: scoped.REIMBURSEMENT_REMINDER_CANARY_PAYER_ID,
+    RECURRING_REMINDER_CANARY_GROUP_ID: scoped.REIMBURSEMENT_REMINDER_CANARY_GROUP_ID,
+  }).passed, true);
+  for (const [key, value] of [
+    ["REIMBURSEMENT_REMINDER_CANARY_ENABLED", "True"],
+    ["REIMBURSEMENT_REMINDER_CANARY_PAYER_ID", "different-payer"],
+    ["REIMBURSEMENT_REMINDER_CANARY_GROUP_ID", "different-group"],
+  ]) {
+    assert.ok(evaluateBetaBuildIsolation({ ...scoped, [key]: value }).failedChecks.includes("reimbursement_reminder_canary_scope"));
+  }
+  assert.ok(evaluateBetaBuildIsolation({ ...validEnvironment, REIMBURSEMENT_REMINDER_CANARY_ENABLED: "true" }).failedChecks.includes("reimbursement_reminder_canary_scope"));
+});
+
 test("requires exact, distinct fingerprints for the six beta secrets", () => {
   const expected = JSON.parse(validEnvironment.HERMES_BETA_SECRET_FINGERPRINTS);
   const changedSecret = { ...validEnvironment, SESSION_SECRET: "sentinel-different-session-secret" };
