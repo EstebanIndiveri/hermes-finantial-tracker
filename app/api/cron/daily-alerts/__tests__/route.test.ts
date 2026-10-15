@@ -292,6 +292,9 @@ describe("GET /api/cron/daily-alerts authorization", () => {
         DAILY_SUMMARY_CANARY_ENABLED: "true",
         DAILY_SUMMARY_CANARY_USER_ID: "user-A",
         DAILY_SUMMARY_CANARY_GROUP_ID: "resolved-group",
+        REIMBURSEMENT_REMINDER_CANARY_ENABLED: "true",
+        REIMBURSEMENT_REMINDER_CANARY_PAYER_ID: "user-A",
+        REIMBURSEMENT_REMINDER_CANARY_GROUP_ID: "resolved-group",
         HERMES_BETA_ISOLATION_ASSERT: "true",
         NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
         TURSO_DATABASE_URL: "libsql://beta-hermes-esteban-indiveri.aws-us-east-2.turso.io",
@@ -307,6 +310,7 @@ describe("GET /api/cron/daily-alerts authorization", () => {
         { userId: "user-B", reason: "outside_canary" },
       ] });
       expect(enqueueDailySummary).toHaveBeenCalledTimes(1);
+      expect(db.select).toHaveBeenCalledTimes(1);
       expect(notifyReimbursementReminder).not.toHaveBeenCalled();
       const receipt = String(info.mock.calls[0]?.[0]);
       expect(JSON.parse(receipt)).toEqual({
@@ -320,6 +324,50 @@ describe("GET /api/cron/daily-alerts authorization", () => {
     } finally {
       info.mockRestore();
     }
+  });
+
+  it("does not scan reimbursements when the daily beta canary is active and reimbursement bindings are absent", async () => {
+    setupDailyProcessing([{ id: "user-A", telegram_user_id: "telegram-A", active_telegram_group_id: "group-A" }]);
+    process.env = {
+      ...process.env,
+      NOTIFICATIONS_ENABLED: "false",
+      DAILY_SUMMARY_CANARY_ENABLED: "true",
+      DAILY_SUMMARY_CANARY_USER_ID: "user-A",
+      DAILY_SUMMARY_CANARY_GROUP_ID: "resolved-group",
+      HERMES_BETA_ISOLATION_ASSERT: "true",
+      NEXT_PUBLIC_APP_URL: "https://hermes-finantial-tracker-z2.vercel.app",
+      TURSO_DATABASE_URL: "libsql://beta-hermes-esteban-indiveri.aws-us-east-2.turso.io",
+      TELEGRAM_BOT_ID: "8739389202",
+    };
+    delete process.env.REIMBURSEMENT_REMINDER_CANARY_ENABLED;
+    delete process.env.REIMBURSEMENT_REMINDER_CANARY_PAYER_ID;
+    delete process.env.REIMBURSEMENT_REMINDER_CANARY_GROUP_ID;
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(enqueueDailySummary).toHaveBeenCalledTimes(1);
+    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for reimbursement bindings mixed with the global switch", async () => {
+    setupDailyProcessing([{ id: "user-A", telegram_user_id: "telegram-A", active_telegram_group_id: "group-A" }]);
+    process.env = {
+      ...process.env,
+      NOTIFICATIONS_ENABLED: "true",
+      REIMBURSEMENT_REMINDER_CANARY_ENABLED: "false",
+    };
+
+    const response = await GET(new NextRequest("http://localhost/api/cron/daily-alerts", {
+      headers: { authorization: "Bearer cron-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(notifyReimbursementReminder).not.toHaveBeenCalled();
   });
 
   it("does not prepare a daily canary if its active group changed", async () => {

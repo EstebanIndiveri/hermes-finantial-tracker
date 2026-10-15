@@ -3437,3 +3437,16 @@ scope y outbox de reintegros sin bindings ni despliegue, con revisión
 independiente y sin alterar el cron beta vigente. Tras observar Netflix,
 decidir la promoción beta separada con gates/H04d. **Owner Esteban:** ninguna
 acción requerida ahora.
+
+**Primer subcorte local completado:** el scope propio de reintegros ya está
+implementado y probado sin bindings. La ruta diaria solo conserva el envío
+directo cuando ese scope es `global`; un canary beta válido permanece sin
+lectura ni envío hasta que haya entrega durable. La regresión de ruta cubre
+canary configurado, bindings ausentes y mezcla con switch global. Suite
+completa final: 127 suites / 1.097 tests; arnés 117/117, TypeScript y lint
+dirigido sin errores. La revisión independiente Luna no encontró
+defecto de runtime y pidió cubrir la variante sin bindings, añadida después.
+No se desplegó ni configuró el canary. **Owner Codex:** implementar el outbox
+y la revalidación de reintegros como subcorte local separado, con nuevas
+pruebas de entrega antes de cualquier publicación. La prueba automática de
+Netflix del 15/10 sigue sobre el deployment operativo anterior.

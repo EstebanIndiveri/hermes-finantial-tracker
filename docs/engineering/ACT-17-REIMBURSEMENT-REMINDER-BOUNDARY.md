@@ -48,3 +48,20 @@ conservar.
   previsto para el 15/10 sobre el deployment beta ya atestado.
 - Mantener los datos QA y registrar por separado evidencia de invocación,
   operación/outbox, acuse del proveedor y cero destinatarios ajenos.
+
+## Primer subcorte local: scope sin activación
+
+Se agregó `getReimbursementReminderScope` con bindings independientes
+`REIMBURSEMENT_REMINDER_CANARY_{ENABLED,PAYER_ID,GROUP_ID}`. Valida identidad
+beta exacta y falla cerrado para valores incompletos, mal formados, ajenos o
+mezclados con switch global. La ruta diaria consulta reintegros por ahora
+**solo si este scope es global**: un canary válido tampoco utiliza el envío
+directo mientras no existan operación/outbox y revalidación al despacho. Con
+bindings ausentes y `NOTIFICATIONS_ENABLED=false`, el comportamiento beta
+permanece apagado; el modo global sin bindings conserva el flujo existente.
+
+Este subcorte no configura bindings, no cambia datos, no crea envíos y queda
+local hasta cerrar el ensayo automático de Netflix. Las pruebas dirigidas
+cubren la ausencia de bindings en la ruta, el canary configurado sin envío y
+los fallos cerrados del helper. El siguiente subcorte debe implementar la
+entrega durable y su dispatcher antes de conectar el modo canary al cron.

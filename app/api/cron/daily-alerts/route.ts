@@ -15,6 +15,7 @@ import { getNotificationsRuntimeMode } from "@/lib/runtime/notifications";
 import { getGroupMembership } from "@/lib/groups/permissions";
 import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 import { getDailySummaryScope, isDailySummaryRecipientAllowed } from "@/lib/notifications/daily-summary-canary";
+import { getReimbursementReminderScope } from "@/lib/notifications/reimbursement-reminder-canary";
 
 /**
  * Daily cron job for proactive Telegram alerts.
@@ -33,6 +34,7 @@ export async function GET(req: NextRequest) {
   // The beta canary is a separate one-user/one-group exception. Missing or
   // malformed configuration never inherits the legacy default-on behavior.
   const scope = getDailySummaryScope();
+  const reimbursementScope = getReimbursementReminderScope();
   if (scope.mode === "off") {
     return NextResponse.json({
       ok: true,
@@ -187,7 +189,9 @@ export async function GET(req: NextRequest) {
     const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
     const reimbursementCutoff = Date.now() - THREE_DAYS_MS;
 
-    const pendingOldReimbursements = scope.mode === "global" ? await db
+    // The canary is intentionally not wired to this direct-send path. It may
+    // only be activated after a durable outbox and dispatcher revalidation exist.
+    const pendingOldReimbursements = reimbursementScope.mode === "global" ? await db
       .select({
         id: reimbursementRequests.id,
         transactionId: reimbursementRequests.transactionId,
