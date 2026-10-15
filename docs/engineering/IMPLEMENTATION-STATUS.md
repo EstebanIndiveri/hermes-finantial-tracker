@@ -3650,3 +3650,39 @@ reintegros con `NOTIFICATIONS_ENABLED=false`, y observar el primer cron
 automático posterior a tres días estrictos de antigüedad. Conciliar request,
 operación/outbox, entrega a QA1 y ausencia de otros destinatarios. No forzar
 el cron ni modificar `created_at` para adelantar esta prueba.
+
+### ACT-17 — activación cercada del recordatorio de reintegro (15/10)
+
+El fixture QA `_UbIZ-RWblrBnknp6G3T5` fue verificado nuevamente en
+`beta-hermes`: `pending`, ARS 1, QA2 solicitante, QA1 pagador y grupo `test`.
+La configuración `partner_id` del grupo quedó restaurada a QA2; el pagador de
+la solicitud persiste como QA1. No se alteró ninguna solicitud previa.
+
+El gate `054d69182e965fb8df11d88ab3f78577152ba86d` pasó 102 pruebas de
+scripts y 65 pruebas dirigidas de cron, scope y despacho. Se configuraron
+**solo en el proyecto beta** los tres bindings
+`REIMBURSEMENT_REMINDER_CANARY_{ENABLED,PAYER_ID,GROUP_ID}` con valores
+`true`, QA1 y `test`; resumen diario y recurrentes conservan QA1 + `Mi
+espacio`, y el switch global `NOTIFICATIONS_ENABLED=false` no cambió. El
+candidate `dpl_AeuCY4ciF8NC5npuBK4QhrANyJcx` quedó READY; el build emitió
+`beta_build_isolation_attested`, `passed:true`, trece checks y
+`failedChecks:[]`. Después de la promoción, el alias beta canónico y
+`crons.deploymentId` apuntan ambos a ese ID. Los schedules siguen
+`0 0 * * *` (resumen diario y chequeo de reintegros), `0 11 * * *`
+(recurrentes) y `0 3 1 * *` (cotización). Legacy no se modificó.
+
+H04d revalidado con recibos redaccionados del deployment y alias actuales:
+`ok:true`, `postActivationRuntimeConsistent:true`, `isolationVerified:false`,
+`certificationState:not-certified`; no se presenta como certificación de
+secretos. La consulta beta no encuentra todavía operaciones ni outbox
+`cron:reimbursement:*`. La solicitud se creó el 15/10 a las 15:03 ART;
+requiere más de tres días completos, por lo que la primera ventana diaria
+automática prevista es **18/10 21:00–21:59 ART**, no el próximo cron de hoy.
+
+**Owner Codex:** la automatización existente `act-17-cron-diario-beta`
+permanece activa y fue actualizada para observar recurrentes el 16/10 y el
+primer recordatorio elegible el 18/10, conciliando `requests`, `runtime`,
+operación/outbox, un solo chat QA y cero destinatarios ajenos. Sin cron
+manual, reenvío incierto, cambio de `created_at` ni más movimientos. Un
+`nothing_relevant` antes de la elegibilidad es correcto. **Owner Esteban:**
+ninguna acción para esta prueba; los datos QA se conservan hasta el cierre.

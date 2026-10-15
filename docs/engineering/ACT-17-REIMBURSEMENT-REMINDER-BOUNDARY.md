@@ -122,3 +122,24 @@ no anticipar `created_at` ni invocar el cron para simular el tiempo. Owner
 Codex: desplegar el gate beta atestado, activar los tres bindings exactos y
 conciliar la primera ventana automática elegible con request de Vercel,
 operación/outbox, entrega solo a QA1 y cero destinatarios ajenos.
+
+## Quinto subcorte: canary beta publicado y observado hasta elegibilidad
+
+El commit `054d69182e965fb8df11d88ab3f78577152ba86d` pasó 102 pruebas del
+arnés de scripts y 65 pruebas dirigidas del cron/dispatcher. El deployment
+beta `dpl_AeuCY4ciF8NC5npuBK4QhrANyJcx` quedó READY y fue promovido al
+alias canónico beta. El build emitió `beta_build_isolation_attested` con
+`passed:true`, `failedChecks:[]` y los tres scopes separados. El inventario
+del proyecto muestra los tres bindings `REIMBURSEMENT_REMINDER_CANARY_*` solo
+en beta Production; `NOTIFICATIONS_ENABLED` sigue `false`. `crons.deploymentId`
+coincide con ese deployment; el cron diario sigue `0 0 * * *` UTC.
+
+H04d local, con recibos redaccionados y SHA-256 actualizados para el nuevo
+deployment/alias, devolvió `ok:true`, `postActivationRuntimeConsistent:true`,
+`isolationVerified:false` y `certificationState:not-certified`. Esto valida
+consistencia y procedencia de metadatos, no certifica valores de secretos.
+La solicitud QA continúa `pending` en `beta-hermes` y aún no hay operación ni
+outbox `cron:reimbursement:*`. Su `created_at=1792087418000` cae el 15/10
+a las 15:03 ART; el primer cron previsto **después** de tres días estrictos
+es el 18/10 a las 21:00–21:59 ART. Se mantiene seguimiento automático bajo
+owner Codex, sin invocación manual ni cambio de fecha o solicitud.
