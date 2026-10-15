@@ -3385,3 +3385,55 @@ lint dirigido y build local con Node 22.
 **Owner Codex:** preservar el deployment de la prueba automática y decidir
 después un pase beta separado con H04d. **Owner
 Esteban:** ninguna acción nueva; reportar si recibe el recordatorio QA.
+
+### ACT-17 — ensayo manual aislado de recurrente QA (14/10, 22:04 ART)
+
+Por autorización expresa de Esteban se preparó en **beta-hermes**, y solo en
+el usuario `esteban_beta_qa` / `Mi espacio` propio, la definición mensual
+`qa-manual-recurring-20261014` («QA ensayo manual 14/10», ARS 1, día 17,
+`auto_confirm=false`). Antes de ejecutarla se comprobó que no había otro
+recurrente activo con vencimiento el día 17 ni ejecuciones pendientes del
+usuario/grupo QA; Netflix ARS 3.000, día 18, permanecía activo e intacto.
+
+Se pulsó **una sola vez** `Run` para `/api/cron/recurring-reminders` en el
+dashboard de Vercel del deployment beta operativo
+`dpl_7MzoPtaMgYuS9tKxa5YC3uWNQ5Da`. Vercel respondió `Cron job queued`.
+La conciliación en beta-hermes mostró una ejecución del ensayo para
+`2026-10-17`, una operación `proactive.recurring_reminder` y exactamente una
+fila `cron:recurring` de tipo `upcoming` para el 14/10. Usuario, grupo y chat
+coincidieron con el QA aprobado; **cero destinatarios ajenos**. El Worker
+despachó esa única fila: estado `sent`, un intento, acuse del proveedor y
+`sent_at` presente, sin error. No se creó ninguna transacción financiera.
+
+Tras la entrega se desactivó la definición QA y se marcó su ocurrencia
+`skipped`, sin borrarlas, para preservar la evidencia y evitar avisos
+posteriores del ensayo. Netflix sigue activo y sin ejecución anticipada. Este
+resultado demuestra la cadena manual cron → materialización → outbox →
+Telegram en beta; **no prueba que Vercel dispare automáticamente** la ventana
+del 15/10. `NOTIFICATIONS_ENABLED=false`, el deployment, los horarios y
+legacy no se modificaron.
+
+**Owner Codex, abierto:** observar el cron recurrente automático del 15/10
+(08:00–08:59 ART) para Netflix, conciliar request, única ejecución
+`pending`, operación/outbox, entrega al chat QA y cero terceros; no invocarlo
+manualmente ni reenviar un resultado incierto. Solo después decidir el pase
+beta del recibo redactado `f329763` con atestación H04d. **Owner Esteban:**
+avisar si ve el recordatorio automático en el bot beta; no necesita crear
+otro recurrente.
+
+### ACT-17 — siguiente corte preparado: reintegros pendientes (14/10)
+
+La auditoría independiente del flujo encontró que la ruta diaria solo lee
+reintegros antiguos en modo global y entonces llama directamente a Telegram;
+el canary diario beta y la preferencia marcada no los activan. El contrato de
+un cerco propio y una entrega durable quedó en
+`ACT-17-REIMBURSEMENT-REMINDER-BOUNDARY.md`. **No se implementó ni activó
+este nuevo canal en esta release**: hacerlo antes del ensayo automático de
+Netflix mezclaría dos cambios de notificaciones en el mismo deployment.
+`NOTIFICATIONS_ENABLED=false` permanece y no se tocaron reintegros reales.
+
+**Owner Codex / siguiente subcorte local:** implementar y probar primero el
+scope y outbox de reintegros sin bindings ni despliegue, con revisión
+independiente y sin alterar el cron beta vigente. Tras observar Netflix,
+decidir la promoción beta separada con gates/H04d. **Owner Esteban:** ninguna
+acción requerida ahora.
