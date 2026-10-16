@@ -102,12 +102,15 @@ export function SplitAllocationForm(props: Props) {
           ? "Esta operación ya se usó para otro gasto. Volvé a la sesión y comprobá qué quedó registrado antes de iniciar uno nuevo."
           : "La sesión cambió o ya registra pagos. Recargá antes de intentar corregir este gasto.");
         if (isCreate && response.status === 400) throw new Error("La sesión cambió o el reparto ya no es válido. Recargá y revisá los miembros.");
+        if (isCreate && response.status >= 500) throw new Error("No pudimos confirmar si el gasto quedó guardado. Podés reintentar sin cambiar los datos; usaremos la misma operación para evitar un duplicado.");
         throw new Error(response.status === 403 ? "Ya no tenés permiso para editar esta sesión." : "No se pudo guardar el reparto. Revisá los importes y volvé a intentar.");
       }
       router.push(`/dashboard/compartidos/${props.sessionId}`);
       router.refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudo guardar el reparto.");
+      setError(isCreate && cause instanceof TypeError
+        ? "No pudimos confirmar si el gasto quedó guardado. Reintentá sin cambiar los datos o comprobá la sesión antes de iniciar otro."
+        : cause instanceof Error ? cause.message : "No se pudo guardar el reparto.");
       setSaving(false);
       savingRef.current = false;
     }
