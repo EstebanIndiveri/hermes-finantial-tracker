@@ -62,3 +62,25 @@ Telegram, edición/cancelación, cron o datos beta/legacy en H14a. H14b conserva
 owner Codex para política de cambios con pagos previos. Pruebas: caso válido,
 sumas erróneas, identidad ajena/duplicada, porcentaje y rollback al fallar
 el último insert; luego puertas del repositorio.
+
+### Contrato H14b — edición/cancelación protectora (15/10)
+
+La API `PATCH /api/splits/items/[id]` cambia solo `total_amount`, sin mover
+pagadores ni cuotas. Los pagos son de sesión y no tienen `split_id`; por eso
+no se puede atribuir con certeza un pago ya efectuado a un split particular.
+La política de contención es rechazar toda modificación del importe con
+`409` hasta implementar una sustitución transaccional completa. Cancelar un
+split activo solo se permite al owner cuando la sesión está abierta y no
+existe ningún pago en la sesión; ante pagos, responder `409` sin alterar
+contabilidad. Repetir la cancelación ya realizada es idempotente. Un cuerpo
+vacío o mixto (importe y cancelación) es inválido. Autorizar y consultar
+pagos dentro de la misma transacción que marca cancelado. No borrar pagos,
+partidas ni cabecera; preservar auditoría.
+
+Archivos: endpoint de edición/cancelación, prueba libSQL aislada, este
+contrato y bitácora. Riesgo: una edición antes ofrecida será rechazada
+explícitamente; una compensación/rectificación deberá diseñarse con vínculo
+de pago al split o asentamiento contable. No modificar la ruta de pagos,
+Telegram, esquema, datos beta/legacy o cron en este corte. **Owner Codex:**
+seguir con la edición transaccional de cuotas y la política de pagos
+atribuibles en un subcorte posterior; H14b solo contiene corrupción.

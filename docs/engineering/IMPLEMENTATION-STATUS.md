@@ -3838,3 +3838,22 @@ No se tocó beta, cron, `NOTIFICATIONS_ENABLED`, datos QA ni legacy. La
 promoción sigue diferida por ACT-17: owner Codex mantiene observación
 16/10 y 18/10 y luego atestación H04d del nuevo deployment. H14b permanece
 con owner Codex y no se mezcla en este commit de dependencias.
+
+### ACT-08/H14b — contención de edición/cancelación de splits (15/10)
+
+La regresión libSQL reprodujo tres fallas del PATCH web: cambiaba el total
+sin cuotas, cancelaba pese a un pago en la sesión y un cuerpo vacío terminaba
+en 500. El endpoint ahora exige una sola operación. Un cambio de importe
+recibe `409` hasta disponer de sustitución transaccional de pagadores/cuotas;
+una cancelación se autoriza al owner dentro de transacción, solo con sesión
+abierta y sin pagos de sesión. La repetición de una cancelación completada
+es idempotente. No borra historia ni toca el escritor de pagos.
+
+Prueba dirigida roja antes del parche y verde después; gates completos con
+Next 16.3.8: harness 130/130, Jest 130 suites/1132 pruebas, typecheck,
+lint 0 errores/61 advertencias y build aprobados. No se publicó beta ni
+se modificaron cron, notificaciones, datos QA o legacy. **Owner Codex:**
+queda la edición verdadera de cuotas y una política de rectificación con
+pagos ya efectuados; no declarar H14 finalizado por esta contención.
+**Owner Esteban:** ninguna validación por ahora. El deployment ACT-17 sigue
+estable hasta sus ventanas; la integración posterior requiere H04d exacto.

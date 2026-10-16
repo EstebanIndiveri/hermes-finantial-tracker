@@ -9,6 +9,7 @@ import * as schema from "@/lib/db/schema";
 let directory: string;
 let client: Client;
 let POST: typeof import("../route").POST;
+let PATCH: typeof import("../../../../items/[id]/route").PATCH;
 
 const validBody = {
   description: "Cena QA",
@@ -28,6 +29,15 @@ async function post(body: unknown) {
     body: JSON.stringify(body),
   });
   return POST(request, { params: Promise.resolve({ id: "session-a" }) });
+}
+
+async function patch(id: string, body: unknown, userId = "owner") {
+  const request = new NextRequest(`http://localhost/api/splits/items/${id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", "x-user-id": userId },
+    body: JSON.stringify(body),
+  });
+  return PATCH(request, { params: Promise.resolve({ id }) });
 }
 
 async function counts() {
@@ -59,6 +69,11 @@ beforeAll(async () => {
       user_id TEXT, temp_user_id TEXT, amount_paid REAL NOT NULL);
     CREATE TABLE split_items (id TEXT PRIMARY KEY, split_id TEXT NOT NULL,
       user_id TEXT, temp_user_id TEXT, amount_owed REAL NOT NULL, percentage REAL);
+    CREATE TABLE split_payments (id TEXT PRIMARY KEY, operation_id TEXT,
+      session_id TEXT NOT NULL, payer_user_id TEXT, payer_temp_id TEXT,
+      payee_user_id TEXT, payee_temp_id TEXT, amount REAL NOT NULL,
+      method TEXT NOT NULL, receipt_image_url TEXT, ocr_raw_text TEXT,
+      confirmed_at INTEGER, telegram_update_id TEXT);
     INSERT INTO users VALUES ('owner'), ('friend'), ('outsider');
     INSERT INTO split_sessions (id, name, owner_user_id, status, created_at)
       VALUES ('session-a', 'QA', 'owner', 'open', 1);
@@ -69,6 +84,7 @@ beforeAll(async () => {
   jest.resetModules();
   jest.doMock("@/lib/db/client", () => ({ db: database }));
   ({ POST } = await import("../route"));
+  ({ PATCH } = await import("../../../../items/[id]/route"));
 });
 
 afterAll(() => {
@@ -79,9 +95,11 @@ afterAll(() => {
 
 beforeEach(async () => {
   await client.execute("DROP TRIGGER IF EXISTS reject_item");
+  await client.execute("DELETE FROM split_payments");
   await client.execute("DELETE FROM split_items");
   await client.execute("DELETE FROM split_payers");
   await client.execute("DELETE FROM splits");
+  await client.execute("UPDATE split_sessions SET status='open' WHERE id='session-a'");
 });
 
 it("creates a balanced split for session members", async () => {
@@ -128,4 +146,33 @@ it("rolls back header and payers if the final item insert fails", async () => {
   await client.execute("CREATE TRIGGER reject_item BEFORE INSERT ON split_items BEGIN SELECT RAISE(FAIL, 'fixture failure'); END");
   expect((await post(validBody)).status).toBe(500);
   expect(await counts()).toEqual([0, 0, 0]);
+});
+
+it("does not change the total without replacing allocations", async () => {
+  const id = (await (await post(validBody)).json()).id as string;
+  expect((await patch(id, { totalAmount: 20 })).status).toBe(409);
+  const row = await client.execute({ sql: "SELECT total_amount FROM splits WHERE id=?", args: [id] });
+  expect(Number(row.rows[0].total_amount)).toBe(10.01);
+});
+
+it("does not cancel a split after any session payment", async () => {
+  const id = (await (await post(validBody)).json()).id as string;
+  await client.execute({ sql: `INSERT INTO split_payments
+    (id, session_id, payer_user_id, payee_user_id, amount, method)
+    VALUES (?, 'session-a', 'friend', 'owner', 5, 'manual')`, args: ["payment-a"] });
+  expect((await patch(id, { status: "cancelled" })).status).toBe(409);
+  const row = await client.execute({ sql: "SELECT status FROM splits WHERE id=?", args: [id] });
+  expect(row.rows[0].status).toBe("active");
+});
+
+it("allows the owner to cancel once with no payments and rejects invalid edits", async () => {
+  const id = (await (await post(validBody)).json()).id as string;
+  expect((await patch(id, {})).status).toBe(400);
+  expect((await patch(id, { status: "cancelled", totalAmount: 20 })).status).toBe(400);
+  expect((await patch(id, { status: "cancelled" }, "friend")).status).toBe(403);
+  expect((await patch(id, { status: "cancelled" })).status).toBe(200);
+  expect((await patch(id, { status: "cancelled" })).status).toBe(200);
+  const row = await client.execute({ sql: "SELECT status, cancelled_at FROM splits WHERE id=?", args: [id] });
+  expect(row.rows[0].status).toBe("cancelled");
+  expect(Number(row.rows[0].cancelled_at)).toBeGreaterThan(0);
 });
