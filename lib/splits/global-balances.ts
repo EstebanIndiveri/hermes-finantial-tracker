@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { split_items, split_payers, split_payments, split_session_members, split_sessions, splits } from "@/lib/db/schema";
 import { calculateSessionBalances } from "./balances";
+import { confirmedPaymentsForSession } from "./confirmed-payments";
 import { participantKey, type GlobalBalanceSummary, type GlobalDebt, type PartnerBalance, type ParticipantId, type RawItem, type RawPayer, type RawPayment } from "./types";
 
 type SessionRecord = {
@@ -65,7 +66,7 @@ export async function calculateGlobalBalances(userId: string): Promise<GlobalBal
       : await Promise.all([
           db.select().from(split_payers).where(inArray(split_payers.split_id, splitIds)),
           db.select().from(split_items).where(inArray(split_items.split_id, splitIds)),
-          db.select().from(split_payments).where(eq(split_payments.session_id, session.id)),
+          db.select().from(split_payments).where(confirmedPaymentsForSession(session.id)),
         ]);
 
     const rawPayers: RawPayer[] = payerRows.map((row) => ({

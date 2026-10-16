@@ -3,6 +3,7 @@ import { db } from "@/lib/db/client";
 import { users, temp_users, split_sessions, splits, split_payers, split_items, split_payments } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { calculateSessionBalances } from "@/lib/splits/balances";
+import { confirmedPaymentsForSession } from "@/lib/splits/confirmed-payments";
 import { setConversationState } from "../conversation-state";
 import type { TelegramResponse } from "../telegram-api";
 import { buildInlineKeyboard } from "../telegram-api";
@@ -82,7 +83,7 @@ export async function handlePague(chatId: string, telegramUserId: string): Promi
   const [payersRows, itemsRows, paymentsRows] = await Promise.all([
     db.select().from(split_payers).where(inArray(split_payers.split_id, splitIds)),
     db.select().from(split_items).where(inArray(split_items.split_id, splitIds)),
-    db.select().from(split_payments).where(eq(split_payments.session_id, session.id)),
+    db.select().from(split_payments).where(confirmedPaymentsForSession(session.id)),
   ]);
 
   const summary = calculateSessionBalances(
@@ -197,7 +198,7 @@ export async function handlePagueSelect(
   const [payersRows, itemsRows, paymentsRows] = await Promise.all([
     db.select().from(split_payers).where(inArray(split_payers.split_id, splitIds)),
     db.select().from(split_items).where(inArray(split_items.split_id, splitIds)),
-    db.select().from(split_payments).where(eq(split_payments.session_id, session.id)),
+    db.select().from(split_payments).where(confirmedPaymentsForSession(session.id)),
   ]);
 
   const summary = calculateSessionBalances(

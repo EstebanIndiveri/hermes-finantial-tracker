@@ -4041,3 +4041,21 @@ independientes a la misma base, y unificar el writer transaccional con
 Las proyecciones de balance que aún incluyen OCR pendiente requieren un
 corte separado de consistencia. ACT-17 y H04d conservan owner y deployment
 estable. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-08/H14j — excluir comprobantes pendientes de deuda e historial, rama local (16/10)
+
+**Owner Codex, implementado localmente; no publicado.** Un pago con
+`confirmed_at NULL` ya no reduce deudas en el balance global, API y vista
+de sesión, ni en los comandos Telegram `/balances` y `/pague` (listado y
+selección). El historial usa la misma condición de confirmación tanto al
+paginar como al contar. La regla conservadora que bloquea edición cuando
+existe cualquier registro de pago no cambió. Sin migración ni cambios a
+datos, avisos, cron, beta activa o legacy.
+
+La regresión libSQL aislada reprodujo primero deuda en cero y total de
+historial dos con un pago OCR pendiente; ahora verifica deuda de ARS 8 y
+un solo pago confirmado. Pruebas dirigidas 14/14; suite completa: harness
+130/130 y Jest 135 suites/1174 pruebas. **Pendiente con owner Codex:**
+H14i aún requiere ensayo concurrente con conexiones independientes y
+unificación del writer web transaccional; ACT-17 y H04d mantienen owner
+y bloquean promoción. **Owner Esteban:** ninguna acción ahora.

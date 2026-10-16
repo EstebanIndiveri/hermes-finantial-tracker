@@ -3,6 +3,7 @@ import { db } from "@/lib/db/client";
 import { split_sessions, splits, split_session_members, split_payers, split_items, split_payments } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { calculateSessionBalances } from "@/lib/splits/balances";
+import { confirmedPaymentsForSession } from "@/lib/splits/confirmed-payments";
 import type { RawPayer, RawItem, RawPayment } from "@/lib/splits/types";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -39,7 +40,7 @@ async function getSessionDetail(id: string) {
       const [payerRows, itemRows, paymentRows] = await Promise.all([
         db.select().from(split_payers).where(inArray(split_payers.split_id, splitIds)),
         db.select().from(split_items).where(inArray(split_items.split_id, splitIds)),
-        db.select().from(split_payments).where(eq(split_payments.session_id, id)),
+        db.select().from(split_payments).where(confirmedPaymentsForSession(id)),
       ]);
       const rawPayers: RawPayer[] = payerRows.map(r => ({ userId: r.user_id ?? undefined, tempUserId: r.temp_user_id ?? undefined, amountPaid: r.amount_paid }));
       const rawItems: RawItem[] = itemRows.map(r => ({ userId: r.user_id ?? undefined, tempUserId: r.temp_user_id ?? undefined, amountOwed: r.amount_owed }));

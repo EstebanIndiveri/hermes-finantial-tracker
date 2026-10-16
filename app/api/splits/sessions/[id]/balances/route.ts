@@ -4,6 +4,7 @@ import { db } from "@/lib/db/client";
 import { split_sessions, splits, split_payers, split_items, split_payments, split_session_members } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { calculateSessionBalances } from "@/lib/splits/balances";
+import { confirmedPaymentsForSession } from "@/lib/splits/confirmed-payments";
 import type { RawPayer, RawItem, RawPayment } from "@/lib/splits/types";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const [payerRows, itemRows, paymentRows] = await Promise.all([
       db.select().from(split_payers).where(inArray(split_payers.split_id, splitIds)),
       db.select().from(split_items).where(inArray(split_items.split_id, splitIds)),
-      db.select().from(split_payments).where(eq(split_payments.session_id, id)),
+      db.select().from(split_payments).where(confirmedPaymentsForSession(id)),
     ]);
 
     const rawPayers: RawPayer[] = payerRows.map(r => ({

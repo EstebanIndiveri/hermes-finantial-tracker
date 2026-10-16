@@ -221,3 +221,16 @@ con libSQL aislado: actor ajeno, tercero, sobrepago, replay, clave colisionada,
 rollback y segunda clave secuencial tras pago parcial. La carrera de dos
 claves sobre conexiones independientes exige un ensayo separado antes del
 pase beta; una sola conexión local no modela ese límite de Turso.
+
+### Contrato H14j — comprobantes pendientes fuera de balances (16/10)
+
+Un `split_payments` con `confirmed_at NULL` es evidencia pendiente, no un
+pago. Todas las lecturas que alimentan deuda o la acción de pagar (balance
+global, API/vista de sesión, `/balances` y ambas etapas de `/pague`) deben
+consultar solo pagos confirmados. El historial de pagos mostrará y contará
+el mismo conjunto confirmado, aun sin filtros de fecha. No modificar filas
+históricas ni la política conservadora que bloquea editar una sesión cuando
+existe cualquier registro de pago; ese cambio requiere decisión aparte.
+Sin cambios de esquema, avisos, cron, beta activa o legacy. Probar la
+condición SQL con libSQL aislado y una fila pendiente junto a una confirmada
+antes de cambiar consumidores.

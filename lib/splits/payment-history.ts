@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { split_payments, split_sessions } from "@/lib/db/schema";
 
@@ -40,6 +40,7 @@ export async function getPaymentHistoryForUser(
 ): Promise<PaymentHistoryResult> {
   const conditions = [
     or(eq(split_payments.payer_user_id, userId), eq(split_payments.payee_user_id, userId)),
+    isNotNull(split_payments.confirmed_at),
   ];
 
   if (filters.partnerId) {
