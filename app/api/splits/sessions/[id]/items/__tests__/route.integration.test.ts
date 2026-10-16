@@ -22,6 +22,16 @@ const validBody = {
   ],
 };
 
+const replacement = {
+  totalAmount: 12,
+  splitType: "equal",
+  payers: [{ userId: "owner", amountPaid: 12 }],
+  participants: [
+    { userId: "owner", amount: 6 },
+    { userId: "friend", amount: 6 },
+  ],
+};
+
 async function post(body: unknown) {
   const request = new NextRequest("http://localhost/api/splits/sessions/session-a/items", {
     method: "POST",
@@ -100,6 +110,10 @@ beforeEach(async () => {
   await client.execute("DELETE FROM split_payers");
   await client.execute("DELETE FROM splits");
   await client.execute("UPDATE split_sessions SET status='open' WHERE id='session-a'");
+  await client.execute("DELETE FROM split_session_members");
+  await client.execute("DELETE FROM temp_users");
+  await client.execute(`INSERT INTO split_session_members VALUES
+    ('session-a', 'owner', NULL, 1), ('session-a', 'friend', NULL, 1)`);
 });
 
 it("creates a balanced split for session members", async () => {
@@ -142,6 +156,18 @@ it("accepts balanced percentage allocations and rejects sub-cent money", async (
   expect(await counts()).toEqual([1, 1, 2]);
 });
 
+it("does not label unequal quotas as an equal split", async () => {
+  expect((await post({ ...validBody, splitType: "equal", participants: [
+    { userId: "owner", amount: 6.01 }, { userId: "friend", amount: 4 },
+  ] })).status).toBe(400);
+  expect(await counts()).toEqual([0, 0, 0]);
+});
+
+it("accepts a one-cent remainder in an equal split", async () => {
+  expect((await post({ ...validBody, splitType: "equal" })).status).toBe(201);
+  expect(await counts()).toEqual([1, 1, 2]);
+});
+
 it("rolls back header and payers if the final item insert fails", async () => {
   await client.execute("CREATE TRIGGER reject_item BEFORE INSERT ON split_items BEGIN SELECT RAISE(FAIL, 'fixture failure'); END");
   expect((await post(validBody)).status).toBe(500);
@@ -176,4 +202,75 @@ it("allows the owner to cancel once with no payments and rejects invalid edits",
   const row = await client.execute({ sql: "SELECT status, cancelled_at FROM splits WHERE id=?", args: [id] });
   expect(row.rows[0].status).toBe("cancelled");
   expect(Number(row.rows[0].cancelled_at)).toBeGreaterThan(0);
+});
+
+it("replaces the total, payers and quotas together before payment", async () => {
+  const id = (await (await post(validBody)).json()).id as string;
+  expect((await patch(id, replacement)).status).toBe(200);
+  const [split, payers, items] = await Promise.all([
+    client.execute({ sql: "SELECT total_amount, split_type FROM splits WHERE id=?", args: [id] }),
+    client.execute({ sql: "SELECT amount_paid FROM split_payers WHERE split_id=?", args: [id] }),
+    client.execute({ sql: "SELECT user_id, amount_owed FROM split_items WHERE split_id=? ORDER BY user_id", args: [id] }),
+  ]);
+  expect(split.rows[0].total_amount).toBe(12);
+  expect(split.rows[0].split_type).toBe("equal");
+  expect(payers.rows.map(row => row.amount_paid)).toEqual([12]);
+  expect(items.rows.map(row => [row.user_id, row.amount_owed])).toEqual([
+    ["friend", 6], ["owner", 6],
+  ]);
+});
+
+it("rejects an invalid replacement or one after a payment without mutating", async () => {
+  const id = (await (await post(validBody)).json()).id as string;
+  expect((await patch(id, { ...replacement, participants: [
+    { userId: "owner", amount: 11 }, { userId: "friend", amount: 1 },
+  ] })).status).toBe(400);
+  expect((await patch(id, { ...replacement, participants: [
+    { userId: "outsider", amount: 12 },
+  ] })).status).toBe(400);
+  await client.execute({ sql: `INSERT INTO split_payments
+    (id, session_id, payer_user_id, payee_user_id, amount, method)
+    VALUES (?, 'session-a', 'friend', 'owner', 1, 'manual')`, args: ["payment-b"] });
+  expect((await patch(id, replacement)).status).toBe(409);
+  const row = await client.execute({ sql: "SELECT total_amount FROM splits WHERE id=?", args: [id] });
+  expect(row.rows[0].total_amount).toBe(10.01);
+  expect(await counts()).toEqual([1, 1, 2]);
+});
+
+it("rolls back replacement when the final quota insert fails", async () => {
+  const id = (await (await post(validBody)).json()).id as string;
+  await client.execute("CREATE TRIGGER reject_item BEFORE INSERT ON split_items BEGIN SELECT RAISE(FAIL, 'fixture failure'); END");
+  expect((await patch(id, replacement)).status).toBe(500);
+  const [split, payers, items] = await Promise.all([
+    client.execute({ sql: "SELECT total_amount FROM splits WHERE id=?", args: [id] }),
+    client.execute({ sql: "SELECT amount_paid FROM split_payers WHERE split_id=?", args: [id] }),
+    client.execute({ sql: "SELECT user_id, amount_owed FROM split_items WHERE split_id=? ORDER BY user_id", args: [id] }),
+  ]);
+  expect(split.rows[0].total_amount).toBe(10.01);
+  expect(payers.rows.map(row => row.amount_paid)).toEqual([10.01]);
+  expect(items.rows.map(row => [row.user_id, row.amount_owed])).toEqual([
+    ["friend", 5], ["owner", 5.01],
+  ]);
+});
+
+it("rechecks owner membership and closed-session state before replacing", async () => {
+  const id = (await (await post(validBody)).json()).id as string;
+  await client.execute("DELETE FROM split_session_members WHERE user_id='owner'");
+  expect((await patch(id, replacement)).status).toBe(403);
+  await client.execute("INSERT INTO split_session_members VALUES ('session-a', 'owner', NULL, 1)");
+  await client.execute("UPDATE split_sessions SET status='closed' WHERE id='session-a'");
+  expect((await patch(id, replacement)).status).toBe(409);
+  const row = await client.execute({ sql: "SELECT total_amount FROM splits WHERE id=?", args: [id] });
+  expect(row.rows[0].total_amount).toBe(10.01);
+});
+
+it("supports a current temporary member in a complete replacement", async () => {
+  const id = (await (await post(validBody)).json()).id as string;
+  await client.execute("INSERT INTO temp_users VALUES ('temp-a')");
+  await client.execute("INSERT INTO split_session_members VALUES ('session-a', NULL, 'temp-a', 1)");
+  expect((await patch(id, { ...replacement, splitType: "fixed", participants: [
+    { userId: "owner", amount: 7 }, { tempUserId: "temp-a", amount: 5 },
+  ] })).status).toBe(200);
+  const result = await client.execute({ sql: "SELECT temp_user_id, amount_owed FROM split_items WHERE split_id=? AND temp_user_id IS NOT NULL", args: [id] });
+  expect(result.rows.map(row => [row.temp_user_id, row.amount_owed])).toEqual([["temp-a", 5]]);
 });

@@ -1,17 +1,17 @@
 // app/api/splits/items/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
-import { splits, split_sessions, split_payments } from "@/lib/db/schema";
+import { splits, split_sessions, split_session_members, split_payments, split_payers, split_items } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { randomUUID } from "crypto";
+import { allocationIdentity, splitAllocationSchema, validSplitAllocation } from "@/lib/splits/allocation-contract";
 
-const patchSchema = z.object({
-  totalAmount: z.number().positive().optional(),
-  status: z.literal("cancelled").optional(),
-}).strict().refine(value =>
-  (value.totalAmount !== undefined) !== (value.status === "cancelled"), {
-  message: "Choose exactly one change",
-});
+const patchSchema = z.union([
+  z.object({ status: z.literal("cancelled") }).strict(),
+  splitAllocationSchema.strict(),
+  z.object({ totalAmount: z.number().positive() }).strict(),
+]);
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -31,26 +31,60 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!session || session.owner_user_id !== userId) {
         return { error: "Forbidden", status: 403 } as const;
       }
-      if (split.status === "cancelled" && parsed.data.status === "cancelled") {
+      const members = await tx.select().from(split_session_members)
+        .where(eq(split_session_members.session_id, split.session_id));
+      if (!members.some(member => member.user_id === userId)) {
+        return { error: "Forbidden", status: 403 } as const;
+      }
+      if (split.status === "cancelled" && "status" in parsed.data) {
         return { ok: true } as const;
       }
       if (session.status !== "open") return { error: "Session is closed", status: 409 } as const;
       if (split.status !== "active") return { error: "Split is not active", status: 409 } as const;
 
-      // A total-only edit would break sum(payers) = sum(items) = total.
-      // A future edit must replace allocations in the same transaction.
-      if (parsed.data.totalAmount !== undefined) {
+      // Retain the legacy total-only shape as an explicit conflict.
+      if (!("status" in parsed.data) && !("payers" in parsed.data)) {
         return { error: "Allocation replacement required", status: 409 } as const;
       }
 
+      if ("payers" in parsed.data) {
+        if (!validSplitAllocation(parsed.data)) {
+          return { error: "Invalid split allocation", status: 400 } as const;
+        }
+        const memberIds = new Set(members.map(member =>
+          member.user_id ? `user:${member.user_id}` : `temp:${member.temp_user_id}`));
+        if ([...parsed.data.payers, ...parsed.data.participants]
+          .some(value => !memberIds.has(allocationIdentity(value)))) {
+          return { error: "Identity outside session", status: 400 } as const;
+        }
+      }
+
       // Payments belong to the session, not a split. Their attribution is
-      // unknown, so cancellation after any payment must fail closed.
+      // unknown, so either correction or cancellation must fail closed.
       const [payment] = await tx.select({ id: split_payments.id }).from(split_payments)
         .where(eq(split_payments.session_id, split.session_id)).limit(1);
       if (payment) return { error: "Session has payments", status: 409 } as const;
 
-      await tx.update(splits).set({ status: "cancelled", cancelled_at: Date.now() })
-        .where(and(eq(splits.id, id), eq(splits.status, "active")));
+      if ("status" in parsed.data) {
+        await tx.update(splits).set({ status: "cancelled", cancelled_at: Date.now() })
+          .where(and(eq(splits.id, id), eq(splits.status, "active")));
+      } else if ("payers" in parsed.data) {
+        const { totalAmount, splitType, payers, participants } = parsed.data;
+        await tx.delete(split_items).where(eq(split_items.split_id, id));
+        await tx.delete(split_payers).where(eq(split_payers.split_id, id));
+        await tx.insert(split_payers).values(payers.map(p => ({
+          id: randomUUID(), split_id: id,
+          user_id: p.userId ?? null, temp_user_id: p.tempUserId ?? null,
+          amount_paid: p.amountPaid,
+        })));
+        await tx.insert(split_items).values(participants.map(p => ({
+          id: randomUUID(), split_id: id,
+          user_id: p.userId ?? null, temp_user_id: p.tempUserId ?? null,
+          amount_owed: p.amount, percentage: p.percentage ?? null,
+        })));
+        await tx.update(splits).set({ total_amount: totalAmount, split_type: splitType })
+          .where(and(eq(splits.id, id), eq(splits.status, "active")));
+      }
       return { ok: true } as const;
     });
     if ("error" in result) {

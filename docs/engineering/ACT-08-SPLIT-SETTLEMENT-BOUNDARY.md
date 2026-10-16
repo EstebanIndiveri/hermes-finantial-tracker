@@ -84,3 +84,26 @@ de pago al split o asentamiento contable. No modificar la ruta de pagos,
 Telegram, esquema, datos beta/legacy o cron en este corte. **Owner Codex:**
 seguir con la edición transaccional de cuotas y la política de pagos
 atribuibles en un subcorte posterior; H14b solo contiene corrupción.
+
+### Contrato H14c — reemplazo íntegro antes de pagos (16/10)
+
+Clasificación: estabilización financiera, sin migración. El PATCH ya rechaza
+cambiar únicamente `totalAmount`; el comportamiento esperado agrega una
+opción de edición con `totalAmount`, `splitType`, `payers` y `participants`
+completos. Usa exactamente la validación monetaria/de identidad del alta:
+centavos conservados, porcentajes coherentes, IDs exclusivos y miembros
+vigentes. Para `equal`, las cuotas solo pueden diferir un centavo como
+resultado del reparto. No se aceptan ediciones si la sesión está cerrada,
+el split fue cancelado o existe cualquier pago en la sesión. La autorización
+del owner, la consulta de pagos, el reemplazo de pagadores/cuotas y el cambio
+de cabecera comparten una transacción. Una falla al insertar las cuotas
+nuevas conserva íntegramente las filas originales. La repetición de una
+edición idéntica deja la misma proyección, aunque no promete IDs de filas
+idénticos; no se invoca desde retry automático ni se envían avisos.
+
+Archivos: validador compartido de rutas web, alta, PATCH, regresiones libSQL,
+este contrato y bitácora. Riesgo: clientes que envían distribuciones `equal`
+incoherentes reciben 400. No reinterpretar historia ni cambiar Telegram,
+pagos, esquema, cron, beta o legacy. La edición con pagos sigue prohibida
+porque la tabla de pagos no indica qué split liquidó cada pago; **owner Codex**
+para un diseño de ajuste/auditoría posterior, no resolver por heurística.

@@ -3857,3 +3857,29 @@ queda la edición verdadera de cuotas y una política de rectificación con
 pagos ya efectuados; no declarar H14 finalizado por esta contención.
 **Owner Esteban:** ninguna validación por ahora. El deployment ACT-17 sigue
 estable hasta sus ventanas; la integración posterior requiere H04d exacto.
+
+### ACT-08/H14c — edición completa antes de pagos, solo API local (16/10)
+
+**Owner Codex, corte local cerrado.** El PATCH web ahora acepta reemplazar
+en una transacción el total, tipo de reparto, pagadores y cuotas completos.
+El alta y la edición comparten el validador de sumas en centavos, identidades,
+porcentajes y semántica de `equal`. Se revalida que el owner sea miembro
+vigente, que todos los participantes pertenezcan a la sesión y que no haya
+pagos antes de modificar. Una falla al insertar cuotas nuevas revierte
+cabecera y distribuciones originales. El PATCH antiguo de solo total sigue
+respondiendo `409`. La regresión con libSQL aislado fue roja antes de añadir
+la edición y cubre reemplazo válido, suma/reparto/identidad inválidos,
+miembro temporal, owner removido, sesión cerrada, pago previo y rollback.
+
+Gates: harness 130/130, Jest 130 suites/1139 pruebas, lint 0 errores/61
+advertencias y build aprobados. Typecheck primero coincidió con la
+regeneración de `.next/types` del build paralelo y falló por archivos
+temporales ausentes; repetido después del build, pasó sin cambio de código.
+No hubo despliegue, cambio de cron, QA o legacy.
+
+**Pendientes con owner Codex:** el formulario web aún no expone la edición
+completa; diseñar una UI que muestre cuotas y pagadores sin prometer un
+reparto falso. Para editar/cancelar después de pagos hace falta una política
+de ajuste auditable, porque `split_payments` solo referencia la sesión y no
+el gasto. ACT-08 no está cerrado. ACT-17 mantiene owner y deployment estable
+hasta las ventanas 16/10 y 18/10; luego integración y H04d exacto.
