@@ -3936,3 +3936,34 @@ beta después de las ventanas ACT-17 y H04d; diseñar rectificación auditable
 cuando ya hay pagos atribuidos solo a la sesión. No se modifica la política
 de pagos, el bot Telegram ni los avisos. **Owner Esteban:** ninguna acción
 antes de un pase beta explícito.
+
+### ACT-08/H14f — clave durable para el alta web, rama local (16/10)
+
+**Owner Codex, implementación local.** El POST de gasto compartido exige un
+UUID de operación por intención de alta y lo persiste en el índice único
+existente de `splits.operation_id`. Una repetición del mismo actor, sesión y
+distribución financiera devuelve el ID original con HTTP 200; otra carga
+útil con la misma clave responde 409. La comparación incluye descripción,
+total, tipo, pagadores, cuotas y porcentajes en centavos, sin depender del
+orden de filas. El formulario genera la clave al primer envío y la retiene
+tras una respuesta incierta; si se modifican datos después de esa respuesta,
+detiene el reenvío y pide comprobar la sesión. Pestañas beta anteriores sin
+clave recibirán 400 y deberán recargar. No hay nueva migración ni cambios
+en Telegram, pagos, notificaciones o deployment.
+
+Regresiones libSQL: repetición con orden diferente, replay tras cerrar la
+sesión, colisión de payload/actor, ausencia de clave y unicidad aplicada por DB,
+incluso con dos conexiones separadas compitiendo por la misma clave.
+El intento de testear dos transacciones simultáneas sobre la **misma
+conexión local** produjo `SQLITE_BUSY` y bloqueó la fixture; ese driver no
+sirvió para exigir dos respuestas 200/201 en paralelo. El índice demuestra
+una sola escritura efectiva en la carrera de dos conexiones; queda owner
+Codex para observar el comportamiento de la respuesta HTTP perdedora en
+beta antes de declarar cerrada la concurrencia operativa. La ruta permite que un cliente
+reintente la misma clave si la respuesta fue 500/incierta.
+
+Gates: harness 130/130, Jest 132 suites/1150 pruebas, lint 0 errores/61
+advertencias preexistentes y build Next/TypeScript aprobados antes del último
+caso de actor ajeno (que se ejecuta dirigido). No hubo publicación ni cambio
+de datos/cron. **Pendiente con owner Codex:** integración beta tras ACT-17 y
+H04d y observación del HTTP perdedor. **Owner Esteban:** ninguna acción ahora.

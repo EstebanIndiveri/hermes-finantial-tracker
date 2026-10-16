@@ -143,3 +143,22 @@ puede registrar un gasto; la política de edición H14d sigue reservada al
 owner. No enviar avisos adicionales ni modificar Telegram, pagos, esquema,
 cron o datos existentes. Un 400 por cierre o membresía cambiada indica
 recargar; no reintentar automáticamente. Publicación diferida por ACT-17.
+
+### Contrato H14f — identidad durable del alta web (16/10)
+
+El formulario H14e bloquea doble clic en memoria, pero un timeout después de
+commit o un reenvío desde otra pestaña puede crear dos gastos. El POST de
+alta exigirá una `operationId` UUID por intención de alta, generada en el
+cliente y reutilizada en sus reintentos. La unicidad existente de
+`splits.operation_id` decidirá la carrera en DB; no se agrega migración.
+Repetir una operación con el mismo actor, sesión, descripción y distribución
+canónica devuelve el mismo ID sin insertar nada. Reutilizar la clave con
+otro payload, actor o sesión devuelve conflicto; no se filtra el gasto ajeno.
+El cliente conserva la clave si falla la red o hay error incierto y crea una
+nueva solo al abrir una intención distinta. La comparación incluye centavos,
+tipo y porcentajes, no depende del orden de filas. Una respuesta confirmada
+puede navegar al gasto ya existente; no se envían avisos en este corte.
+
+Archivos: ruta POST, formulario, regresiones de integración libSQL y bitácora.
+Se rechazan cuerpos web sin clave: una pestaña beta anterior debe recargar
+antes de registrar. No tocar Telegram, pagos, esquema, crons ni beta activa.

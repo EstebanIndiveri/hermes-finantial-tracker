@@ -12,6 +12,7 @@ let POST: typeof import("../route").POST;
 let PATCH: typeof import("../../../../items/[id]/route").PATCH;
 
 const validBody = {
+  operationId: "4052d2ca-a36e-43a4-ab24-1af84779b316",
   description: "Cena QA",
   totalAmount: 10.01,
   splitType: "fixed",
@@ -32,10 +33,10 @@ const replacement = {
   ],
 };
 
-async function post(body: unknown) {
+async function post(body: unknown, userId = "owner") {
   const request = new NextRequest("http://localhost/api/splits/sessions/session-a/items", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-user-id": "owner" },
+    headers: { "content-type": "application/json", "x-user-id": userId },
     body: JSON.stringify(body),
   });
   return POST(request, { params: Promise.resolve({ id: "session-a" }) });
@@ -75,6 +76,7 @@ beforeAll(async () => {
       status TEXT NOT NULL DEFAULT 'active', created_by_user_id TEXT,
       created_by_temp_id TEXT, created_at INTEGER NOT NULL, cancelled_at INTEGER,
       telegram_message_id TEXT);
+    CREATE UNIQUE INDEX splits_operation_id_idx ON splits(operation_id) WHERE operation_id IS NOT NULL;
     CREATE TABLE split_payers (id TEXT PRIMARY KEY, split_id TEXT NOT NULL,
       user_id TEXT, temp_user_id TEXT, amount_paid REAL NOT NULL);
     CREATE TABLE split_items (id TEXT PRIMARY KEY, split_id TEXT NOT NULL,
@@ -119,6 +121,71 @@ beforeEach(async () => {
 it("creates a balanced split for session members", async () => {
   expect((await post(validBody)).status).toBe(201);
   expect(await counts()).toEqual([1, 1, 2]);
+});
+
+it("replays an uncertain web creation with the original id, not a second split", async () => {
+  const first = await post(validBody);
+  const second = await post({ ...validBody, participants: [...validBody.participants].reverse() });
+  expect(first.status).toBe(201);
+  expect(second.status).toBe(200);
+  expect((await second.json()).id).toBe((await first.json()).id);
+  expect(await counts()).toEqual([1, 1, 2]);
+});
+
+it("replays the same confirmed operation after the session closes", async () => {
+  const first = await post(validBody);
+  await client.execute("UPDATE split_sessions SET status='closed' WHERE id='session-a'");
+  const second = await post(validBody);
+  expect(second.status).toBe(200);
+  expect((await second.json()).id).toBe((await first.json()).id);
+  expect(await counts()).toEqual([1, 1, 2]);
+});
+
+it("enforces the operation key in the database, even for an independent writer", async () => {
+  expect((await post(validBody)).status).toBe(201);
+  await expect(client.execute({
+    sql: `INSERT INTO splits (id, operation_id, session_id, description, total_amount,
+      split_type, status, created_by_user_id, created_at)
+      VALUES (?, ?, 'session-a', 'Duplicado', 10.01, 'fixed', 'active', 'owner', 1)`,
+    args: ["different-id", validBody.operationId],
+  })).rejects.toThrow();
+  expect(await counts()).toEqual([1, 1, 2]);
+});
+
+it("allows exactly one insert when two separate DB connections race for a key", async () => {
+  const connectionA = createClient({ url: `file:${join(directory, "db.sqlite")}`, timeout: 0 });
+  const connectionB = createClient({ url: `file:${join(directory, "db.sqlite")}`, timeout: 0 });
+  const statement = {
+    sql: `INSERT INTO splits (id, operation_id, session_id, description, total_amount,
+      split_type, status, created_by_user_id, created_at)
+      VALUES (?, ?, 'session-a', 'Carrera', 10.01, 'fixed', 'active', 'owner', 1)`,
+  };
+  try {
+    const outcomes = await Promise.allSettled([
+      connectionA.execute({ ...statement, args: ["race-a", validBody.operationId] }),
+      connectionB.execute({ ...statement, args: ["race-b", validBody.operationId] }),
+    ]);
+    expect(outcomes.map(result => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+    const rows = await client.execute({ sql: "SELECT id FROM splits WHERE operation_id=?", args: [validBody.operationId] });
+    expect(rows.rows).toHaveLength(1);
+  } finally {
+    connectionA.close();
+    connectionB.close();
+  }
+});
+
+it("rejects a reused operation key with different data or actor", async () => {
+  expect((await post(validBody)).status).toBe(201);
+  expect((await post({ ...validBody, description: "Otro gasto" })).status).toBe(409);
+  expect((await post({ ...validBody, payers: [{ userId: "friend", amountPaid: 10.01 }] })).status).toBe(409);
+  expect((await post(validBody, "friend")).status).toBe(409);
+  expect(await counts()).toEqual([1, 1, 2]);
+});
+
+it("requires a web operation key before any financial write", async () => {
+  const body = { ...validBody, operationId: undefined };
+  expect((await post(body)).status).toBe(400);
+  expect(await counts()).toEqual([0, 0, 0]);
 });
 
 it("rejects payer and participant sums that do not equal the total", async () => {

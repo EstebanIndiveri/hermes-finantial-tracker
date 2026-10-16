@@ -34,6 +34,8 @@ export function SplitAllocationForm(props: Props) {
   const [percentages, setPercentages] = useState<Record<string, string>>(() => Object.fromEntries(props.participants.map(row => [row.key, row.percentage == null ? "" : money(row.percentage)])));
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const createOperationRef = useRef<string | null>(null);
+  const submittedBodyRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const calculation = useMemo(() => {
@@ -79,12 +81,26 @@ export function SplitAllocationForm(props: Props) {
         ...(splitType === "percentage" ? { percentage: calculation.basisPoints[index] / 100 } : {}),
       })),
     };
+    const body = JSON.stringify(payload);
+    if (isCreate && submittedBodyRef.current !== null && submittedBodyRef.current !== body) {
+      setError("Ya se intentó registrar otra versión de este gasto. Volvé a la sesión para comprobar si quedó guardado antes de iniciar uno nuevo.");
+      setSaving(false);
+      savingRef.current = false;
+      return;
+    }
+    if (isCreate) {
+      submittedBodyRef.current = body;
+      createOperationRef.current ??= crypto.randomUUID();
+    }
     try {
       const response = await fetch(isCreate ? `/api/splits/sessions/${props.sessionId}/items` : `/api/splits/items/${props.splitId}`, {
-        method: isCreate ? "POST" : "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        method: isCreate ? "POST" : "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isCreate ? { ...payload, operationId: createOperationRef.current } : payload),
       });
       if (!response.ok) {
-        if (response.status === 409) throw new Error("La sesión cambió o ya registra pagos. Recargá antes de intentar corregir este gasto.");
+        if (response.status === 409) throw new Error(isCreate
+          ? "Esta operación ya se usó para otro gasto. Volvé a la sesión y comprobá qué quedó registrado antes de iniciar uno nuevo."
+          : "La sesión cambió o ya registra pagos. Recargá antes de intentar corregir este gasto.");
         if (isCreate && response.status === 400) throw new Error("La sesión cambió o el reparto ya no es válido. Recargá y revisá los miembros.");
         throw new Error(response.status === 403 ? "Ya no tenés permiso para editar esta sesión." : "No se pudo guardar el reparto. Revisá los importes y volvé a intentar.");
       }
