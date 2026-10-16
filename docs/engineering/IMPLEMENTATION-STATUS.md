@@ -3821,3 +3821,20 @@ permite modificar `total_amount` sin actualizar cuotas, por lo que ACT-08 no
 está cerrado. **Owner Codex ACT-03:** resolver o justificar los tres avisos
 altos runtime antes de promover este branch a beta, sin alterar cron durante
 las ventanas observadas. **Owner Esteban:** ninguna acción necesaria ahora.
+
+### ACT-03 — actualización compatible de runtime antes del beta (15/10)
+
+El audit local de ejecución se llevó de 3 HIGH a 0 con Next 16.3.8,
+Sharp 0.35.5 y source-map-js 1.2.2; contrato y límites en
+[ACT-03-RUNTIME-DEPENDENCY-GATE.md](ACT-03-RUNTIME-DEPENDENCY-GATE.md).
+Gates locales: harness 130/130, Jest 130 suites/1129 pruebas, typecheck,
+lint 0 errores/61 advertencias y build aprobados. El audit del árbol
+completo aún marca 36 avisos de dependencias de desarrollo; **owner Codex**
+para triage separado, no se declara cero riesgo general. Next produjo
+warnings de Edge Runtime nuevos en build, sin fallo: **owner Codex** para
+smoke del deployment exacto cuando sea seguro publicar.
+
+No se tocó beta, cron, `NOTIFICATIONS_ENABLED`, datos QA ni legacy. La
+promoción sigue diferida por ACT-17: owner Codex mantiene observación
+16/10 y 18/10 y luego atestación H04d del nuevo deployment. H14b permanece
+con owner Codex y no se mezcla en este commit de dependencias.
