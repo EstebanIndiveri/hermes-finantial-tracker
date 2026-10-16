@@ -3725,6 +3725,33 @@ no confundir ausencia de runtime por retención con ausencia de request.
 **Owner Esteban:** ninguna acción. Este corte no cambia deployment, cron,
 datos financieros ni legacy.
 
+### ACT-17 — control del 16/10, sin segundo recordatorio recurrente
+
+Lectura limitada al proyecto Vercel beta y a `beta-hermes`, sin invocar
+endpoints ni modificar datos. El snapshot de reintegro a las 09:22 ART
+(`scripts/beta-reimbursement-reminder-snapshot.mjs`, perfil Turso beta aislado)
+devolvió `awaiting_eligibility`: solicitud QA pendiente y activa, ambas
+membresías, consentimiento y chat del pagador vigentes; todavía no cumplió
+los tres días estrictos. Hay cero operaciones/outbox de reintegro, incluidos
+destinatarios ajenos.
+
+El cron recurrente registró un único GET HTTP 200 el 16/10 a las
+11:45:24.083 UTC en el deployment beta
+`dpl_AeuCY4ciF8NC5npuBK4QhrANyJcx`. El runtime de esa misma request
+registró el evento redactado `beta_recurring_reminder_canary_cron`, fecha
+argentina `2026-10-16`, resultado `nothing_relevant`. La base beta muestra
+cero operaciones `cron:recurring` creadas el 16/10, incluidas cero de otros
+usuarios: no se encoló un segundo aviso de Netflix. El control CLI de logs
+no expone `clientUserAgent`, por lo que esta lectura no certifica por sí sola
+la procedencia `vercel-cron/1.0`; se conserva el límite de atribución y no
+se presenta este GET aislado como recibo completo del scheduler.
+
+**Owner Codex:** observar la ventana diaria del 18/10 a las 21:00–21:59 ART
+para el primer reintegro elegible; conciliar request con user-agent,
+runtime, operación, outbox y único chat QA. Mantener
+`NOTIFICATIONS_ENABLED=false`, datos QA y deployment estable; legacy intacto.
+**Owner Esteban:** ninguna acción por ahora.
+
 ### ACT-16 — orientación para mes sin configuración (15/10)
 
 El corte local [ACT-16-MONTH-SETUP-GUIDANCE.md](ACT-16-MONTH-SETUP-GUIDANCE.md)
