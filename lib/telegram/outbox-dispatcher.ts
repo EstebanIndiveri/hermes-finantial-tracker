@@ -98,6 +98,53 @@ async function webSplitPaymentRejection(row: TelegramDeliveryRow): Promise<strin
   return null;
 }
 
+async function webReimbursementPaymentRejection(row: TelegramDeliveryRow): Promise<string | null> {
+  const [operation] = await db.select({
+    botId: telegram_operations.bot_id,
+    updateId: telegram_operations.update_id,
+    kind: telegram_operations.operation_kind,
+    status: telegram_operations.status,
+    resourceType: telegram_operations.resource_type,
+    reimbursementId: telegram_operations.resource_id,
+    context: telegram_operations.result_json,
+  }).from(telegram_operations).where(eq(telegram_operations.operation_id, row.operation_id)).limit(1);
+  if (!operation || operation.botId !== row.bot_id || operation.updateId !== row.update_id ||
+    operation.kind !== "web.reimbursement.pay" || operation.status !== "committed" ||
+    operation.resourceType !== "reimbursement" || !operation.reimbursementId || row.action !== "send_message") {
+    return "invalid_payment_context";
+  }
+  let context: { payerId?: string; requesterId?: string; groupId?: string };
+  try {
+    context = JSON.parse(operation.context ?? "null") as typeof context;
+  } catch {
+    return "invalid_payment_context";
+  }
+  if (!context || !context.payerId || !context.requesterId || !context.groupId) return "invalid_payment_context";
+  const [request] = await db.select({
+    transactionId: reimbursementRequests.transactionId,
+    requesterId: reimbursementRequests.requesterId,
+    payerId: reimbursementRequests.payerId,
+    status: reimbursementRequests.status,
+  }).from(reimbursementRequests).where(eq(reimbursementRequests.id, operation.reimbursementId)).limit(1);
+  if (!request || request.status !== "paid" || request.requesterId !== context.requesterId ||
+    request.payerId !== context.payerId) return "payment_changed";
+  const [source] = await db.select({
+    groupId: transactions.group_id,
+    status: transactions.status,
+    deletedAt: transactions.deleted_at,
+  }).from(transactions).where(eq(transactions.id, request.transactionId)).limit(1);
+  if (!source || source.groupId !== context.groupId || source.status !== "active" ||
+    source.deletedAt !== null) return "payment_changed";
+  const memberships = await db.select({ userId: group_members.user_id }).from(group_members)
+    .where(and(eq(group_members.group_id, context.groupId),
+      inArray(group_members.user_id, [context.payerId, context.requesterId])));
+  if (new Set(memberships.map((member) => member.userId)).size !== 2) return "membership_revoked";
+  const [requester] = await db.select({ telegramId: users.telegram_user_id })
+    .from(users).where(eq(users.id, context.requesterId)).limit(1);
+  if (!requester?.telegramId || requester.telegramId !== row.chat_id) return "recipient_changed";
+  return null;
+}
+
 async function dailySummaryRejection(row: TelegramDeliveryRow): Promise<string | null> {
   const [operation] = await db.select({
     botId: telegram_operations.bot_id,
@@ -355,7 +402,8 @@ export async function dispatchClaimedTelegramDelivery({
   const isRecurringReminder = row.update_id.startsWith("cron:recurring:");
   const isReimbursementReminder = row.update_id.startsWith("cron:reimbursement:");
   const isWebSplitPayment = row.update_id.startsWith("web-split:");
-  const isAtMostOnceDelivery = isDailySummary || isRecurringReminder || isReimbursementReminder || isWebSplitPayment;
+  const isWebReimbursementPayment = row.update_id.startsWith("web-reimbursement-pay:");
+  const isAtMostOnceDelivery = isDailySummary || isRecurringReminder || isReimbursementReminder || isWebSplitPayment || isWebReimbursementPayment;
   if (isAtMostOnceDelivery) {
     // A recovered lease may follow a provider-accepted request whose response
     // never reached us. Do not call sendMessage twice for this beta alert.
@@ -367,7 +415,9 @@ export async function dispatchClaimedTelegramDelivery({
           ? await recurringReminderRejection(row, claimedAt)
         : isReimbursementReminder
           ? await reimbursementReminderRejection(row, claimedAt)
-          : await webSplitPaymentRejection(row);
+          : isWebSplitPayment
+            ? await webSplitPaymentRejection(row)
+            : await webReimbursementPaymentRejection(row);
     if (rejection) {
       const changed = await markTelegramDeliveryDead({
         id: row.id,

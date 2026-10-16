@@ -1031,8 +1031,21 @@ export async function markReimbursementAsPaidWithNotifications(
     };
   }
 
-  if (durableWebPushEnabled()) {
-    const operationId = `reimbursement.pay:${id}`;
+  const outboxBotId = getWebReimbursementOutboxBotId();
+  const outboxUpdateId = outboxBotId ? `web-reimbursement-pay:${id}` : null;
+  const outboxContext = outboxBotId && outboxUpdateId
+    ? createTelegramOperationContext({
+        botId: outboxBotId,
+        updateId: outboxUpdateId,
+        chatId: "web",
+        action: "web.reimbursement.pay",
+        suffix: id,
+      })
+    : null;
+  const operationIdentity = outboxContext ? createTelegramOperationIdentity(outboxContext) : null;
+
+  if (durableWebPushEnabled() || outboxContext) {
+    const operationId = operationIdentity?.operationId ?? `reimbursement.pay:${id}`;
     const durableOutcome = await db.transaction(async (transaction) => {
       const [reimbursement] = await transaction.select().from(reimbursementRequests).where(eq(reimbursementRequests.id, id));
       if (!reimbursement || reimbursement.status !== "pending") return { ok: false as const };
@@ -1048,10 +1061,41 @@ export async function markReimbursementAsPaidWithNotifications(
       if (updatedRows.length === 0) return { ok: false as const };
       await enqueueReimbursementPushDeliveries(transaction, operationId, "reimbursement.paid", id, reimbursement.requesterId, sourceTransaction.groupId);
       const [payer] = await transaction.select({ name: users.name }).from(users).where(eq(users.id, payerId));
+      if (outboxBotId && outboxUpdateId && outboxContext && operationIdentity) {
+        const [requester] = await transaction.select({ telegramId: users.telegram_user_id })
+          .from(users).where(eq(users.id, reimbursement.requesterId));
+        await transaction.insert(telegram_operations).values({
+          operation_id: operationId,
+          bot_id: outboxBotId,
+          update_id: outboxUpdateId,
+          operation_kind: "web.reimbursement.pay",
+          status: "committed",
+          resource_type: "reimbursement",
+          resource_id: id,
+          result_json: JSON.stringify({ payerId, requesterId: reimbursement.requesterId, groupId: sourceTransaction.groupId }),
+        });
+        if (requester?.telegramId) {
+          await enqueueReimbursementTelegram(
+            transaction,
+            outboxContext,
+            operationId,
+            [{ telegramId: requester.telegramId, message: buildReimbursementPaidNotification(payer?.name ?? "Alguien", reimbursement.amount) }],
+            "web.reimbursement.paid",
+          );
+        }
+      }
       return { ok: true as const, requesterId: reimbursement.requesterId, amount: reimbursement.amount, payerName: payer?.name ?? "Alguien" };
     }, { behavior: "immediate" });
     if (!durableOutcome.ok) return false;
-    await notifyReimbursementPaid(durableOutcome.requesterId, durableOutcome.payerName, durableOutcome.amount);
+    if (outboxBotId && outboxUpdateId) {
+      try {
+        await dispatchTelegramDeliveriesForUpdate({ botId: outboxBotId, updateId: outboxUpdateId });
+      } catch (error) {
+        console.error("Web reimbursement paid Telegram delivery deferred", error instanceof Error ? error.name : "unknown");
+      }
+    } else {
+      await notifyReimbursementPaid(durableOutcome.requesterId, durableOutcome.payerName, durableOutcome.amount);
+    }
     return true;
   }
 

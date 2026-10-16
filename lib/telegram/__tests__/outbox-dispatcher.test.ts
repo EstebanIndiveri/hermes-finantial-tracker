@@ -6,6 +6,9 @@ import {
   type TelegramDeliveryRow,
 } from "../outbox";
 import { dispatchTelegramDeliveriesForUpdate } from "../outbox-dispatcher";
+import { db } from "@/lib/db/client";
+
+jest.mock("@/lib/db/client", () => ({ db: { select: jest.fn() } }));
 
 jest.mock("../outbox", () => ({
   claimTelegramDelivery: jest.fn(),
@@ -233,4 +236,49 @@ it("reports a lost lease when a tokenless delivery cannot be marked retryable", 
   await expect(dispatchTelegramDeliveriesForUpdate({
     botId: "bot-1", updateId: "update-1", token: "", fetchImpl: jest.fn(), now: () => 10_000,
   })).resolves.toEqual({ sent: 0, retryable: 0, dead: 0, lostLease: 1 });
+});
+
+function webReimbursementRows(options: { requesterChat?: string; paid?: boolean; members?: string[] } = {}) {
+  const values = [
+    [{ botId: "bot-1", updateId: "web-reimbursement-pay:request-1", kind: "web.reimbursement.pay", status: "committed", resourceType: "reimbursement", reimbursementId: "request-1", context: JSON.stringify({ payerId: "payer-1", requesterId: "requester-1", groupId: "group-1" }) }],
+    [{ transactionId: "expense-1", requesterId: "requester-1", payerId: "payer-1", status: options.paid === false ? "pending" : "paid" }],
+    [{ groupId: "group-1", status: "active", deletedAt: null }],
+    (options.members ?? ["payer-1", "requester-1"]).map((userId) => ({ userId })),
+    [{ telegramId: options.requesterChat ?? "requester-chat" }],
+  ];
+  let selection = 0;
+  (db.select as jest.Mock).mockImplementation(() => {
+    const result = () => Promise.resolve(values[selection++] ?? []);
+    const query = { where: jest.fn(() => query), limit: jest.fn(result), then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => result().then(resolve, reject) };
+    return { from: jest.fn(() => query) };
+  });
+}
+
+it("sends a web reimbursement payment only while its paid state and recipient are valid", async () => {
+  claimMock.mockReset().mockResolvedValueOnce(row({ update_id: "web-reimbursement-pay:request-1", chat_id: "requester-chat" })).mockResolvedValueOnce(null);
+  webReimbursementRows();
+  const fetchImpl = jest.fn().mockResolvedValue(response(200, { ok: true, result: { message_id: 77 } }));
+  await expect(dispatchTelegramDeliveriesForUpdate({ botId: "bot-1", updateId: "web-reimbursement-pay:request-1", token: "test-token", fetchImpl })).resolves.toMatchObject({ sent: 1 });
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ["unpaid", { paid: false }, "payment_changed"],
+  ["removed requester", { members: ["payer-1"] }, "membership_revoked"],
+  ["changed chat", { requesterChat: "different-chat" }, "recipient_changed"],
+] as const)("rejects a web reimbursement payment with %s", async (_label, options, code) => {
+  claimMock.mockReset().mockResolvedValueOnce(row({ update_id: "web-reimbursement-pay:request-1", chat_id: "requester-chat" })).mockResolvedValueOnce(null);
+  webReimbursementRows(options);
+  const fetchImpl = jest.fn();
+  await expect(dispatchTelegramDeliveriesForUpdate({ botId: "bot-1", updateId: "web-reimbursement-pay:request-1", token: "test-token", fetchImpl })).resolves.toMatchObject({ dead: 1 });
+  expect(fetchImpl).not.toHaveBeenCalled();
+  expect(deadMock).toHaveBeenCalledWith(expect.objectContaining({ errorCode: code }));
+});
+
+it("never resends an uncertain web reimbursement payment", async () => {
+  claimMock.mockReset().mockResolvedValueOnce(row({ update_id: "web-reimbursement-pay:request-1", chat_id: "requester-chat", attempt_count: 2 })).mockResolvedValueOnce(null);
+  const fetchImpl = jest.fn();
+  await expect(dispatchTelegramDeliveriesForUpdate({ botId: "bot-1", updateId: "web-reimbursement-pay:request-1", token: "test-token", fetchImpl })).resolves.toMatchObject({ dead: 1 });
+  expect(fetchImpl).not.toHaveBeenCalled();
+  expect(deadMock).toHaveBeenCalledWith(expect.objectContaining({ errorCode: "delivery_uncertain" }));
 });

@@ -4198,3 +4198,32 @@ datos QA, cron, bot, despliegue beta ni legacy.
 solo después de ACT-17/H04d con smoke beta acotado. ACT-09 conserva owner
 del fallback Telegram sin contexto y demás avisos directos. **Owner
 Esteban:** ninguna acción ahora.
+
+### ACT-09c — aviso durable del reintegro pagado desde web (16/10)
+
+**Owner Codex, implementado en rama local; no publicado.** El POST web de
+«marcar reintegro como pagado» ahora, con inbox/outbox/worker Telegram
+habilitados, guarda pago, operación y aviso al chat vinculado del solicitante
+en una sola transacción. La intención queda pendiente para el worker si la
+entrega inmediata falla; no se confunde commit con recepción. Si el usuario
+no tiene chat vinculado no se crea entrega. Un replay encuentra el reintegro
+ya pagado y no crea una segunda operación. Con el carril durable deshabilitado
+se conserva el comportamiento anterior; web push mantiene su gate propio.
+
+El dispatcher revalida operación, estado pagado, gasto activo, membresías
+vigentes y chat antes de enviar. Como en el aviso de pago compartido, una
+entrega incierta se marca sin reintento para impedir dos mensajes. Se añadió
+regresión roja previa para la ruta web y pruebas de despacho válido, estado
+cambiado, miembro removido, chat cambiado e intento incierto. Además, el
+nombre del pagador se escapa para el HTML de Telegram (regresión roja previa).
+Puertas:
+harness 130/130, Jest 138 suites/1204 pruebas, typecheck y build aprobados;
+lint 0 errores/61 avisos preexistentes. Sin cambio de esquema, datos QA,
+cron, bot, deployment beta ni legacy.
+
+**Pendientes con owner Codex:** revisión/pase beta de ACT-08/09 después de
+ACT-17 y H04d, con smoke QA acotado y conciliación del outbox. ACT-09 aún
+conserva los fallbacks directos sin contexto y avisos no cubiertos; no se
+declara recuperación integral. ACT-17 sigue con seguimiento del canary de
+reintegro del 18/10 sobre el deployment estable. **Owner Esteban:** ninguna
+acción ahora.

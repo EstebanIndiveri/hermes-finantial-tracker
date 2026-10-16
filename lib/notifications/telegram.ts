@@ -36,7 +36,7 @@ export function buildReimbursementRequestNotification(input: {
 
 export function buildReimbursementPaidNotification(payerName: string, amount: number): TelegramNotificationMessage {
   return {
-    text: `✅ <b>Reintegro Pagado</b>\n\n${payerName} te ha pagado <b>ARS $${amount.toLocaleString("es-AR")}</b>\n\n¡Ya está todo saldado! 🎉`,
+    text: `✅ <b>Reintegro Pagado</b>\n\n${escapeTelegramHtml(payerName)} te ha pagado <b>ARS $${amount.toLocaleString("es-AR")}</b>\n\n¡Ya está todo saldado! 🎉`,
   };
 }
 
