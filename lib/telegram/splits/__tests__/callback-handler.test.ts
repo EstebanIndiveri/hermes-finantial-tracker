@@ -94,6 +94,36 @@ describe("handleSplitCallback", () => {
     })));
   });
 
+  it.each([
+    ["participants:all", { step: "participants", amount: 900, description: "Sushi", session_id: "session-1", payer_user_id: "user-1" }],
+    ["pague_confirm:yes", { step: "pague_confirm", debt_amount: 900, payment_amount: 900, creditor_user_id: "user-2", session_id: "session-1" }],
+  ] as const)("rejects %s without a durable operation context when outbox is enabled", async (data, stateData) => {
+    const previousOutbox = process.env.TELEGRAM_OUTBOX_ENABLED;
+    process.env.TELEGRAM_OUTBOX_ENABLED = "true";
+    (getConversationState as jest.Mock).mockResolvedValue({ step: stateData.step, data: stateData });
+    (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue({ id: "session-1", name: "Sushi" });
+    (db.query.users.findFirst as jest.Mock)
+      .mockResolvedValueOnce({ id: "user-1", telegram_user_id: "telegram-1", username: "esteban", name: "Esteban" })
+      .mockResolvedValueOnce({ id: "user-2", telegram_user_id: "telegram-2", username: "maria", name: "Maria" });
+    (db.select as jest.Mock)
+      .mockReturnValueOnce(makeSelectMock([{ id: "user-1", username: "esteban", name: "Esteban" }, { id: "user-2", username: "maria", name: "Maria" }]))
+      .mockReturnValueOnce(makeSelectMock([]));
+    (db.transaction as jest.Mock).mockImplementation(async (work: (tx: unknown) => Promise<unknown>) => work({
+      insert: jest.fn(() => ({ values: jest.fn(async () => undefined) })),
+    }));
+    try {
+      await expect(handleSplitCallback("chat-1", "telegram-1", data)).rejects.toThrow("operation context");
+      expect(db.transaction).not.toHaveBeenCalled();
+      expect(recordManualSplitPayment).not.toHaveBeenCalled();
+      expect(notifySplitPaymentReceived).not.toHaveBeenCalled();
+      expect(clearConversationState).not.toHaveBeenCalled();
+    } finally {
+      if (previousOutbox === undefined) delete process.env.TELEGRAM_OUTBOX_ENABLED;
+      else process.env.TELEGRAM_OUTBOX_ENABLED = previousOutbox;
+      jest.resetAllMocks();
+    }
+  });
+
   it("accepts temp-user payers in the who-paid step", async () => {
     (getConversationState as jest.Mock).mockResolvedValue({
       step: "who_paid",

@@ -4253,3 +4253,26 @@ y H04d, con smoke QA y conciliación de operaciones/outbox. La ruta de
 fallback directo de Telegram y otros avisos no cubiertos siguen bajo ACT-09;
 el cierre integral no está declarado. ACT-17 mantiene el deployment y el
 seguimiento de la ventana del 18/10. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-09e — cerrar escritura de callback sin contexto durable (16/10)
+
+**Owner Codex, implementado en rama local; no publicado.** El webhook con
+inbox/outbox habilitados provee contexto de operación para los callbacks de
+grupo. Aun así, el handler de compartidos conservaba ramas sin contexto que
+podían crear un split o confirmar un pago con aviso directo no recuperable.
+Ahora, si el outbox está activo y falta ese contexto, ambas confirmaciones
+fallan **antes de la escritura financiera**; el webhook mantiene el update
+como fallido/reintentable en lugar de dar por confirmado un pago no durable.
+Con outbox apagado se conserva el fallback anterior. Los pasos de selección,
+cancelación y preparación de un pago no son escrituras y no cambian.
+
+Regresiones rojas primero para alta y pago sin contexto, confirmando que
+antes escribían. Puertas: harness 130/130, Jest 138 suites/1216 pruebas,
+typecheck y build aprobados; lint 0 errores/61 avisos preexistentes. Sin
+migración, datos QA, cron, bot, deployment beta ni cambios en legacy.
+
+**Pendientes con owner Codex:** revisar y publicar ACT-08/09 tras ACT-17 y
+H04d, conciliar el outbox y ensayar con destinatario QA. Los fallbacks con
+outbox deliberadamente apagado permanecen como compatibilidad; otros avisos
+directos se auditarán en cortes separados. ACT-17 mantiene observación del
+18/10 sobre el deployment estable. **Owner Esteban:** ninguna acción ahora.

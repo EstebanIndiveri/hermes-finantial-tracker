@@ -36,6 +36,12 @@ function operationIdentity(context: TelegramOperationContext, action: string) {
   return createTelegramOperationIdentity({ ...context, action });
 }
 
+function requireFinancialOperationContext(context: TelegramOperationContext | undefined): void {
+  if (process.env.TELEGRAM_OUTBOX_ENABLED === "true" && !context) {
+    throw new Error("Missing Telegram operation context for financial callback");
+  }
+}
+
 async function insertPrimaryDelivery(
   transaction: TelegramOperationTransaction,
   context: TelegramOperationContext,
@@ -327,6 +333,8 @@ async function handleParticipantsCallback(
     };
   }
 
+  requireFinancialOperationContext(operationContext);
+
   if (!state.payer_user_id && !state.payer_temp_user_id) {
     await clearConversationState(chatId, telegramUserId);
     return {
@@ -576,6 +584,8 @@ async function handlePagueConfirmCallback(
       edit: true,
     };
   }
+
+  requireFinancialOperationContext(operationContext);
 
   const hermesUser = await db.query.users.findFirst({
     where: eq(users.telegram_user_id, telegramUserId),
