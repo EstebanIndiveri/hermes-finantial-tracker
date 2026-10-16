@@ -198,3 +198,26 @@ Archivos: POST web, modal y regresiones dirigidas. No cambia el cálculo
 global, pagos históricos, Telegram, DB, cron o despliegue. La protección
 contra dos operaciones *distintas* concurrentes que exceden la misma deuda
 requiere un writer transaccional posterior y sigue con owner Codex.
+
+### Contrato H14i — contener el endpoint de pago por sesión (16/10)
+
+`POST /api/splits/sessions/[id]/payments` no tiene consumidor en el árbol
+web actual, pero sigue accesible y hoy admite que cualquier miembro registre
+un pago entre terceros, a un no miembro o mayor que la deuda, sin clave de
+operación. Se conserva solo el alta manual del pago **propio**: el pagador
+debe ser el actor autenticado, el acreedor debe ser miembro vigente de la
+sesión, las identidades son exclusivas y distintas, y el importe es positivo
+en centavos sin superar la arista de deuda actor→acreedor calculada con
+gastos activos y pagos confirmados. La lectura/revalidación/inserción se
+hacen en una transacción. UUID obligatorio y índice único existente para
+replay del mismo pago; cambiar datos con la misma clave responde 409. El
+replay requiere membresía vigente, incluso si la sesión cerró después.
+
+La ruta no confirma comprobantes: `receipt_ocr` se rechaza hasta definir un
+flujo de revisión y confirmación que no reduzca deudas por evidencia aún no
+aceptada. Telegram mantiene su escritor actual; no se modifica en este
+corte. Sin migración, cron, nuevos avisos, datos QA ni despliegue. Pruebas
+con libSQL aislado: actor ajeno, tercero, sobrepago, replay, clave colisionada,
+rollback y segunda clave secuencial tras pago parcial. La carrera de dos
+claves sobre conexiones independientes exige un ensayo separado antes del
+pase beta; una sola conexión local no modela ese límite de Turso.

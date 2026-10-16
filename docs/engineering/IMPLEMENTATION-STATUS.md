@@ -4016,3 +4016,28 @@ escribir dos pagos con claves *distintas* concurrentes; H14g solo protege
 reintentos de la misma intención. También queda contener el endpoint
 `POST /api/splits/sessions/[id]/payments` bajo contrato separado. ACT-17
 y H04d siguen bloqueando promoción beta. **Owner Esteban:** ninguno ahora.
+
+### ACT-08/H14i — contención del segundo writer de pagos, rama local (16/10)
+
+**Owner Codex, implementado localmente; no publicado.** El endpoint por
+sesión, sin consumidor en el árbol web actual, ya no permite que un miembro
+registre pagos entre terceros. Exige que el actor sea pagador, que el
+acreedor sea miembro vigente, importe exacto en centavos y una deuda real
+actor→acreedor de la sesión. La revalidación y el insert ocurren en una
+transacción; una clave UUID sobre el índice único existente hace el replay
+sin segunda fila, incluso tras cerrar la sesión, siempre que el actor siga
+siendo miembro. Se rechaza `receipt_ocr` aquí: un comprobante pendiente no
+es pago confirmado ni debe reducir deuda. La ruta solo cuenta pagos con
+`confirmed_at` al comprobar el saldo; no modificó el escritor Telegram.
+
+Regresiones libSQL primero en rojo (5 fallos), luego 9/9: autorización,
+sobrepago, self-payment, centavos, OCR pendiente, segunda operación
+secuencial, replay/colisión y rollback. Puertas: harness 130/130, Jest
+134 suites/1172 pruebas, lint 0 errores/61 advertencias previas y
+build/TypeScript aprobados. **Pendiente con owner Codex antes
+de beta:** ensayo de dos claves distintas concurrentes desde conexiones
+independientes a la misma base, y unificar el writer transaccional con
+`POST /api/splits/payments` para que ese camino también revalide al commit.
+Las proyecciones de balance que aún incluyen OCR pendiente requieren un
+corte separado de consistencia. ACT-17 y H04d conservan owner y deployment
+estable. **Owner Esteban:** ninguna acción ahora.
