@@ -16,7 +16,7 @@ import { getConversationState, setConversationState, clearConversationState } fr
 import type { TelegramResponse } from "./telegram-api";
 import { buildInlineKeyboard } from "./telegram-api";
 import { handlePagueSelect, handlePaguePartialAmountInput, startPaguePartialAmount } from "./commands/pague";
-import { notifySplitPaymentReceived } from "@/lib/notifications/telegram";
+import { buildSplitPaymentReceivedNotification, notifySplitPaymentReceived } from "@/lib/notifications/telegram";
 import { resolveAuthorizedSplitContext } from "./authorization";
 import type { TelegramOperationContext } from "../operation-context";
 import { createTelegramDeliveryKey, createTelegramOperationIdentity } from "../operation-context";
@@ -723,10 +723,6 @@ async function handlePagueConfirmCallback(
       const response = successResponse(payment.remainingDebt);
       await insertPrimaryDelivery(tx, operationContext, identity.operationId, identity.deliveryKey, response, messageId, now);
       if (creditorUser?.telegram_user_id) {
-        const sessionText = payment.sessionName ? `\n📁 Sesión: ${payment.sessionName}` : "";
-        const remainingText = payment.remainingDebt > 0
-          ? `\n💰 Deuda restante: <b>$${payment.remainingDebt.toLocaleString("es-AR", { minimumFractionDigits: 0 })}</b>`
-          : "\n✅ ¡Deuda saldada!";
         await tx.insert(telegram_delivery_outbox).values(buildTelegramDeliveryRow({
           botId: operationContext.botId,
           updateId: operationContext.updateId,
@@ -734,7 +730,9 @@ async function handlePagueConfirmCallback(
           deliveryKey: createTelegramDeliveryKey(identity, "split_payment_received", creditorUser.telegram_user_id),
           action: "send_message",
           chatId: creditorUser.telegram_user_id,
-          text: `💸 <b>Recibiste un Pago</b>\n\n${payerName} te pagó <b>$${paidAmount.toLocaleString("es-AR", { minimumFractionDigits: 0 })}</b>${sessionText}${remainingText}`,
+          text: buildSplitPaymentReceivedNotification(
+            payerName, paidAmount, payment.remainingDebt, payment.sessionName,
+          ).text,
           now,
         }));
       }

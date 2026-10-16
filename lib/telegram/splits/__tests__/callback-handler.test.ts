@@ -41,6 +41,7 @@ jest.mock("../commands/pague", () => ({
 
 jest.mock("@/lib/notifications/telegram", () => ({
   notifySplitPaymentReceived: jest.fn(),
+  buildSplitPaymentReceivedNotification: jest.fn(() => ({ text: "Split payment received" })),
 }));
 
 jest.mock("../../financial-operation", () => ({

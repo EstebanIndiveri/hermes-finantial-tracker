@@ -16,6 +16,24 @@ durable de avisos queda con owner ACT-09. Pruebas: deuda obsoleta, temporal,
 repetición y saldo; luego puertas del repositorio. Sin cambios de esquema,
 datos QA, cron, bot, beta activa ni legacy; publicar solo tras ACT-17/H04d.
 
+### Contrato ACT-09a — aviso durable del pago web compartido (16/10)
+
+Actual: `POST /api/splits/payments` confirma el pago y luego intenta un
+Telegram directo; un fallo tras commit puede perder el aviso y el helper de
+envío no acredita HTTP 200. Esperado: cuando inbox, outbox y worker Telegram
+estén activos con identidad de bot estable, encolar **un** aviso al acreedor
+vinculado dentro de la misma transacción que valida e inserta el pago.
+`operationId` UUID identifica la intención web; replay no crea otro aviso.
+Si el acreedor no tiene chat vinculado, el pago procede sin outbox. El worker
+revalida destinatario y membresía antes de enviar; cambio de chat o baja de
+la sesión descarta el aviso. En modo sin outbox se conserva el envío
+heredado, sin promesa nueva de entrega. Nombres variables se escapan para
+el formato HTML de Telegram. La respuesta distingue `queued`
+de entrega efectiva; no debe afirmar que Telegram ya recibió el mensaje.
+Pruebas libSQL: pago+outbox, replay, destinatario ausente, rollback ante fallo
+de outbox y revocación antes del despacho. Sin esquema, datos beta/legacy,
+cron ni despliegue; owner Codex de otras rutas/fallback ACT-09.
+
 ## Subcorte H13: solo proyección, sin escrituras
 
 Antes, `calculateGlobalBalances` trataba el saldo neto de cada otro miembro

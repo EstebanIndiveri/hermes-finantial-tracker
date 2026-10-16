@@ -4115,3 +4115,35 @@ en callbacks con contexto. Ensayo de contención y smoke en Turso beta,
 H04d y promoción únicamente después de las ventanas ACT-17. ACT-17
 conserva su seguimiento y deployment vigente. **Owner Esteban:** ninguna
 validación por ahora.
+
+### ACT-09a — aviso durable del pago web de compartidos, rama local (16/10)
+
+**Owner Codex, implementado localmente; no publicado.** El POST global de
+pagos compartidos ahora, cuando están activos inbox/outbox/worker Telegram
+con identidad estable, crea el pago, la operación y el aviso al único chat
+vinculado del acreedor en **una transacción**. El replay de la clave UUID no
+encola un segundo aviso. Sin chat vinculado, se confirma el pago sin aviso.
+La API expone `notificationQueued` para distinguir intención durable de
+entrega real; no afirma que Telegram ya lo recibió. Si esa infraestructura
+está apagada, permanece el aviso directo heredado. El mensaje compartido
+escapa nombres variables antes de construir HTML para Telegram.
+
+El worker revalida que la operación corresponda al pago confirmado, que el
+acreedor siga en la sesión y que el chat vinculado no haya cambiado; si
+fallan esas condiciones, descarta el aviso sin llamar al proveedor. Esta
+entrega usa política conservadora de un solo intento incierto: evita un
+segundo Telegram cuando no sabemos si el proveedor aceptó el primero,
+pero puede dejar una entrega sin confirmar. No confundir `queued` con `sent`.
+
+La regresión libSQL falló primero porque el POST seguía enviando directo;
+después cubrió pago+outbox y replay, destinatario ausente, rollback al
+fallar el outbox, chat cambiado, miembro removido y un despacho único del
+worker. Puertas: harness 130/130, Jest 136 suites/1189 pruebas, lint 0
+errores/61 avisos previos, build/TypeScript aprobados. Sin esquema nuevo,
+datos QA, cron, deployment beta ni legacy.
+
+**Pendientes con owner Codex:** ACT-09 aún incluye el fallback Telegram sin
+contexto y otros avisos directos; no se declara recuperación integral.
+Publicar ACT-09a junto al pase ACT-08 solo después de las observaciones
+ACT-17, H04d y smoke beta con destinatario QA. ACT-17 conserva su owner y
+deployment estable. **Owner Esteban:** ninguna acción ahora.

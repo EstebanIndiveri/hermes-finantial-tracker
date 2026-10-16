@@ -6,7 +6,7 @@ import {
   type TelegramDeliveryRow,
 } from "@/lib/telegram/outbox";
 import { db } from "@/lib/db/client";
-import { categories, group_members, recurringExecutions, recurringExpenses, reimbursementRequests, telegram_operations, transactions, users } from "@/lib/db/schema";
+import { categories, group_members, recurringExecutions, recurringExpenses, reimbursementRequests, split_payments, split_session_members, telegram_operations, transactions, users } from "@/lib/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { hasProactiveConsent } from "@/lib/notifications/proactive-consent";
 import { DAILY_SUMMARY_OPERATION_KIND, parseDailySummaryContext } from "@/lib/notifications/daily-summary-delivery";
@@ -65,6 +65,37 @@ function decodeReplyMarkup(value: string | null): Record<string, unknown> | unde
 
 function retryDelayMs(attempt: number): number {
   return Math.min(15 * 60_000, 1_000 * 2 ** Math.max(0, attempt - 1));
+}
+
+async function webSplitPaymentRejection(row: TelegramDeliveryRow): Promise<string | null> {
+  const [operation] = await db.select({
+    botId: telegram_operations.bot_id,
+    updateId: telegram_operations.update_id,
+    kind: telegram_operations.operation_kind,
+    status: telegram_operations.status,
+    resourceType: telegram_operations.resource_type,
+    paymentId: telegram_operations.resource_id,
+  }).from(telegram_operations).where(eq(telegram_operations.operation_id, row.operation_id)).limit(1);
+  if (!operation || operation.botId !== row.bot_id || operation.updateId !== row.update_id ||
+    operation.kind !== "web.split.payment" || operation.status !== "committed" ||
+    operation.resourceType !== "split_payment" || !operation.paymentId || row.action !== "send_message") {
+    return "invalid_payment_context";
+  }
+  const [payment] = await db.select({
+    sessionId: split_payments.session_id,
+    payeeUserId: split_payments.payee_user_id,
+    confirmedAt: split_payments.confirmed_at,
+  }).from(split_payments).where(eq(split_payments.id, operation.paymentId)).limit(1);
+  if (!payment?.payeeUserId || payment.confirmedAt === null) return "invalid_payment_context";
+  const [member] = await db.select({ userId: split_session_members.user_id })
+    .from(split_session_members)
+    .where(and(eq(split_session_members.session_id, payment.sessionId),
+      eq(split_session_members.user_id, payment.payeeUserId))).limit(1);
+  if (!member) return "member_removed";
+  const [payee] = await db.select({ chatId: users.telegram_user_id })
+    .from(users).where(eq(users.id, payment.payeeUserId)).limit(1);
+  if (!payee?.chatId || payee.chatId !== row.chat_id) return "recipient_changed";
+  return null;
 }
 
 async function dailySummaryRejection(row: TelegramDeliveryRow): Promise<string | null> {
@@ -323,8 +354,9 @@ export async function dispatchClaimedTelegramDelivery({
   const isDailySummary = row.update_id.startsWith("cron:daily:");
   const isRecurringReminder = row.update_id.startsWith("cron:recurring:");
   const isReimbursementReminder = row.update_id.startsWith("cron:reimbursement:");
-  const isAtMostOnceProactive = isDailySummary || isRecurringReminder || isReimbursementReminder;
-  if (isAtMostOnceProactive) {
+  const isWebSplitPayment = row.update_id.startsWith("web-split:");
+  const isAtMostOnceDelivery = isDailySummary || isRecurringReminder || isReimbursementReminder || isWebSplitPayment;
+  if (isAtMostOnceDelivery) {
     // A recovered lease may follow a provider-accepted request whose response
     // never reached us. Do not call sendMessage twice for this beta alert.
     const rejection = row.attempt_count > 1
@@ -333,7 +365,9 @@ export async function dispatchClaimedTelegramDelivery({
         ? await dailySummaryRejection(row)
         : isRecurringReminder
           ? await recurringReminderRejection(row, claimedAt)
-          : await reimbursementReminderRejection(row, claimedAt);
+        : isReimbursementReminder
+          ? await reimbursementReminderRejection(row, claimedAt)
+          : await webSplitPaymentRejection(row);
     if (rejection) {
       const changed = await markTelegramDeliveryDead({
         id: row.id,
@@ -346,7 +380,7 @@ export async function dispatchClaimedTelegramDelivery({
     }
   }
   if (!token) {
-    if (isAtMostOnceProactive) {
+    if (isAtMostOnceDelivery) {
       const changed = await markTelegramDeliveryDead({
         id: row.id,
         leaseToken,
@@ -382,7 +416,7 @@ export async function dispatchClaimedTelegramDelivery({
     return summary;
   }
 
-  if (isAtMostOnceProactive) {
+  if (isAtMostOnceDelivery) {
     const changed = await markTelegramDeliveryDead({
       id: row.id,
       leaseToken,

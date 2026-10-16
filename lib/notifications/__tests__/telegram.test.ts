@@ -11,6 +11,7 @@ jest.mock("@/lib/reimbursements/payment-info", () => ({
 import { db } from "@/lib/db/client";
 import { getDefaultPaymentInfo } from "@/lib/reimbursements/payment-info";
 import {
+  buildSplitPaymentReceivedNotification,
   getGroupMembersWithTelegram,
   getUserById,
   notifyGroupOfReimbursementRequest,
@@ -173,5 +174,12 @@ describe("notifications telegram", () => {
     const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body as string);
     expect(body.chat_id).toBe("tg-1");
     expect(body.text).toContain("Beto te ha pagado <b>ARS $4.000</b>");
+  });
+
+  it("escapes payer and session names in split payment HTML", () => {
+    const message = buildSplitPaymentReceivedNotification("<Ana & Beto>", 4, 6, "Casa <QA>");
+    expect(message.text).toContain("&lt;Ana &amp; Beto&gt;");
+    expect(message.text).toContain("Casa &lt;QA&gt;");
+    expect(message.text).not.toContain("<Ana & Beto>");
   });
 });

@@ -196,7 +196,22 @@ export async function notifySplitPaymentReceived(
     return;
   }
 
-  const sessionText = sessionName ? `\n📁 Sesión: ${sessionName}` : "";
+  await sendTelegramMessage(payee.telegram_user_id,
+    buildSplitPaymentReceivedNotification(payerName, amount, remainingDebt, sessionName).text);
+}
+
+function escapeTelegramHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+export function buildSplitPaymentReceivedNotification(
+  payerName: string,
+  amount: number,
+  remainingDebt: number,
+  sessionName?: string,
+): TelegramNotificationMessage {
+  const sessionText = sessionName ? `\n📁 Sesión: ${escapeTelegramHtml(sessionName)}` : "";
   const remainingText =
     remainingDebt > 0
       ? `\n💰 Deuda restante: <b>$${remainingDebt.toLocaleString("es-AR")}</b>`
@@ -204,7 +219,7 @@ export async function notifySplitPaymentReceived(
 
   const message = `💸 <b>Recibiste un Pago</b>
 
-${payerName} te pagó <b>$${amount.toLocaleString("es-AR")}</b>${sessionText}${remainingText}`;
+${escapeTelegramHtml(payerName)} te pagó <b>$${amount.toLocaleString("es-AR")}</b>${sessionText}${remainingText}`;
 
-  await sendTelegramMessage(payee.telegram_user_id, message);
+  return { text: message };
 }

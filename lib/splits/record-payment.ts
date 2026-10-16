@@ -19,7 +19,12 @@ export interface ManualSplitPaymentInput {
 }
 
 type Payment = typeof split_payments.$inferSelect;
-type SplitPaymentTransaction = LibSQLTransaction<typeof schema, ExtractTablesWithRelations<typeof schema>>;
+export type SplitPaymentTransaction = LibSQLTransaction<typeof schema, ExtractTablesWithRelations<typeof schema>>;
+
+export interface ManualSplitPaymentOptions {
+  onRecorded?: (transaction: SplitPaymentTransaction, payment: Payment,
+    remainingDebt: number, sessionName: string) => Promise<void>;
+}
 
 type RecordPaymentResult =
   | { error: string; status: 400 | 403 | 404 | 409 | 500 }
@@ -41,6 +46,7 @@ function matchesReplay(row: Payment, input: ManualSplitPaymentInput): boolean {
 export async function recordManualSplitPaymentInTransaction(
   tx: SplitPaymentTransaction,
   input: ManualSplitPaymentInput,
+  options: ManualSplitPaymentOptions = {},
 ): Promise<RecordPaymentResult> {
     const onePayer = Boolean(input.actorId) !== Boolean(input.actorTempId);
     const oneCreditor = Boolean(input.payeeUserId) !== Boolean(input.payeeTempId);
@@ -131,18 +137,23 @@ export async function recordManualSplitPaymentInTransaction(
       }
       return { payment: winner, replayed: true, remainingDebt: null, sessionName: session.name } as const;
     }
+    const remainingDebt = Math.round((debt.amount - input.amount) * 100) / 100;
+    await options.onRecorded?.(tx, payment, remainingDebt, session.name);
     return {
       payment,
       replayed: false as const,
-      remainingDebt: Math.round((debt.amount - input.amount) * 100) / 100,
+      remainingDebt,
       sessionName: session.name,
     };
 }
 
 // The debt check and insert share one libSQL transaction. Neither caller may
 // notify until this returns a newly committed payment.
-export async function recordManualSplitPayment(input: ManualSplitPaymentInput): Promise<RecordPaymentResult> {
-  return db.transaction((tx) => recordManualSplitPaymentInTransaction(tx, input)).catch((error: unknown) => {
+export async function recordManualSplitPayment(
+  input: ManualSplitPaymentInput,
+  options: ManualSplitPaymentOptions = {},
+): Promise<RecordPaymentResult> {
+  return db.transaction((tx) => recordManualSplitPaymentInTransaction(tx, input, options)).catch((error: unknown) => {
     // A competing writer may hold the local SQLite/libSQL write lock. Do not
     // retry an uncertain transaction or report the payment as registered.
     const code = error && typeof error === "object" && "code" in error ? error.code : null;

@@ -10,6 +10,8 @@ let directory: string;
 let client: Client;
 let POST: typeof import("../route").POST;
 const notifySplitPaymentReceived = jest.fn().mockResolvedValue(undefined);
+const outboxEnvKeys = ["TELEGRAM_INBOX_ENABLED", "TELEGRAM_OUTBOX_ENABLED", "TELEGRAM_OUTBOX_WORKER_ENABLED", "TELEGRAM_BOT_ID", "TELEGRAM_BOT_TOKEN"] as const;
+const originalOutboxEnv = Object.fromEntries(outboxEnvKeys.map((key) => [key, process.env[key]]));
 
 function request(operationId: string, amount: number, payeeUserId = "owner") {
   return new NextRequest("http://localhost/api/splits/payments", {
@@ -17,6 +19,22 @@ function request(operationId: string, amount: number, payeeUserId = "owner") {
     headers: { "content-type": "application/json", cookie: "hermes_session=qa" },
     body: JSON.stringify({ operationId, sessionId: "session-a", payeeUserId, amount }),
   });
+}
+
+function enableOutbox() {
+  process.env.TELEGRAM_INBOX_ENABLED = "true";
+  process.env.TELEGRAM_OUTBOX_ENABLED = "true";
+  process.env.TELEGRAM_OUTBOX_WORKER_ENABLED = "true";
+  process.env.TELEGRAM_BOT_ID = "beta-bot";
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+}
+
+function restoreOutboxEnv() {
+  for (const key of outboxEnvKeys) {
+    const original = originalOutboxEnv[key];
+    if (original === undefined) delete process.env[key];
+    else process.env[key] = original;
+  }
 }
 
 beforeAll(async () => {
@@ -49,6 +67,19 @@ beforeAll(async () => {
       confirmed_at INTEGER, telegram_update_id TEXT);
     CREATE UNIQUE INDEX split_payments_operation_id_idx ON split_payments(operation_id)
       WHERE operation_id IS NOT NULL;
+    CREATE TABLE telegram_operations (operation_id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, update_id TEXT NOT NULL,
+      operation_kind TEXT NOT NULL, status TEXT NOT NULL, resource_type TEXT, resource_id TEXT,
+      result_json TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, committed_at INTEGER);
+    CREATE UNIQUE INDEX telegram_operations_namespace_idx ON telegram_operations(operation_id, bot_id, update_id);
+    CREATE TABLE telegram_delivery_outbox (id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, update_id TEXT NOT NULL,
+      operation_id TEXT NOT NULL, delivery_key TEXT NOT NULL, action TEXT NOT NULL, chat_id TEXT NOT NULL,
+      message_id INTEGER, parse_mode TEXT NOT NULL, text TEXT NOT NULL, reply_markup_json TEXT,
+      status TEXT NOT NULL, attempt_count INTEGER NOT NULL, next_attempt_at INTEGER NOT NULL,
+      lease_token TEXT, lease_expires_at INTEGER, provider_message_id TEXT, last_error_code TEXT,
+      last_http_status INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      sent_at INTEGER, retention_until INTEGER,
+      FOREIGN KEY(operation_id,bot_id,update_id) REFERENCES telegram_operations(operation_id,bot_id,update_id));
+    CREATE UNIQUE INDEX telegram_delivery_outbox_delivery_key_idx ON telegram_delivery_outbox(bot_id, delivery_key);
     INSERT INTO users (id,name,username,created_at) VALUES
       ('owner','Owner','',1), ('guest','Guest','',1), ('outsider','Outsider','',1);
     INSERT INTO split_sessions (id,name,owner_user_id,status,created_at)
@@ -74,7 +105,10 @@ beforeAll(async () => {
         sessionBreakdown: [{ sessionId: "session-a", sessionName: "QA", net: -10 }] }],
     }),
   }));
-  jest.doMock("@/lib/notifications/telegram", () => ({ notifySplitPaymentReceived }));
+  jest.doMock("@/lib/notifications/telegram", () => ({
+    notifySplitPaymentReceived,
+    buildSplitPaymentReceivedNotification: () => ({ text: "QA payment received" }),
+  }));
   ({ POST } = await import("../route"));
 });
 
@@ -89,8 +123,123 @@ afterAll(() => {
 });
 
 beforeEach(async () => {
+  await client.execute("DELETE FROM telegram_delivery_outbox");
+  await client.execute("DELETE FROM telegram_operations");
   await client.execute("DELETE FROM split_payments");
+  await client.execute("UPDATE users SET telegram_user_id = NULL");
   notifySplitPaymentReceived.mockClear();
+  restoreOutboxEnv();
+});
+
+afterEach(restoreOutboxEnv);
+
+it("commits the web payment and one Telegram delivery together, without a direct send", async () => {
+  enableOutbox();
+  await client.execute("UPDATE users SET telegram_user_id = 'chat-owner' WHERE id = 'owner'");
+  const operationId = "c78fac0c-f6ce-4d60-b736-539ea888132b";
+  const first = await POST(request(operationId, 4));
+  expect(first.status).toBe(200);
+  await expect(first.json()).resolves.toMatchObject({ notificationQueued: true });
+  const replay = await POST(request(operationId, 4));
+  expect(replay.status).toBe(200);
+  const rows = await client.execute(`SELECT p.id, o.operation_kind, d.chat_id, d.status
+    FROM split_payments p JOIN telegram_operations o ON o.resource_id = p.id
+    JOIN telegram_delivery_outbox d ON d.operation_id = o.operation_id`);
+  expect(rows.rows).toHaveLength(1);
+  expect(rows.rows[0]).toEqual(expect.objectContaining({
+    operation_kind: "web.split.payment", chat_id: "chat-owner", status: "pending",
+  }));
+  expect(notifySplitPaymentReceived).not.toHaveBeenCalled();
+});
+
+it("commits without a Telegram intent when the creditor has no linked chat", async () => {
+  enableOutbox();
+  const response = await POST(request("a3e74031-9457-4801-b9d9-32b2758bcc25", 4));
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({ notificationQueued: false });
+  const counts = await client.execute(`SELECT
+    (SELECT COUNT(*) FROM split_payments) AS payments,
+    (SELECT COUNT(*) FROM telegram_operations) AS operations`);
+  expect(counts.rows[0]).toMatchObject({ payments: 1, operations: 0 });
+});
+
+it("rolls back the payment when its durable delivery cannot be inserted", async () => {
+  enableOutbox();
+  await client.execute("UPDATE users SET telegram_user_id = 'chat-owner' WHERE id = 'owner'");
+  await client.execute("CREATE TRIGGER reject_split_delivery BEFORE INSERT ON telegram_delivery_outbox BEGIN SELECT RAISE(ABORT, 'delivery rejected'); END");
+  try {
+    const response = await POST(request("40eb5563-a97d-407d-9ef7-8dc962e5da34", 4));
+    expect(response.status).toBe(500);
+    const counts = await client.execute(`SELECT
+      (SELECT COUNT(*) FROM split_payments) AS payments,
+      (SELECT COUNT(*) FROM telegram_operations) AS operations,
+      (SELECT COUNT(*) FROM telegram_delivery_outbox) AS deliveries`);
+    expect(counts.rows[0]).toMatchObject({ payments: 0, operations: 0, deliveries: 0 });
+    expect(notifySplitPaymentReceived).not.toHaveBeenCalled();
+  } finally {
+    await client.execute("DROP TRIGGER reject_split_delivery");
+  }
+});
+
+it("discards a queued web payment notice if the linked chat changes", async () => {
+  enableOutbox();
+  await client.execute("UPDATE users SET telegram_user_id = 'chat-owner' WHERE id = 'owner'");
+  expect((await POST(request("3ed71aef-8dd7-43a3-8b89-06e6e1696cb2", 4))).status).toBe(200);
+  await client.execute("UPDATE users SET telegram_user_id = 'other-chat' WHERE id = 'owner'");
+  const { runTelegramOutboxWorker } = await import("@/lib/telegram/outbox-worker");
+  const fetchImpl = jest.fn();
+  const result = await runTelegramOutboxWorker({
+    botId: "beta-bot", token: "test-token", now: () => Date.now() + 1_000,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
+  expect(result.dead).toBe(1);
+  expect(fetchImpl).not.toHaveBeenCalled();
+  const rows = await client.execute("SELECT status,last_error_code FROM telegram_delivery_outbox");
+  expect(rows.rows[0]).toMatchObject({ status: "dead", last_error_code: "recipient_changed" });
+});
+
+it("discards a queued web payment notice if the creditor leaves the session", async () => {
+  enableOutbox();
+  await client.execute("UPDATE users SET telegram_user_id = 'chat-owner' WHERE id = 'owner'");
+  expect((await POST(request("e99ca7cf-e7a3-4785-8886-075c89e4a911", 4))).status).toBe(200);
+  await client.execute("DELETE FROM split_session_members WHERE session_id = 'session-a' AND user_id = 'owner'");
+  try {
+    const { runTelegramOutboxWorker } = await import("@/lib/telegram/outbox-worker");
+    const fetchImpl = jest.fn();
+    const result = await runTelegramOutboxWorker({
+      botId: "beta-bot", token: "test-token", now: () => Date.now() + 1_000,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result.dead).toBe(1);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const rows = await client.execute("SELECT status,last_error_code FROM telegram_delivery_outbox");
+    expect(rows.rows[0]).toMatchObject({ status: "dead", last_error_code: "member_removed" });
+  } finally {
+    await client.execute("INSERT INTO split_session_members VALUES ('session-a','owner',NULL,1)");
+  }
+});
+
+it("delivers one valid web payment notice through the worker", async () => {
+  enableOutbox();
+  await client.execute("UPDATE users SET telegram_user_id = 'chat-owner' WHERE id = 'owner'");
+  expect((await POST(request("b756236f-ed14-4bc9-b699-c8eb60d35965", 4))).status).toBe(200);
+  const { runTelegramOutboxWorker } = await import("@/lib/telegram/outbox-worker");
+  const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
+    ok: true, result: { message_id: 7 },
+  }), { status: 200 }));
+  const first = await runTelegramOutboxWorker({
+    botId: "beta-bot", token: "test-token", now: () => Date.now() + 1_000,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
+  const second = await runTelegramOutboxWorker({
+    botId: "beta-bot", token: "test-token", now: () => Date.now() + 2_000,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
+  expect(first.sent).toBe(1);
+  expect(second.sent).toBe(0);
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+  const rows = await client.execute("SELECT status,provider_message_id FROM telegram_delivery_outbox");
+  expect(rows.rows[0]).toMatchObject({ status: "sent", provider_message_id: "7" });
 });
 
 it("rejects a second operation that exceeds debt despite a stale projection", async () => {
