@@ -103,6 +103,56 @@ it("rejects a second operation that exceeds debt despite a stale projection", as
   expect(notifySplitPaymentReceived).toHaveBeenCalledTimes(1);
 });
 
+it("rejects a Telegram payment against the same debt after a web payment", async () => {
+  const first = await POST(request("4c58e4bf-47c4-4693-89dc-d3be3f8fbdf0", 6));
+  expect(first.status).toBe(200);
+  const { db } = await import("@/lib/db/client");
+  const { recordManualSplitPaymentInTransaction } = await import("@/lib/splits/record-payment");
+  const second = await db.transaction((tx) => recordManualSplitPaymentInTransaction(tx, {
+    operationId: "tgop_v1_telegram-qa",
+    sessionId: "session-a",
+    actorId: "guest",
+    payeeUserId: "owner",
+    amount: 6,
+  }));
+  expect(second).toEqual(expect.objectContaining({ status: 400 }));
+  const rows = await client.execute("SELECT id FROM split_payments");
+  expect(rows.rows).toHaveLength(1);
+});
+
+it("records a temporary Telegram debtor once and uses the committed remaining balance", async () => {
+  await client.executeMultiple(`
+    INSERT INTO temp_users (id,first_name) VALUES ('temp-debtor','QA Temp');
+    INSERT INTO split_session_members VALUES ('session-a',NULL,'temp-debtor',1);
+    INSERT INTO splits (id,session_id,description,total_amount,split_type,status,created_by_user_id,created_at)
+      VALUES ('split-temp','session-a','Temp QA',10,'equal','active','owner',1);
+    INSERT INTO split_payers VALUES ('payer-temp','split-temp','owner',NULL,10);
+    INSERT INTO split_items VALUES ('item-temp','split-temp',NULL,'temp-debtor',10,NULL);
+  `);
+  try {
+    const { db } = await import("@/lib/db/client");
+    const { recordManualSplitPaymentInTransaction } = await import("@/lib/splits/record-payment");
+    const input = {
+      operationId: "tgop_v1_temp-qa", sessionId: "session-a", actorTempId: "temp-debtor",
+      payeeUserId: "owner", amount: 4,
+    };
+    const first = await db.transaction((tx) => recordManualSplitPaymentInTransaction(tx, input));
+    expect(first).toEqual(expect.objectContaining({ replayed: false, remainingDebt: 6 }));
+    const replay = await db.transaction((tx) => recordManualSplitPaymentInTransaction(tx, input));
+    expect(replay).toEqual(expect.objectContaining({ replayed: true }));
+    const rows = await client.execute("SELECT payer_user_id,payer_temp_id,amount FROM split_payments");
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]).toEqual(expect.objectContaining({ payer_user_id: null, payer_temp_id: "temp-debtor", amount: 4 }));
+  } finally {
+    await client.execute("DELETE FROM split_payments WHERE session_id = 'session-a'");
+    await client.execute("DELETE FROM split_items WHERE split_id = 'split-temp'");
+    await client.execute("DELETE FROM split_payers WHERE split_id = 'split-temp'");
+    await client.execute("DELETE FROM splits WHERE id = 'split-temp'");
+    await client.execute("DELETE FROM split_session_members WHERE temp_user_id = 'temp-debtor'");
+    await client.execute("DELETE FROM temp_users WHERE id = 'temp-debtor'");
+  }
+});
+
 it("rejects a creditor who is not a current session member", async () => {
   const response = await POST(request("98f0995e-2001-4d91-a94f-a8583f920a53", 3, "outsider"));
   expect(response.status).toBe(400);

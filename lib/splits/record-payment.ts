@@ -1,6 +1,9 @@
 import { randomUUID } from "crypto";
 import { and, eq, inArray } from "drizzle-orm";
+import type { ExtractTablesWithRelations } from "drizzle-orm";
+import type { LibSQLTransaction } from "drizzle-orm/libsql";
 import { db } from "@/lib/db/client";
+import * as schema from "@/lib/db/schema";
 import { split_items, split_payers, split_payments, split_session_members, split_sessions, splits } from "@/lib/db/schema";
 import { calculateSessionBalances } from "./balances";
 import { confirmedPaymentsForSession } from "./confirmed-payments";
@@ -8,13 +11,15 @@ import { confirmedPaymentsForSession } from "./confirmed-payments";
 export interface ManualSplitPaymentInput {
   operationId: string;
   sessionId: string;
-  actorId: string;
+  actorId?: string;
+  actorTempId?: string;
   payeeUserId?: string;
   payeeTempId?: string;
   amount: number;
 }
 
 type Payment = typeof split_payments.$inferSelect;
+type SplitPaymentTransaction = LibSQLTransaction<typeof schema, ExtractTablesWithRelations<typeof schema>>;
 
 type RecordPaymentResult =
   | { error: string; status: 400 | 403 | 404 | 409 | 500 }
@@ -23,25 +28,38 @@ type RecordPaymentResult =
 
 function matchesReplay(row: Payment, input: ManualSplitPaymentInput): boolean {
   return row.session_id === input.sessionId
-    && row.payer_user_id === input.actorId
-    && row.payer_temp_id === null
+    && row.payer_user_id === (input.actorId ?? null)
+    && row.payer_temp_id === (input.actorTempId ?? null)
     && row.payee_user_id === (input.payeeUserId ?? null)
     && row.payee_temp_id === (input.payeeTempId ?? null)
     && row.amount === input.amount
     && row.method === "manual";
 }
 
-// The debt check and insert share one libSQL transaction. Neither caller may
-// notify until this returns a newly committed payment.
-export async function recordManualSplitPayment(input: ManualSplitPaymentInput): Promise<RecordPaymentResult> {
-  return db.transaction(async (tx) => {
+// The caller owns the transaction so Telegram can commit the payment and its
+// deliveries with the same operation claim. Never notify from this writer.
+export async function recordManualSplitPaymentInTransaction(
+  tx: SplitPaymentTransaction,
+  input: ManualSplitPaymentInput,
+): Promise<RecordPaymentResult> {
+    const onePayer = Boolean(input.actorId) !== Boolean(input.actorTempId);
+    const oneCreditor = Boolean(input.payeeUserId) !== Boolean(input.payeeTempId);
+    if (!onePayer || !oneCreditor || (input.actorId && input.actorId === input.payeeUserId)
+      || (input.actorTempId && input.actorTempId === input.payeeTempId)
+      || input.amount <= 0
+      || !Number.isSafeInteger(Math.round(input.amount * 100))
+      || Math.abs(input.amount * 100 - Math.round(input.amount * 100)) >= 1e-7) {
+      return { error: "Invalid payment", status: 400 };
+    }
     const [session] = await tx.select().from(split_sessions)
       .where(eq(split_sessions.id, input.sessionId)).limit(1);
     if (!session) return { error: "Not found", status: 404 } as const;
 
     const members = await tx.select().from(split_session_members)
       .where(eq(split_session_members.session_id, input.sessionId));
-    if (!members.some((member) => member.user_id === input.actorId)) {
+    if (!members.some((member) => input.actorId
+      ? member.user_id === input.actorId
+      : member.temp_user_id === input.actorTempId)) {
       return { error: "Forbidden", status: 403 } as const;
     }
 
@@ -85,7 +103,7 @@ export async function recordManualSplitPayment(input: ManualSplitPaymentInput): 
       })),
     );
     const debt = balance.debts.find((entry) =>
-      entry.from.userId === input.actorId
+      (input.actorId ? entry.from.userId === input.actorId : entry.from.tempUserId === input.actorTempId)
       && (input.payeeUserId
         ? entry.to.userId === input.payeeUserId
         : entry.to.tempUserId === input.payeeTempId));
@@ -95,7 +113,7 @@ export async function recordManualSplitPayment(input: ManualSplitPaymentInput): 
 
     const payment: Payment = {
       id: randomUUID(), operation_id: input.operationId, session_id: input.sessionId,
-      payer_user_id: input.actorId, payer_temp_id: null,
+      payer_user_id: input.actorId ?? null, payer_temp_id: input.actorTempId ?? null,
       payee_user_id: input.payeeUserId ?? null,
       payee_temp_id: input.payeeTempId ?? null,
       amount: input.amount, method: "manual",
@@ -119,7 +137,12 @@ export async function recordManualSplitPayment(input: ManualSplitPaymentInput): 
       remainingDebt: Math.round((debt.amount - input.amount) * 100) / 100,
       sessionName: session.name,
     };
-  }).catch((error: unknown) => {
+}
+
+// The debt check and insert share one libSQL transaction. Neither caller may
+// notify until this returns a newly committed payment.
+export async function recordManualSplitPayment(input: ManualSplitPaymentInput): Promise<RecordPaymentResult> {
+  return db.transaction((tx) => recordManualSplitPaymentInTransaction(tx, input)).catch((error: unknown) => {
     // A competing writer may hold the local SQLite/libSQL write lock. Do not
     // retry an uncertain transaction or report the payment as registered.
     const code = error && typeof error === "object" && "code" in error ? error.code : null;

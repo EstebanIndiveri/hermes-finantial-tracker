@@ -1,12 +1,13 @@
 import { handleSplitCallback } from "../callback-handler";
 import { db } from "@/lib/db/client";
 import { getConversationState, setConversationState, clearConversationState } from "../conversation-state";
-import { splits, split_payers, split_items, split_payments } from "@/lib/db/schema";
+import { splits, split_payers, split_items } from "@/lib/db/schema";
 import { handlePagueSelect, startPaguePartialAmount } from "../commands/pague";
 import { notifySplitPaymentReceived } from "@/lib/notifications/telegram";
 import { resolveAuthorizedSplitContext } from "../authorization";
 import { createTelegramOperationContext, createTelegramOperationIdentity } from "../../operation-context";
 import { runTelegramOperation } from "../../financial-operation";
+import { recordManualSplitPayment, recordManualSplitPaymentInTransaction } from "@/lib/splits/record-payment";
 
 jest.mock("../authorization", () => ({
   resolveAuthorizedSplitContext: jest.fn().mockResolvedValue({ ok: true, context: {} }),
@@ -46,6 +47,11 @@ jest.mock("../../financial-operation", () => ({
   runTelegramOperation: jest.fn(),
 }));
 
+jest.mock("@/lib/splits/record-payment", () => ({
+  recordManualSplitPayment: jest.fn(),
+  recordManualSplitPaymentInTransaction: jest.fn(),
+}));
+
 function makeInsertMock() {
   return {
     values: jest.fn().mockReturnThis(),
@@ -64,6 +70,12 @@ describe("handleSplitCallback", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (resolveAuthorizedSplitContext as jest.Mock).mockResolvedValue({ ok: true, context: {} });
+    (recordManualSplitPayment as jest.Mock).mockResolvedValue({
+      payment: { id: "payment-1" }, replayed: false, remainingDebt: 0, sessionName: "Sushi",
+    });
+    (recordManualSplitPaymentInTransaction as jest.Mock).mockResolvedValue({
+      payment: { id: "payment-1" }, replayed: false, remainingDebt: 0, sessionName: "Sushi",
+    });
     (db.query.split_session_members.findMany as jest.Mock).mockResolvedValue([
       { session_id: "session-1", user_id: "user-1", temp_user_id: null },
       { session_id: "session-1", user_id: "user-2", temp_user_id: null },
@@ -243,7 +255,6 @@ describe("handleSplitCallback", () => {
   });
 
   it("records payments to temp creditors", async () => {
-    const paymentInsert = makeInsertMock();
     (getConversationState as jest.Mock).mockResolvedValue({
       step: "pague_confirm",
       data: {
@@ -255,7 +266,6 @@ describe("handleSplitCallback", () => {
         session_id: "session-1",
       },
     });
-    (db.insert as jest.Mock).mockReturnValue(paymentInsert);
     (db.query.users.findFirst as jest.Mock).mockResolvedValue({
       id: "user-1",
       telegram_user_id: "telegram-1",
@@ -271,17 +281,39 @@ describe("handleSplitCallback", () => {
 
     const response = await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:yes");
 
-    expect(paymentInsert.values).toHaveBeenCalledWith(expect.objectContaining({
-      session_id: "session-1",
-      payer_user_id: "user-1",
-      payer_temp_id: null,
-      payee_user_id: null,
-      payee_temp_id: "temp-1",
+    expect(recordManualSplitPayment).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-1",
+      actorId: "user-1",
+      actorTempId: undefined,
+      payeeUserId: undefined,
+      payeeTempId: "temp-1",
       amount: 450,
     }));
     expect(clearConversationState).toHaveBeenCalledWith("chat-1", "telegram-1");
     expect(response?.text).toContain("@sabri");
     expect(notifySplitPaymentReceived).not.toHaveBeenCalled();
+  });
+
+  it("rejects an obsolete payment in the fallback without notifying", async () => {
+    (recordManualSplitPayment as jest.Mock).mockResolvedValue({
+      error: "Payment exceeds outstanding debt", status: 400,
+    });
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "pague_confirm",
+      data: {
+        step: "pague_confirm", debt_amount: 10, payment_amount: 6,
+        remaining_amount: 4, creditor_user_id: "user-2", creditor_name: "Maria",
+        session_id: "session-1",
+      },
+    });
+    (db.query.users.findFirst as jest.Mock)
+      .mockResolvedValueOnce({ id: "user-1", telegram_user_id: "telegram-1", username: "esteban", name: "Esteban" })
+      .mockResolvedValueOnce({ id: "user-2", telegram_user_id: "telegram-2", username: "maria", name: "Maria" });
+    (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue({ id: "session-1", name: "QA" });
+    const response = await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:yes");
+    expect(response?.text).toContain("La deuda cambió");
+    expect(notifySplitPaymentReceived).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("writes a context-aware payment with an operation id", async () => {
@@ -330,8 +362,8 @@ describe("handleSplitCallback", () => {
     const response = await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:yes", 78, context);
 
     expect(response).toEqual(expect.objectContaining({ deliveryOperationId: expectedOperationId }));
-    expect(txInserts.find((entry) => entry.table === split_payments)?.values).toEqual(expect.objectContaining({
-      operation_id: expectedOperationId,
+    expect(recordManualSplitPaymentInTransaction).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      operationId: expectedOperationId,
     }));
     expect(notifySplitPaymentReceived).toHaveBeenCalledTimes(0);
     expect(runTelegramOperation).toHaveBeenCalledWith(
@@ -339,6 +371,38 @@ describe("handleSplitCallback", () => {
       expect.objectContaining({ operationKind: "split.payment", botId: "bot-1", updateId: "update-1" }),
       expect.any(Function),
     );
+  });
+
+  it("does not notify a creditor when the debt changed before callback commit", async () => {
+    const txInserts: Array<{ table: unknown; values: unknown }> = [];
+    (recordManualSplitPaymentInTransaction as jest.Mock).mockResolvedValue({
+      error: "Payment exceeds outstanding debt", status: 400,
+    });
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "pague_confirm",
+      data: {
+        step: "pague_confirm", debt_amount: 10, payment_amount: 6,
+        remaining_amount: 4, creditor_user_id: "user-2", creditor_name: "Maria",
+        session_id: "session-1",
+      },
+    });
+    (db.query.users.findFirst as jest.Mock)
+      .mockResolvedValueOnce({ id: "user-1", telegram_user_id: "telegram-1", username: "esteban", name: "Esteban" })
+      .mockResolvedValueOnce({ id: "user-2", telegram_user_id: "telegram-2", username: "maria", name: "Maria" });
+    (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue({ id: "session-1", name: "QA" });
+    (db.transaction as jest.Mock).mockImplementation(async (work: (tx: unknown) => Promise<unknown>) => work({
+      insert: jest.fn((table: unknown) => ({
+        values: jest.fn(async (values: unknown) => txInserts.push({ table, values })),
+      })),
+    }));
+    const context = createTelegramOperationContext({
+      botId: "bot-1", updateId: "update-stale", chatId: "chat-1", callbackMessageId: 78, action: "callback",
+    });
+    const response = await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:yes", 78, context);
+    expect(response?.text).toContain("La deuda cambió");
+    expect(txInserts).toHaveLength(1);
+    expect(txInserts[0].values).toEqual(expect.objectContaining({ chat_id: "chat-1" }));
+    expect(notifySplitPaymentReceived).not.toHaveBeenCalled();
   });
 
   it("delegates partial payment callback start to pague command handler", async () => {
@@ -490,7 +554,9 @@ describe("handleSplitCallback", () => {
   });
 
   it("notifies Hermes creditors with remaining debt after payment", async () => {
-    const paymentInsert = makeInsertMock();
+    (recordManualSplitPayment as jest.Mock).mockResolvedValue({
+      payment: { id: "payment-1" }, replayed: false, remainingDebt: 2600, sessionName: "Viaje",
+    });
     (getConversationState as jest.Mock).mockResolvedValue({
       step: "pague_confirm",
       data: {
@@ -503,7 +569,6 @@ describe("handleSplitCallback", () => {
         session_id: "session-1",
       },
     });
-    (db.insert as jest.Mock).mockReturnValue(paymentInsert);
     (db.query.users.findFirst as jest.Mock)
       .mockResolvedValueOnce({
         id: "user-1",
@@ -519,8 +584,28 @@ describe("handleSplitCallback", () => {
       });
     (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue({ id: "session-1", name: "Viaje" });
 
-    await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:yes");
+    const response = await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:yes");
 
-    expect(notifySplitPaymentReceived).toHaveBeenCalledWith("user-2", "esteban", 2000, 3000, "Viaje");
+    expect(notifySplitPaymentReceived).toHaveBeenCalledWith("user-2", "esteban", 2000, 2600, "Viaje");
+    expect(response?.text).toContain("$2.600");
+  });
+
+  it("does not request a webhook retry when the fallback notice fails after commit", async () => {
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "pague_confirm",
+      data: {
+        step: "pague_confirm", debt_amount: 10, payment_amount: 4,
+        creditor_user_id: "user-2", creditor_name: "Maria", session_id: "session-1",
+      },
+    });
+    (db.query.users.findFirst as jest.Mock)
+      .mockResolvedValueOnce({ id: "user-1", telegram_user_id: "telegram-1", username: "esteban", name: "Esteban" })
+      .mockResolvedValueOnce({ id: "user-2", telegram_user_id: "telegram-2", username: "maria", name: "Maria" });
+    (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue({ id: "session-1", name: "QA" });
+    (notifySplitPaymentReceived as jest.Mock).mockRejectedValue(new Error("delivery unavailable"));
+    const response = await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:yes");
+    expect(response?.text).toContain("No pudimos confirmar el aviso");
+    expect(recordManualSplitPayment).toHaveBeenCalledTimes(1);
+    expect(clearConversationState).toHaveBeenCalledTimes(1);
   });
 });

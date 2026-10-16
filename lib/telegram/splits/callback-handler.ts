@@ -8,7 +8,6 @@ import {
   splits,
   split_payers,
   split_items,
-  split_payments,
   telegram_delivery_outbox,
 } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -23,6 +22,7 @@ import type { TelegramOperationContext } from "../operation-context";
 import { createTelegramDeliveryKey, createTelegramOperationIdentity } from "../operation-context";
 import { runTelegramOperation, type TelegramOperationTransaction } from "../financial-operation";
 import { buildTelegramDeliveryRow } from "../outbox";
+import { recordManualSplitPayment, recordManualSplitPaymentInTransaction } from "@/lib/splits/record-payment";
 
 const SPLIT_CREATE_OPERATION = "split.create";
 const SPLIT_PAYMENT_OPERATION = "split.payment";
@@ -649,111 +649,57 @@ async function handlePagueConfirmCallback(
       : getTempDisplayName(await db.query.temp_users.findFirst({ where: eq(temp_users.id, state.creditor_temp_id!) })));
 
   const paidAmount = state.payment_amount ?? state.debt_amount;
-  const formattedAmount = paidAmount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
-  const remainingAmount = (state.remaining_amount ?? 0).toLocaleString("es-AR", { minimumFractionDigits: 0 });
   const payerName = hermesUser
     ? getHermesDisplayName(hermesUser)
     : getTempDisplayName(tempUser);
 
-  const response: TelegramResponse = {
-    text: [
-      `✅ Registrado: Pagaste $${formattedAmount} a ${creditorName}`,
-      `💰 Tu deuda restante con ${creditorName}: $${remainingAmount}`,
-    ].join("\n"),
-    edit: true,
-  };
-
   const identity = operationContext
     ? operationIdentity(operationContext, SPLIT_PAYMENT_OPERATION)
     : null;
-  const paymentId = randomUUID();
   const now = Date.now();
-  const writePayment = async (tx: TelegramOperationTransaction) => {
-    if (identity) {
-      const currentMembers = await tx
-        .select({
-          userId: split_session_members.user_id,
-          tempUserId: split_session_members.temp_user_id,
-        })
-        .from(split_session_members)
-        .where(eq(split_session_members.session_id, session.id));
-      const payerStillMember = currentMembers.some((member) =>
-        (hermesUser?.id && member.userId === hermesUser.id) ||
-        (tempUser?.id && member.tempUserId === tempUser.id));
-      const creditorStillMember = currentMembers.some((member) =>
-        (state.creditor_user_id && member.userId === state.creditor_user_id) ||
-        (state.creditor_temp_id && member.tempUserId === state.creditor_temp_id));
-      if (!payerStillMember || !creditorStillMember) {
-        throw new Error("Split payment membership changed before commit");
-      }
-    }
-
-    await tx.insert(split_payments).values({
-      id: paymentId,
-      ...(identity ? { operation_id: identity.operationId } : {}),
-      session_id: session.id,
-      payer_user_id: hermesUser?.id ?? null,
-      payer_temp_id: tempUser?.id ?? null,
-      payee_user_id: state.creditor_user_id ?? null,
-      payee_temp_id: state.creditor_temp_id ?? null,
-      amount: paidAmount,
-      method: "manual",
-      receipt_image_url: null,
-      ocr_raw_text: null,
-      confirmed_at: now,
-      telegram_update_id: null,
-    });
-    if (operationContext && identity) {
-      await insertPrimaryDelivery(tx, operationContext, identity.operationId, identity.deliveryKey, response, messageId, now);
-      if (creditorUser?.telegram_user_id) {
-        const sessionText = session.name ? `\n📁 Sesión: ${session.name}` : "";
-        const remainingText = (state.remaining_amount ?? 0) > 0
-          ? `\n💰 Deuda restante: <b>$${remainingAmount}</b>`
-          : "\n✅ ¡Deuda saldada!";
-        await tx.insert(telegram_delivery_outbox).values(buildTelegramDeliveryRow({
-          botId: operationContext.botId,
-          updateId: operationContext.updateId,
-          operationId: identity.operationId,
-          deliveryKey: createTelegramDeliveryKey(
-            identity,
-            "split_payment_received",
-            creditorUser.telegram_user_id,
-          ),
-          action: "send_message",
-          chatId: creditorUser.telegram_user_id,
-          text: `💸 <b>Recibiste un Pago</b>\n\n${payerName} te pagó <b>$${formattedAmount}</b>${sessionText}${remainingText}`,
-          now,
-        }));
-      }
-    }
+  const paymentInput = {
+    sessionId: session.id,
+    actorId: hermesUser?.id,
+    actorTempId: tempUser?.id,
+    payeeUserId: state.creditor_user_id,
+    payeeTempId: state.creditor_temp_id,
+    amount: paidAmount,
   };
+  const rejectedPayment: TelegramResponse = {
+    text: "⏱️ La deuda cambió o esta sesión ya no permite pagos. Consultá /pague otra vez.",
+    edit: true,
+  };
+  const successResponse = (remainingDebt: number): TelegramResponse => ({
+    text: [
+      `✅ Registrado: Pagaste $${paidAmount.toLocaleString("es-AR", { minimumFractionDigits: 0 })} a ${creditorName}`,
+      `💰 Tu deuda restante con ${creditorName}: $${remainingDebt.toLocaleString("es-AR", { minimumFractionDigits: 0 })}`,
+    ].join("\n"),
+    edit: true,
+  });
 
   if (!operationContext || !identity) {
-    await db.insert(split_payments).values({
-      id: paymentId,
-      session_id: session.id,
-      payer_user_id: hermesUser?.id ?? null,
-      payer_temp_id: tempUser?.id ?? null,
-      payee_user_id: state.creditor_user_id ?? null,
-      payee_temp_id: state.creditor_temp_id ?? null,
-      amount: paidAmount,
-      method: "manual",
-      receipt_image_url: null,
-      ocr_raw_text: null,
-      confirmed_at: now,
-      telegram_update_id: null,
-    });
+    const payment = await recordManualSplitPayment({ ...paymentInput, operationId: randomUUID() });
     await clearConversationState(chatId, telegramUserId);
+    if ("error" in payment || payment.replayed) return rejectedPayment;
     if (state.creditor_user_id) {
-      await notifySplitPaymentReceived(
-        state.creditor_user_id,
-        payerName,
-        paidAmount,
-        state.remaining_amount ?? 0,
-        session.name,
-      );
+      try {
+        await notifySplitPaymentReceived(
+          state.creditor_user_id,
+          payerName,
+          paidAmount,
+          payment.remainingDebt,
+          payment.sessionName,
+        );
+      } catch {
+        // The payment is committed. Do not turn an uncertain notification
+        // into a webhook retry that could record another partial payment.
+        return {
+          text: `${successResponse(payment.remainingDebt).text}\n⚠️ No pudimos confirmar el aviso al acreedor.`,
+          edit: true,
+        };
+      }
     }
-    return response;
+    return successResponse(payment.remainingDebt);
   }
 
   const result = await runTelegramOperation(
@@ -766,8 +712,33 @@ async function handlePagueConfirmCallback(
       now,
     },
     async (tx) => {
-      await writePayment(tx);
-      return { resourceType: "split_payment", resourceId: paymentId, result: response };
+      const payment = await recordManualSplitPaymentInTransaction(tx, {
+        ...paymentInput,
+        operationId: identity.operationId,
+      });
+      if ("error" in payment || payment.replayed) {
+        await insertPrimaryDelivery(tx, operationContext, identity.operationId, identity.deliveryKey, rejectedPayment, messageId, now);
+        return { resourceType: null, resourceId: null, result: rejectedPayment };
+      }
+      const response = successResponse(payment.remainingDebt);
+      await insertPrimaryDelivery(tx, operationContext, identity.operationId, identity.deliveryKey, response, messageId, now);
+      if (creditorUser?.telegram_user_id) {
+        const sessionText = payment.sessionName ? `\n📁 Sesión: ${payment.sessionName}` : "";
+        const remainingText = payment.remainingDebt > 0
+          ? `\n💰 Deuda restante: <b>$${payment.remainingDebt.toLocaleString("es-AR", { minimumFractionDigits: 0 })}</b>`
+          : "\n✅ ¡Deuda saldada!";
+        await tx.insert(telegram_delivery_outbox).values(buildTelegramDeliveryRow({
+          botId: operationContext.botId,
+          updateId: operationContext.updateId,
+          operationId: identity.operationId,
+          deliveryKey: createTelegramDeliveryKey(identity, "split_payment_received", creditorUser.telegram_user_id),
+          action: "send_message",
+          chatId: creditorUser.telegram_user_id,
+          text: `💸 <b>Recibiste un Pago</b>\n\n${payerName} te pagó <b>$${paidAmount.toLocaleString("es-AR", { minimumFractionDigits: 0 })}</b>${sessionText}${remainingText}`,
+          now,
+        }));
+      }
+      return { resourceType: "split_payment", resourceId: payment.payment.id, result: response };
     },
   );
   if (result.kind === "busy") throw new Error("Telegram split payment operation is already in progress");

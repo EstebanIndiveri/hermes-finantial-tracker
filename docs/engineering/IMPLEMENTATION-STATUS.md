@@ -4088,3 +4088,30 @@ el aviso de pago directo de Telegram aún no tiene outbox durable
 El writer de callbacks Telegram no se movió en H14k y requiere su propio
 corte de convergencia. No se modificaron bot, cron, esquema, datos QA,
 beta activa ni legacy. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-08/H14l — confirmar `/pague` contra deuda vigente, rama local (16/10)
+
+**Owner Codex, implementado localmente; no publicado.** El callback de pago
+Telegram ya no registra el monto ni anuncia el saldo basándose en el estado
+de conversación: comparte con los dos POST web el writer que revalida en la
+transacción sesión abierta, miembros vigentes, arista y deuda confirmada.
+Admite deudor y acreedor temporales. Con contexto de operación, el pago,
+respuesta primaria y aviso al acreedor siguen atómicos en el outbox; una
+deuda obsoleta produce solo respuesta de rechazo. El fallback sin contexto
+también valida al escribir y, si falla su aviso posterior al commit, informa
+que la entrega no quedó confirmada sin provocar retry del webhook.
+
+Regresión roja primero por falta de writer reutilizable; integración libSQL
+web→Telegram rechaza un segundo pago ARS 6 sobre deuda original ARS 10.
+También cubre pagador temporal, replay, rechazo sin aviso al acreedor y
+saldo del commit distinto del estado conversacional. Puertas: harness
+130/130, Jest 136 suites/1182 pruebas, lint 0 errores/61 avisos previos y
+build/TypeScript aprobados. Sin cambios de esquema, datos QA, bot, cron,
+deployment beta o legacy.
+
+**Pendientes con owner Codex:** ACT-09 debe hacer durable/idempotente el
+aviso del fallback Telegram y de los pagos web; H14l solo garantiza outbox
+en callbacks con contexto. Ensayo de contención y smoke en Turso beta,
+H04d y promoción únicamente después de las ventanas ACT-17. ACT-17
+conserva su seguimiento y deployment vigente. **Owner Esteban:** ninguna
+validación por ahora.

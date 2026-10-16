@@ -1,5 +1,21 @@
 # ACT-08 — deudas globales de compartidos
 
+### Contrato H14l — confirmación de pago por Telegram (16/10)
+
+Actual: `pague_confirm:yes` conserva importe y saldo de la conversación y
+escribe directamente `split_payments`; un pago web u otro callback ocurrido
+entretanto puede volver obsoleta esa deuda. Esperado: antes de confirmar,
+revalidar en la misma transacción sesión abierta, membresía actual de deudor
+y acreedor (incluidos participantes temporales), importe positivo en centavos
+y deuda confirmada restante. El mensaje muestra el saldo realmente calculado
+al commit; un rechazo no crea pago ni aviso al acreedor. El camino con
+`TelegramOperationContext` mantiene operación, pago y outbox en una sola
+transacción e idempotencia por update. El fallback sin contexto conserva su
+entrega heredada pero usa la misma regla financiera; su falta de deduplicación
+durable de avisos queda con owner ACT-09. Pruebas: deuda obsoleta, temporal,
+repetición y saldo; luego puertas del repositorio. Sin cambios de esquema,
+datos QA, cron, bot, beta activa ni legacy; publicar solo tras ACT-17/H04d.
+
 ## Subcorte H13: solo proyección, sin escrituras
 
 Antes, `calculateGlobalBalances` trataba el saldo neto de cada otro miembro
