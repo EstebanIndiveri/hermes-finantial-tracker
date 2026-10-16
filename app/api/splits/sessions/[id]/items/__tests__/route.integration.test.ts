@@ -171,6 +171,7 @@ it("allows the owner to cancel once with no payments and rejects invalid edits",
   expect((await patch(id, { status: "cancelled", totalAmount: 20 })).status).toBe(400);
   expect((await patch(id, { status: "cancelled" }, "friend")).status).toBe(403);
   expect((await patch(id, { status: "cancelled" })).status).toBe(200);
+  await client.execute("UPDATE split_sessions SET status='closed' WHERE id='session-a'");
   expect((await patch(id, { status: "cancelled" })).status).toBe(200);
   const row = await client.execute({ sql: "SELECT status, cancelled_at FROM splits WHERE id=?", args: [id] });
   expect(row.rows[0].status).toBe("cancelled");

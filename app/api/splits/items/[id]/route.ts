@@ -31,10 +31,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!session || session.owner_user_id !== userId) {
         return { error: "Forbidden", status: 403 } as const;
       }
-      if (session.status !== "open") return { error: "Session is closed", status: 409 } as const;
       if (split.status === "cancelled" && parsed.data.status === "cancelled") {
         return { ok: true } as const;
       }
+      if (session.status !== "open") return { error: "Session is closed", status: 409 } as const;
       if (split.status !== "active") return { error: "Split is not active", status: 409 } as const;
 
       // A total-only edit would break sum(payers) = sum(items) = total.
