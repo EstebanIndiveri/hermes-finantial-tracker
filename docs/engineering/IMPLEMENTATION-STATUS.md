@@ -4174,3 +4174,27 @@ contexto y otros avisos directos; no se declara recuperación integral.
 Publicar ACT-09a junto al pase ACT-08 solo después de las observaciones
 ACT-17, H04d y smoke beta con destinatario QA. ACT-17 conserva su owner y
 deployment estable. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-09b — aviso durable en la segunda API web de pagos compartidos (16/10)
+
+**Owner Codex, implementado localmente; no publicado.** La ruta
+`POST /api/splits/sessions/[id]/payments` usa ahora el mismo helper de
+outbox que la API global: si inbox/outbox/worker y bot están habilitados,
+inserta pago, operación y un aviso al chat vinculado del acreedor en la
+misma transacción. Replay no duplica; sin chat no genera intención; un fallo
+de inserción del outbox revierte el pago. La respuesta conserva la fila de
+pago y añade `notificationQueued`, que no acredita entrega. Si el outbox
+está apagado, esta ruta conserva el comportamiento anterior sin aviso. El
+worker ya revalida chat y membresía para ambas rutas.
+
+La regresión libSQL fue roja primero: el pago se confirmaba sin aviso y no
+revertía al fallar el outbox. Después pasaron pago+outbox, replay, rollback
+y acreedor sin chat y modo outbox apagado. Pasaron las 136 suites y 1193 pruebas
+unitarias/integración, el harness, typecheck y build. Lint terminó con cero
+errores y 61 avisos preexistentes. Sin cambios de esquema,
+datos QA, cron, bot, despliegue beta ni legacy.
+
+**Pendientes con owner Codex:** revisar el diff y publicar
+solo después de ACT-17/H04d con smoke beta acotado. ACT-09 conserva owner
+del fallback Telegram sin contexto y demás avisos directos. **Owner
+Esteban:** ninguna acción ahora.

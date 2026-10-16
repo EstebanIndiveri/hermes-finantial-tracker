@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { recordManualSplitPayment } from "@/lib/splits/record-payment";
+import { enqueueWebSplitPaymentNotice, webSplitOutboxBotId } from "@/lib/splits/web-payment-notification";
 
 const createSchema = z.object({
   operationId: z.uuid(),
@@ -33,16 +34,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "No podés pagarte a vos mismo" }, { status: 400 });
     }
 
-    const result = await recordManualSplitPayment({
+    const botId = webSplitOutboxBotId();
+    const payeeUserId = input.payeeUserId;
+    let notificationQueued = false;
+    const paymentInput = {
       operationId: input.operationId,
       sessionId,
       actorId,
-      payeeUserId: input.payeeUserId,
+      payeeUserId,
       payeeTempId: input.payeeTempId,
       amount: input.amount,
-    });
+    };
+    const result = await recordManualSplitPayment(paymentInput, botId && payeeUserId
+      ? { onRecorded: async (tx, payment, remainingDebt, sessionName) => {
+          notificationQueued = await enqueueWebSplitPaymentNotice(tx, {
+            botId, operationId: input.operationId, paymentId: payment.id,
+            payerUserId: actorId, payeeUserId,
+            amount: input.amount, remainingDebt, sessionName,
+          });
+        } }
+      : undefined);
     if ("error" in result) return NextResponse.json({ error: result.error }, { status: result.status });
-    return NextResponse.json(result.payment, { status: result.replayed ? 200 : 201 });
+    return NextResponse.json({ ...result.payment, notificationQueued: result.replayed ? null : notificationQueued },
+      { status: result.replayed ? 200 : 201 });
   } catch (error) {
     console.error("Error recording split payment:", error instanceof Error ? error.name : "Unknown error");
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

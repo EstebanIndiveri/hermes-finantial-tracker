@@ -34,6 +34,26 @@ Pruebas libSQL: pago+outbox, replay, destinatario ausente, rollback ante fallo
 de outbox y revocación antes del despacho. Sin esquema, datos beta/legacy,
 cron ni despliegue; owner Codex de otras rutas/fallback ACT-09.
 
+### Contrato ACT-09b — segunda API de pago web (16/10)
+
+Actual: `POST /api/splits/sessions/[id]/payments` usa el writer financiero
+común, pero no encola aviso para el acreedor. Esperado: con inbox, outbox,
+worker y bot configurados, esta ruta usa la misma intención
+`web.split.payment` y el mismo helper transaccional que
+`POST /api/splits/payments`. El pago y un único aviso para el chat vinculado
+se confirman juntos; un fallo al encolar revierte ambos. Repetir la misma
+clave de operación no crea otro aviso. Sin chat vinculado o con el outbox
+apagado, conserva el pago sin prometer aviso. La respuesta conserva los
+campos de pago existentes y agrega `notificationQueued` (`null` en replay),
+que no significa entrega. Un acreedor temporal no recibe un chat inferido.
+El worker existente revalida membresía y chat antes del envío.
+
+Archivos: ambas rutas de pago web, helper compartido y prueba de integración
+libSQL de la ruta de sesión. Riesgos: la ruta antes era silenciosa; en modo
+outbox activado ahora puede generar un aviso al acreedor. No cambiar esquema,
+cron, bot, deployment beta, datos QA ni legacy. Pendiente ACT-09 para el
+fallback Telegram sin contexto y otros envíos directos.
+
 ## Subcorte H13: solo proyección, sin escrituras
 
 Antes, `calculateGlobalBalances` trataba el saldo neto de cada otro miembro
