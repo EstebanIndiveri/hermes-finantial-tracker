@@ -4055,7 +4055,8 @@ datos, avisos, cron, beta activa o legacy.
 La regresión libSQL aislada reprodujo primero deuda en cero y total de
 historial dos con un pago OCR pendiente; ahora verifica deuda de ARS 8 y
 un solo pago confirmado. Pruebas dirigidas 14/14; suite completa: harness
-130/130 y Jest 135 suites/1174 pruebas. **Pendiente con owner Codex:**
+130/130 y Jest 135 suites/1174 pruebas; lint 0 errores/61 advertencias
+preexistentes y build/TypeScript aprobados. **Pendiente con owner Codex:**
 H14i aún requiere ensayo concurrente con conexiones independientes y
 unificación del writer web transaccional; ACT-17 y H04d mantienen owner
 y bloquean promoción. **Owner Esteban:** ninguna acción ahora.
