@@ -234,3 +234,21 @@ existe cualquier registro de pago; ese cambio requiere decisión aparte.
 Sin cambios de esquema, avisos, cron, beta activa o legacy. Probar la
 condición SQL con libSQL aislado y una fila pendiente junto a una confirmada
 antes de cambiar consumidores.
+
+### Contrato H14k — un solo writer transaccional para pagos web (16/10)
+
+El POST web global todavía calcula una deuda fuera de la transacción y luego
+inserta: dos claves diferentes pueden validar contra el mismo saldo. Ambos
+POST web deben delegar en el mismo writer manual que, en una transacción,
+comprueba sesión abierta, miembros vigentes, arista actor→acreedor y saldo
+confirmado antes de insertar. La unicidad por `operation_id` sigue siendo la
+fuente de replay; un segundo pago distinto por encima del remanente falla
+sin avisar a Telegram. El aviso web solo ocurre tras un insert nuevo; falla
+aparte y no cambia el commit. La API por sesión conserva su respuesta.
+
+Una carrera real entre conexiones independientes de libSQL debe dejar como
+máximo el importe adeudado registrado; si el perdedor enfrenta contención
+transitoria, se devuelve error seguro y se documenta su semántica, sin
+reintento automático ni segundo aviso. Probar primero el camino web sobre
+libSQL aislado y ensayar dos conexiones; no tocar bot, cron, esquema, beta
+activa ni legacy. Una prueba local no certifica serialización remota Turso.

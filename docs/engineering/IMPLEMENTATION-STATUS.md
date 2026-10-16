@@ -4060,3 +4060,31 @@ preexistentes y build/TypeScript aprobados. **Pendiente con owner Codex:**
 H14i aún requiere ensayo concurrente con conexiones independientes y
 unificación del writer web transaccional; ACT-17 y H04d mantienen owner
 y bloquean promoción. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-08/H14k — writer transaccional común de pagos web, rama local (16/10)
+
+**Owner Codex, implementado localmente; no publicado.** Los POST
+`/api/splits/payments` y `/api/splits/sessions/[id]/payments` comparten
+ahora el writer manual transaccional. El alta web ya no acepta el balance
+global consultado antes del insert como permiso de escritura: dentro de la
+transacción se revalidan sesión abierta, miembros, deuda actor→acreedor y
+pagos confirmados. La clave de operación sigue evitando duplicados; el
+aviso web se intenta solo después de un insert nuevo. `SQLITE_BUSY` se
+expone como conflicto 409 sin reintentar una transacción incierta.
+
+Una regresión libSQL real reprodujo primero dos pagos de ARS 6 contra la
+misma deuda de ARS 10 al simular una proyección desactualizada, y también
+la falta de control del acreedor. Tras la corrección, el segundo pago no
+se registra ni avisa. Una prueba con dos conexiones independientes a la
+misma DB local conservó un solo pago y devolvió un conflicto seguro para
+el perdedor; repetida dos veces. Regresiones dirigidas 28/28; puertas:
+harness 130/130, Jest 136 suites/1177 pruebas, lint 0 errores/61 avisos
+preexistentes y build/TypeScript aprobados.
+
+**Pendientes con owner Codex:** verificar comportamiento de contención
+contra Turso beta y smoke de ambos POST solo después de ACT-17/H04d;
+el aviso de pago directo de Telegram aún no tiene outbox durable
+(ACT-09), por lo que un fallo tras commit deja aviso no confirmado.
+El writer de callbacks Telegram no se movió en H14k y requiere su propio
+corte de convergencia. No se modificaron bot, cron, esquema, datos QA,
+beta activa ni legacy. **Owner Esteban:** ninguna acción ahora.
