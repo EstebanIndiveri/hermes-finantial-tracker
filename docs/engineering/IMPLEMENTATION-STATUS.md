@@ -4303,3 +4303,35 @@ la ventana del 18/10; después reatestar H04d, revisar/pasar ACT-08/09 a beta y
 hacer smoke QA acotado con conciliación de operaciones/outbox. Los avisos
 directos fuera de estas confirmaciones siguen abiertos en ACT-09; no se declara
 recuperación integral. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-17 — captura del aviso inicial de reintegro QA (16/10)
+
+Esteban aportó una captura del bot beta con «Solicitud de Reintegro» por ARS 1
+de `esteban qa`, categoría supermercado y botón «Pagar ARS $1», con hora
+visible 15:03 bajo el separador del 15/10. Coincide con el fixture QA2→QA1
+en `test` registrado arriba; acredita visualmente el aviso **inicial**, no
+el recordatorio automático ni su procedencia. La solicitud debe permanecer
+pendiente para la primera ventana elegible del 18/10 21:00–21:59 ART. Esta
+captura no sustituye la conciliación futura de request, runtime, operación,
+outbox, chat único y destinatarios ajenos. **Owner Codex:** conservar el
+seguimiento ACT-17 y el deployment estable; no pagar ni reenviar el fixture.
+**Owner Esteban:** ninguna acción requerida.
+
+### ACT-09g — texto seguro en confirmaciones HTML de compartidos (16/10)
+
+**Owner Codex, implementado en rama local; no publicado.** El callback de
+compartidos ahora escapa los valores variables antes de insertarlos en HTML
+de Telegram: descripción y participantes del gasto, acreedor del pago y
+comercio del ticket OCR. El texto original se conserva para datos y para el
+constructor de avisos, que tiene su propio escape; no se altera la escritura
+financiera ni la selección de destinatarios.
+
+Tres regresiones fueron rojas primero con `&` y etiquetas en comercio, nombre
+de acreedor y detalle de split. Después pasaron harness 130/130, Jest 138
+suites/1228 pruebas, build y typecheck; lint 0 errores/61 avisos
+preexistentes. Sin migración, datos QA, cron, bot, deployment beta ni legacy.
+
+**Pendientes con owner Codex:** seguir auditando otros textos/avisos directos
+de ACT-09, sin declarar cierre integral; publicar junto al pase ACT-08/09
+solo tras la observación ACT-17 del 18/10, reatestación H04d y smoke QA
+acotado. **Owner Esteban:** ninguna acción ahora.

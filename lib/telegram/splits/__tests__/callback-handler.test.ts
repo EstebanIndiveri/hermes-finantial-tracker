@@ -1,4 +1,4 @@
-import { handleSplitCallback } from "../callback-handler";
+import { buildOcrConfirmation, handleSplitCallback } from "../callback-handler";
 import { db } from "@/lib/db/client";
 import { getConversationState, setConversationState, clearConversationState } from "../conversation-state";
 import { splits, split_payers, split_items } from "@/lib/db/schema";
@@ -94,6 +94,30 @@ describe("handleSplitCallback", () => {
     })));
   });
 
+  it("escapes untrusted OCR merchant text in the HTML confirmation", () => {
+    const response = buildOcrConfirmation("A&B <store>", 1200);
+    expect(response.text).toContain("<b>A&amp;B &lt;store&gt;</b>");
+    expect(response.text).not.toContain("<b>A&B <store></b>");
+  });
+
+  it("escapes a creditor name in the split payment confirmation", async () => {
+    (getConversationState as jest.Mock).mockResolvedValue({
+      step: "pague_confirm",
+      data: {
+        step: "pague_confirm", debt_amount: 5, payment_amount: 5,
+        creditor_user_id: "user-2", creditor_name: "A&B <store>", session_id: "session-1",
+      },
+    });
+    (db.query.users.findFirst as jest.Mock)
+      .mockResolvedValueOnce({ id: "user-1", telegram_user_id: "telegram-1", username: "esteban", name: "Esteban" })
+      .mockResolvedValueOnce({ id: "user-2", telegram_user_id: "telegram-2", username: "creditor", name: "Creditor" });
+    (db.query.split_sessions.findFirst as jest.Mock).mockResolvedValue({ id: "session-1", name: "QA" });
+
+    const response = await handleSplitCallback("chat-1", "telegram-1", "pague_confirm:yes");
+    expect(response?.text).toContain("A&amp;B &lt;store&gt;");
+    expect(response?.text).not.toContain("A&B <store>");
+  });
+
   it.each([
     ["participants:all", { step: "participants", amount: 900, description: "Sushi", session_id: "session-1", payer_user_id: "user-1" }],
     ["pague_confirm:yes", { step: "pague_confirm", debt_amount: 900, payment_amount: 900, creditor_user_id: "user-2", session_id: "session-1" }],
@@ -166,10 +190,10 @@ describe("handleSplitCallback", () => {
       data: {
         step: "participants",
         amount: 900,
-        description: "Sushi",
+        description: "Sushi & <script>",
         session_id: "session-1",
         payer_temp_user_id: "temp-payer",
-        payer_name: "@sabri",
+        payer_name: "@sabri & <tag>",
       },
     });
     (db.insert as jest.Mock).mockReturnValue(memberInsert);
@@ -183,7 +207,7 @@ describe("handleSplitCallback", () => {
       .mockReturnValueOnce(makeSelectMock([{ id: "user-1", username: "esteban", name: "Esteban" }]))
       .mockReturnValueOnce(makeSelectMock([
         { id: "temp-payer", telegram_username: "sabri", first_name: "Sabri" },
-        { id: "temp-2", telegram_username: null, first_name: "Ana" },
+        { id: "temp-2", telegram_username: null, first_name: "Ana & <b>" },
       ]));
     (db.transaction as jest.Mock).mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
       const tx = {
@@ -202,7 +226,7 @@ describe("handleSplitCallback", () => {
     const splitInsert = txInserts.find(entry => entry.table === splits);
     expect(splitInsert?.values).toEqual(expect.objectContaining({
       session_id: "session-1",
-      description: "Sushi",
+      description: "Sushi & <script>",
       created_by_user_id: null,
       created_by_temp_id: "temp-payer",
     }));
@@ -226,8 +250,9 @@ describe("handleSplitCallback", () => {
       edit: true,
       text: expect.stringContaining("👥 Dividido entre 3: <b>$300 c/u</b>"),
     }));
-    expect(response?.text).toContain("• esteban debe $300 a @sabri");
-    expect(response?.text).toContain("• Ana debe $300 a @sabri");
+    expect(response?.text).toContain("<b>Sushi &amp; &lt;script&gt;</b>");
+    expect(response?.text).toContain("• esteban debe $300 a @sabri &amp; &lt;tag&gt;");
+    expect(response?.text).toContain("• Ana &amp; &lt;b&gt; debe $300 a @sabri &amp; &lt;tag&gt;");
   });
 
   it("writes a context-aware split and primary edit delivery atomically", async () => {

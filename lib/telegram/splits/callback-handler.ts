@@ -23,6 +23,7 @@ import { createTelegramDeliveryKey, createTelegramOperationIdentity } from "../o
 import { runTelegramOperation, type TelegramOperationTransaction } from "../financial-operation";
 import { buildTelegramDeliveryRow } from "../outbox";
 import { recordManualSplitPayment, recordManualSplitPaymentInTransaction } from "@/lib/splits/record-payment";
+import { escapeTelegramHtml } from "@/lib/telegram/html";
 
 const SPLIT_CREATE_OPERATION = "split.create";
 const SPLIT_PAYMENT_OPERATION = "split.payment";
@@ -414,14 +415,15 @@ async function handleParticipantsCallback(
     ?? (state.payer_user_id ? userNameMap.get(state.payer_user_id) : undefined)
     ?? (state.payer_temp_user_id ? tempNameMap.get(state.payer_temp_user_id) : undefined)
     ?? "Alguien";
+  const safePayerName = escapeTelegramHtml(payerName);
 
   const debtLines = [
     ...userMemberIds
       .filter((userId) => userId !== state.payer_user_id)
-      .map((userId) => `• ${userNameMap.get(userId) ?? "Alguien"} debe $${sharePerPerson.toLocaleString("es-AR", { minimumFractionDigits: 0 })} a ${payerName}`),
+      .map((userId) => `• ${escapeTelegramHtml(userNameMap.get(userId) ?? "Alguien")} debe $${sharePerPerson.toLocaleString("es-AR", { minimumFractionDigits: 0 })} a ${safePayerName}`),
     ...tempMemberIds
       .filter((tempUserId) => tempUserId !== state.payer_temp_user_id)
-      .map((tempUserId) => `• ${tempNameMap.get(tempUserId) ?? "Alguien"} debe $${sharePerPerson.toLocaleString("es-AR", { minimumFractionDigits: 0 })} a ${payerName}`),
+      .map((tempUserId) => `• ${escapeTelegramHtml(tempNameMap.get(tempUserId) ?? "Alguien")} debe $${sharePerPerson.toLocaleString("es-AR", { minimumFractionDigits: 0 })} a ${safePayerName}`),
   ];
 
   const formattedAmount = state.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 });
@@ -429,9 +431,9 @@ async function handleParticipantsCallback(
 
   const response: TelegramResponse = {
     text: [
-      `✅ <b>${state.description}</b> — $${formattedAmount}`,
+      `✅ <b>${escapeTelegramHtml(state.description)}</b> — $${formattedAmount}`,
       ``,
-      `💸 Pagó: <b>${payerName}</b>`,
+      `💸 Pagó: <b>${safePayerName}</b>`,
       `👥 Dividido entre ${totalMembers}: <b>$${formattedShare} c/u</b>`,
       ...(debtLines.length > 0 ? [``, `💰 <b>Deudas:</b>`, ...debtLines] : []),
       ``,
@@ -657,6 +659,7 @@ async function handlePagueConfirmCallback(
     ?? (creditorUser
       ? getHermesDisplayName(creditorUser)
       : getTempDisplayName(await db.query.temp_users.findFirst({ where: eq(temp_users.id, state.creditor_temp_id!) })));
+  const safeCreditorName = escapeTelegramHtml(creditorName);
 
   const paidAmount = state.payment_amount ?? state.debt_amount;
   const payerName = hermesUser
@@ -681,8 +684,8 @@ async function handlePagueConfirmCallback(
   };
   const successResponse = (remainingDebt: number): TelegramResponse => ({
     text: [
-      `✅ Registrado: Pagaste $${paidAmount.toLocaleString("es-AR", { minimumFractionDigits: 0 })} a ${creditorName}`,
-      `💰 Tu deuda restante con ${creditorName}: $${remainingDebt.toLocaleString("es-AR", { minimumFractionDigits: 0 })}`,
+      `✅ Registrado: Pagaste $${paidAmount.toLocaleString("es-AR", { minimumFractionDigits: 0 })} a ${safeCreditorName}`,
+      `💰 Tu deuda restante con ${safeCreditorName}: $${remainingDebt.toLocaleString("es-AR", { minimumFractionDigits: 0 })}`,
     ].join("\n"),
     edit: true,
   });
@@ -779,7 +782,7 @@ export function buildOcrConfirmation(merchant: string, amount: number): Telegram
     text: [
       "🧾 <b>Ticket detectado</b>",
       "",
-      `🏪 Comercio: <b>${merchant}</b>`,
+      `🏪 Comercio: <b>${escapeTelegramHtml(merchant)}</b>`,
       `💰 Total: <b>$${formatted}</b>`,
       "",
       "¿Registramos este gasto compartido?",
