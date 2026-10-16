@@ -128,3 +128,18 @@ responde 409 y la UI explica que debe recargar. No se ofrecen cambios de
 descripción, borrado, reintentos automáticos, ni edición con pagos históricos.
 Archivos: detalle de sesión, página del editor, componentes y pruebas de
 cálculo/validación. Sin despliegue hasta cerrar la observación ACT-17.
+
+### Contrato H14e — alta web con miembros reales (16/10)
+
+El alta actual presenta modos de reparto, pero siempre registra al actor
+como único pagador y participante. La vista de alta debe obtener la sesión
+y sus miembros en el servidor, comprobar que el actor sea miembro y que la
+sesión esté abierta, y ofrecer los mismos campos conservativos del editor:
+descripción, total, pagadores y participantes registrados/temporales. Los
+modos igual, fijo y porcentaje generan importes en centavos y bloquean el
+envío cuando las dos sumas no cierran. La API transaccional H14a valida de
+nuevo pertenencia/estado al momento de escribir. Cualquier miembro vigente
+puede registrar un gasto; la política de edición H14d sigue reservada al
+owner. No enviar avisos adicionales ni modificar Telegram, pagos, esquema,
+cron o datos existentes. Un 400 por cierre o membresía cambiada indica
+recargar; no reintentar automáticamente. Publicación diferida por ACT-17.

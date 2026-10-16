@@ -3912,3 +3912,27 @@ no se habilita edición tras pagos. ACT-17 conserva deployment y owner hasta
 verificar ventanas 16/10 y 18/10. Solo después corresponde integrar y
 atestiguar H04d para la publicación beta. **Owner Esteban:** ninguna acción
 por ahora.
+
+### ACT-08/H14e — alta web distribuida, solo rama local (16/10)
+
+**Owner Codex, corte local implementado.** La pantalla «Nuevo gasto» ahora
+comprueba sesión abierta y membresía del actor en servidor; carga los nombres
+vigentes de miembros registrados y temporales. Reutiliza el formulario de
+distribución H14d para ingresar descripción, total, pagadores y participantes
+en partes iguales, cuotas fijas o porcentajes. Los participantes reales están
+seleccionados por defecto, pero ningún pagador ni importe se inventa. El
+botón queda deshabilitado hasta que ambas sumas cierren en centavos; el POST
+H14a repite validación de pertenencia y conservación bajo transacción. La
+respuesta a un cambio concurrente pide recargar, sin reintento automático.
+Pruebas de render SSR cubren nombres reales y bloqueo inicial del alta,
+además del editor existente.
+
+Gates locales: harness 130/130, Jest 132 suites/1144 pruebas, lint 0
+errores/61 advertencias preexistentes y build Next/TypeScript aprobados.
+No hubo despliegue, cambio de cron ni escritura beta/legacy.
+
+**Owner Codex pendiente:** revisar en
+beta después de las ventanas ACT-17 y H04d; diseñar rectificación auditable
+cuando ya hay pagos atribuidos solo a la sesión. No se modifica la política
+de pagos, el bot Telegram ni los avisos. **Owner Esteban:** ninguna acción
+antes de un pase beta explícito.

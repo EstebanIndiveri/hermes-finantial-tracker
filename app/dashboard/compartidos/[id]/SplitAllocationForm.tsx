@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { displayCents, distributeEqual, distributePercent, memberKey, parseDecimalCents, type EditMember, type EditSplitType } from "@/lib/splits/edit-allocation";
@@ -9,7 +9,7 @@ type InitialRow = { key: string; amount: number };
 type ParticipantRow = InitialRow & { percentage: number | null };
 type Props = {
   sessionId: string;
-  splitId: string;
+  splitId?: string;
   sessionName: string;
   description: string;
   totalAmount: number;
@@ -22,8 +22,10 @@ type Props = {
 const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid var(--hborder)", background: "var(--hsurface2)", color: "var(--htext1)", fontSize: 14, boxSizing: "border-box" as const };
 const money = (value: number) => displayCents(Math.round(value * 100));
 
-export function EditAllocationForm(props: Props) {
+export function SplitAllocationForm(props: Props) {
   const router = useRouter();
+  const isCreate = !props.splitId;
+  const [description, setDescription] = useState(props.description);
   const [totalRaw, setTotalRaw] = useState(money(props.totalAmount));
   const [splitType, setSplitType] = useState<EditSplitType>(props.splitType);
   const [payerAmounts, setPayerAmounts] = useState<Record<string, string>>(() => Object.fromEntries(props.payers.map(row => [row.key, money(row.amount)])));
@@ -31,6 +33,7 @@ export function EditAllocationForm(props: Props) {
   const [fixedAmounts, setFixedAmounts] = useState<Record<string, string>>(() => Object.fromEntries(props.participants.map(row => [row.key, money(row.amount)])));
   const [percentages, setPercentages] = useState<Record<string, string>>(() => Object.fromEntries(props.participants.map(row => [row.key, row.percentage == null ? "" : money(row.percentage)])));
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   const calculation = useMemo(() => {
@@ -59,10 +62,12 @@ export function EditAllocationForm(props: Props) {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!calculation.valid || saving) return;
+    if (!calculation.valid || savingRef.current || (isCreate && !description.trim())) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     const payload = {
+      ...(isCreate ? { description: description.trim() } : {}),
       totalAmount: calculation.total! / 100,
       splitType,
       payers: calculation.payerEntries.map(({ member, cents }) => ({
@@ -75,11 +80,12 @@ export function EditAllocationForm(props: Props) {
       })),
     };
     try {
-      const response = await fetch(`/api/splits/items/${props.splitId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      const response = await fetch(isCreate ? `/api/splits/sessions/${props.sessionId}/items` : `/api/splits/items/${props.splitId}`, {
+        method: isCreate ? "POST" : "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       if (!response.ok) {
         if (response.status === 409) throw new Error("La sesión cambió o ya registra pagos. Recargá antes de intentar corregir este gasto.");
+        if (isCreate && response.status === 400) throw new Error("La sesión cambió o el reparto ya no es válido. Recargá y revisá los miembros.");
         throw new Error(response.status === 403 ? "Ya no tenés permiso para editar esta sesión." : "No se pudo guardar el reparto. Revisá los importes y volvé a intentar.");
       }
       router.push(`/dashboard/compartidos/${props.sessionId}`);
@@ -87,17 +93,22 @@ export function EditAllocationForm(props: Props) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo guardar el reparto.");
       setSaving(false);
+      savingRef.current = false;
     }
   }
 
   return <div style={{ maxWidth: 760, margin: "0 auto", color: "var(--htext1)", fontFamily: "DM Sans, sans-serif" }}>
     <Link href={`/dashboard/compartidos/${props.sessionId}`} style={{ color: "var(--htext2)", fontSize: 13, textDecoration: "none" }}>← {props.sessionName}</Link>
     <header style={{ margin: "18px 0 24px" }}>
-      <p style={{ margin: "0 0 6px", color: "var(--haccent)", textTransform: "uppercase", letterSpacing: ".08em", fontSize: 11, fontWeight: 700 }}>Corrección de gasto</p>
-      <h1 style={{ margin: 0, fontSize: 24, lineHeight: 1.25 }}>{props.description}</h1>
-      <p style={{ color: "var(--htext2)", fontSize: 13, lineHeight: 1.5 }}>Reemplazá el reparto completo. Solo se puede hacer antes del primer pago de la sesión.</p>
+      <p style={{ margin: "0 0 6px", color: "var(--haccent)", textTransform: "uppercase", letterSpacing: ".08em", fontSize: 11, fontWeight: 700 }}>{isCreate ? "Gasto compartido" : "Corrección de gasto"}</p>
+      <h1 style={{ margin: 0, fontSize: 24, lineHeight: 1.25 }}>{isCreate ? "Nuevo gasto" : props.description}</h1>
+      <p style={{ color: "var(--htext2)", fontSize: 13, lineHeight: 1.5 }}>{isCreate ? "Elegí quién pagó y cómo se reparte entre los miembros de esta sesión." : "Reemplazá el reparto completo. Solo se puede hacer antes del primer pago de la sesión."}</p>
     </header>
     <form onSubmit={save} style={{ display: "grid", gap: 16 }}>
+      {isCreate && <section className="h-card" style={{ padding: 20 }}>
+        <label htmlFor="split-description" style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Descripción</label>
+        <input id="split-description" value={description} onChange={event => setDescription(event.target.value)} required maxLength={200} placeholder="Ej: cena, taxi, supermercado" style={inputStyle} />
+      </section>}
       <section className="h-card" style={{ padding: 20 }}>
         <label htmlFor="split-total" style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Total del gasto (ARS)</label>
         <input id="split-total" value={totalRaw} onChange={event => setTotalRaw(event.target.value)} inputMode="decimal" required style={inputStyle} />
@@ -138,7 +149,7 @@ export function EditAllocationForm(props: Props) {
       {error && <p role="alert" style={{ color: "#DC3545", fontSize: 13, margin: 0 }}>{error}</p>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
         <Link href={`/dashboard/compartidos/${props.sessionId}`} style={{ padding: "11px 16px", color: "var(--htext2)", textDecoration: "none" }}>Cancelar</Link>
-        <button type="submit" disabled={!calculation.valid || saving} style={{ border: 0, borderRadius: 9, padding: "11px 18px", color: "white", background: "var(--haccent)", fontWeight: 700, opacity: !calculation.valid || saving ? .5 : 1, cursor: !calculation.valid || saving ? "not-allowed" : "pointer" }}>{saving ? "Guardando…" : "Guardar reparto"}</button>
+        <button type="submit" disabled={!calculation.valid || saving || (isCreate && !description.trim())} style={{ border: 0, borderRadius: 9, padding: "11px 18px", color: "white", background: "var(--haccent)", fontWeight: 700, opacity: !calculation.valid || saving || (isCreate && !description.trim()) ? .5 : 1, cursor: !calculation.valid || saving || (isCreate && !description.trim()) ? "not-allowed" : "pointer" }}>{saving ? "Guardando…" : isCreate ? "Registrar gasto" : "Guardar reparto"}</button>
       </div>
     </form>
   </div>;

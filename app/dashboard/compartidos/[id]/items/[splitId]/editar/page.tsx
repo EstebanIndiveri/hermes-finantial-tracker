@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { split_items, split_payers, split_payments, split_session_members, split_sessions, splits, temp_users, users } from "@/lib/db/schema";
 import { memberKey, type EditMember } from "@/lib/splits/edit-allocation";
-import { EditAllocationForm } from "./EditAllocationForm";
+import { SplitAllocationForm } from "../../../SplitAllocationForm";
 
 export default async function EditSplitPage({ params }: { params: Promise<{ id: string; splitId: string }> }) {
   const { id, splitId } = await params;
@@ -42,7 +42,7 @@ export default async function EditSplitPage({ params }: { params: Promise<{ id: 
   // Historical identities no longer in the session must not be silently dropped.
   if ([...payerRows, ...itemRows].some(row => !memberKeys.has(memberKey({ userId: row.user_id ?? undefined, tempUserId: row.temp_user_id ?? undefined })))) notFound();
 
-  return <EditAllocationForm
+  return <SplitAllocationForm
     sessionId={id}
     splitId={splitId}
     sessionName={session.name}
