@@ -3995,3 +3995,24 @@ ofrece «Todas las sesiones» mientras el servidor atribuye el pago a la
 primera; requiere un contrato propio H14h antes de liberar pagos del ACT-08.
 Publicar solo tras observación ACT-17, H04d y pase beta. **Owner Esteban:**
 ninguna acción ahora.
+
+### ACT-08/H14h — atribución de pagos por sesión, rama local (16/10)
+
+**Owner Codex, implementado localmente.** El POST web de pagos exige una
+sesión explícita y verifica que el actor realmente debe a esa contraparte
+en esa sesión; no acepta el valor absoluto de un crédito ni un pago por más
+de la deuda de esa sesión. El modal ya no ofrece «Todas las sesiones» para
+escribir una sola fila: preselecciona una sesión con deuda, muestra su
+nombre y limita el monto inicial/máximo. Si hay varias, explica que se
+registra un pago por sesión. El cálculo de sesiones pagables es compartido
+por UI y API.
+
+Regresiones primero en rojo por sesión omitida y por crédito tratado como
+deuda; después dirigidas 18/18, incluido cálculo de centavos y rechazo de
+sesión ajena/positiva. Puertas: harness 130/130, Jest 133 suites/1163
+pruebas, lint 0 errores/61 advertencias previas y build/TypeScript
+aprobados. Sin despliegue. **Owner Codex posterior:** serializar/validar en el momento de
+escribir dos pagos con claves *distintas* concurrentes; H14g solo protege
+reintentos de la misma intención. También queda contener el endpoint
+`POST /api/splits/sessions/[id]/payments` bajo contrato separado. ACT-17
+y H04d siguen bloqueando promoción beta. **Owner Esteban:** ninguno ahora.

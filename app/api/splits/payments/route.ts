@@ -8,13 +8,14 @@ import { db } from "@/lib/db/client";
 import { split_payments, split_session_members, split_sessions, users } from "@/lib/db/schema";
 import { notifySplitPaymentReceived } from "@/lib/notifications/telegram";
 import { calculateGlobalBalances } from "@/lib/splits/global-balances";
+import { payableSessionAmount } from "@/lib/splits/payment-session";
 
 const createPaymentSchema = z.object({
   operationId: z.uuid(),
   payeeUserId: z.string().optional(),
   payeeTempId: z.string().optional(),
   amount: z.number().positive().refine((amount) => Number.isSafeInteger(Math.round(amount * 100)) && Math.abs(amount * 100 - Math.round(amount * 100)) < 1e-6),
-  sessionId: z.string().optional(),
+  sessionId: z.string().min(1),
 }).refine((value) => Boolean(value.payeeUserId || value.payeeTempId), {
   message: "Debe indicarse una persona acreedora",
   path: ["payeeUserId"],
@@ -27,13 +28,13 @@ function getDisplayName(person: { username?: string | null; name?: string | null
 
 type PersistedPayment = typeof split_payments.$inferSelect;
 
-function matchesReplay(payment: PersistedPayment, actorId: string, payeeUserId: string | undefined, sessionId: string | undefined, amount: number): boolean {
+function matchesReplay(payment: PersistedPayment, actorId: string, payeeUserId: string | undefined, sessionId: string, amount: number): boolean {
   return payment.payer_user_id === actorId
     && payment.payer_temp_id === null
     && payment.payee_user_id === payeeUserId
     && payment.payee_temp_id === null
     && payment.amount === amount
-    && (!sessionId || payment.session_id === sessionId);
+    && payment.session_id === sessionId;
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const global = await calculateGlobalBalances(userId);
   const matchingDebt = global.youOwe.find((debt) =>
     (payeeUserId ? debt.to.userId === payeeUserId : debt.to.tempUserId === payeeTempId)
-    && (!sessionId || debt.sessionIds.includes(sessionId)),
+    && debt.sessionIds.includes(sessionId),
   );
 
   if (!matchingDebt) {
@@ -77,15 +78,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const partnerBalance = global.partnerBalances.find((partner) => partner.partner.userId === payeeUserId);
-  const maxAmount = sessionId
-    ? Math.abs(partnerBalance?.sessionBreakdown.find((session) => session.sessionId === sessionId)?.net ?? 0)
-    : matchingDebt.amount;
+  const maxAmount = partnerBalance ? payableSessionAmount(partnerBalance, sessionId) : null;
+  if (maxAmount === null) {
+    return NextResponse.json({ error: "No debés dinero a esa persona en la sesión elegida" }, { status: 400 });
+  }
 
   if (amount > maxAmount) {
     return NextResponse.json({ error: "El monto supera la deuda pendiente" }, { status: 400 });
   }
 
-  const targetSessionId = sessionId ?? matchingDebt.sessionIds[0];
+  const targetSessionId = sessionId;
   const [session, membership] = await Promise.all([
     db.query.split_sessions.findFirst({ where: eq(split_sessions.id, targetSessionId) }),
     db.query.split_session_members.findFirst({ where: and(eq(split_session_members.session_id, targetSessionId), eq(split_session_members.user_id, userId)) }),

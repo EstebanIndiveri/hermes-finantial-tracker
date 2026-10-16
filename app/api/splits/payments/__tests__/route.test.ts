@@ -37,22 +37,30 @@ describe("POST /api/splits/payments", () => {
   it("returns 401 when the user is not authenticated", async () => {
     const { POST } = await import("../route");
     verifySession.mockResolvedValue(null);
-    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1000 }));
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1000, sessionId: "session-1" }));
     expect(response.status).toBe(401);
   });
 
   it("returns 400 when amount is invalid", async () => {
     const { POST } = await import("../route");
     verifySession.mockResolvedValue("user-1");
-    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 0 }));
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 0, sessionId: "session-1" }));
     expect(response.status).toBe(400);
+  });
+
+  it("rejects sub-cent payment amounts before reading balances", async () => {
+    const { POST } = await import("../route");
+    verifySession.mockResolvedValue("user-1");
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 0.001, sessionId: "session-1" }));
+    expect(response.status).toBe(400);
+    expect(calculateGlobalBalances).not.toHaveBeenCalled();
   });
 
   it("returns 404 when no matching debt exists", async () => {
     const { POST } = await import("../route");
     verifySession.mockResolvedValue("user-1");
     calculateGlobalBalances.mockResolvedValue({ youOwe: [], partnerBalances: [], theyOwe: [], totalYouOwe: 0, totalTheyOwe: 0 });
-    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1000 }));
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1000, sessionId: "session-1" }));
     expect(response.status).toBe(404);
   });
 
@@ -64,7 +72,7 @@ describe("POST /api/splits/payments", () => {
       partnerBalances: [{ partner: { userId: "user-2" }, partnerName: "Maria", net: -1500, sessionBreakdown: [{ sessionId: "session-1", sessionName: "Viaje", net: -1500 }] }],
       theyOwe: [], totalYouOwe: 1500, totalTheyOwe: 0,
     });
-    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 2000 }));
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 2000, sessionId: "session-1" }));
     expect(response.status).toBe(400);
   });
 
@@ -78,7 +86,7 @@ describe("POST /api/splits/payments", () => {
     });
     db.query.split_sessions.findFirst.mockResolvedValue({ id: "session-1", name: "Viaje" });
     db.query.split_session_members.findFirst.mockResolvedValue(null);
-    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200 }));
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200, sessionId: "session-1" }));
     expect(response.status).toBe(403);
   });
 
@@ -94,7 +102,7 @@ describe("POST /api/splits/payments", () => {
     db.query.split_session_members.findFirst.mockResolvedValue({ session_id: "session-1", user_id: "user-1" });
     db.query.users.findFirst.mockResolvedValue({ id: "user-1", username: "esteban", name: "Esteban" });
     db.insert.mockReturnValue({ values: jest.fn().mockReturnValue({ onConflictDoNothing: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: "payment-1" }]) }) }) });
-    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200 }));
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200, sessionId: "session-1" }));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ success: true, remainingDebt: 1800, recordedAmount: 1200, sessionId: "session-1" });
     expect(db.insert.mock.results[0].value.values).toHaveBeenCalledWith(expect.objectContaining({ operation_id: operationId }));
@@ -107,6 +115,45 @@ describe("POST /api/splits/payments", () => {
     const response = await POST(makeReq({ payeeUserId: "user-2", amount: 1200 }));
     expect(response.status).toBe(400);
     expect(calculateGlobalBalances).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("requires the session to be chosen rather than attributing a global amount to the first", async () => {
+    const { POST } = await import("../route");
+    verifySession.mockResolvedValue("user-1");
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200 }));
+    expect(response.status).toBe(400);
+    expect(calculateGlobalBalances).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a payment in a session where the actor is the creditor", async () => {
+    const { POST } = await import("../route");
+    verifySession.mockResolvedValue("user-1");
+    calculateGlobalBalances.mockResolvedValue({
+      youOwe: [{ from: { userId: "user-1" }, to: { userId: "user-2" }, amount: 500, sessionIds: ["session-owing", "session-credit"] }],
+      partnerBalances: [{ partner: { userId: "user-2" }, net: -500, sessionBreakdown: [
+        { sessionId: "session-owing", net: -1000 }, { sessionId: "session-credit", net: 500 },
+      ] }],
+      theyOwe: [], totalYouOwe: 500, totalTheyOwe: 0,
+    });
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 300, sessionId: "session-credit" }));
+    expect(response.status).toBe(400);
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("does not charge one session more than its own debt even if the global debt is larger", async () => {
+    const { POST } = await import("../route");
+    verifySession.mockResolvedValue("user-1");
+    calculateGlobalBalances.mockResolvedValue({
+      youOwe: [{ from: { userId: "user-1" }, to: { userId: "user-2" }, amount: 3000, sessionIds: ["session-1", "session-2"] }],
+      partnerBalances: [{ partner: { userId: "user-2" }, net: -3000, sessionBreakdown: [
+        { sessionId: "session-1", net: -1000 }, { sessionId: "session-2", net: -2000 },
+      ] }],
+      theyOwe: [], totalYouOwe: 3000, totalTheyOwe: 0,
+    });
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1500, sessionId: "session-1" }));
+    expect(response.status).toBe(400);
     expect(db.insert).not.toHaveBeenCalled();
   });
 
@@ -146,7 +193,7 @@ describe("POST /api/splits/payments", () => {
       payee_user_id: "user-2", payee_temp_id: null, session_id: "session-1", amount: 1200,
     });
     db.query.split_session_members.findFirst.mockResolvedValue(null);
-    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200 }));
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200, sessionId: "session-1" }));
     expect(response.status).toBe(403);
     expect(db.insert).not.toHaveBeenCalled();
   });
@@ -168,7 +215,7 @@ describe("POST /api/splits/payments", () => {
         payee_user_id: "user-2", payee_temp_id: null, session_id: "session-1", amount: 1200,
       });
     db.insert.mockReturnValue({ values: jest.fn().mockReturnValue({ onConflictDoNothing: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }) });
-    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200 }));
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200, sessionId: "session-1" }));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ replayed: true });
     expect(notifySplitPaymentReceived).not.toHaveBeenCalled();
@@ -188,7 +235,7 @@ describe("POST /api/splits/payments", () => {
     db.query.users.findFirst.mockResolvedValue({ id: "user-1", username: "esteban" });
     db.insert.mockReturnValue({ values: jest.fn().mockReturnValue({ onConflictDoNothing: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: "payment-1" }]) }) }) });
     notifySplitPaymentReceived.mockRejectedValue(new Error("Telegram unavailable"));
-    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200 }));
+    const response = await POST(makeReq({ operationId, payeeUserId: "user-2", amount: 1200, sessionId: "session-1" }));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ success: true, notificationFailed: true });
     expect(db.insert).toHaveBeenCalledTimes(1);

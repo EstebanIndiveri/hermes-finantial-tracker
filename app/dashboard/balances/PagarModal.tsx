@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PartnerBalance } from "@/lib/splits/types";
+import { payableSessions } from "@/lib/splits/payment-session";
 
 interface PagarModalProps {
   partner: PartnerBalance;
@@ -21,26 +22,20 @@ function formatAmount(amount: number): string {
 
 export function PagarModal({ partner, debtAmount, onClose, onSuccess }: PagarModalProps) {
   const sessionOptions = useMemo(
-    () => partner.sessionBreakdown.filter((session) => session.net < 0 || partner.net < 0).map((session) => ({
-      sessionId: session.sessionId,
-      label: session.sessionName,
-      amount: Math.abs(session.net),
-    })),
+    () => payableSessions(partner),
     [partner],
   );
 
-  const [amount, setAmount] = useState(String(debtAmount));
-  const [selectedSessionId, setSelectedSessionId] = useState<string>(sessionOptions.length === 1 ? sessionOptions[0].sessionId : "all");
+  const [amount, setAmount] = useState(String(sessionOptions[0]?.amount ?? 0));
+  const [selectedSessionId, setSelectedSessionId] = useState<string>(sessionOptions[0]?.sessionId ?? "");
   const [submitting, setSubmitting] = useState(false);
   const pendingOperation = useRef<{ id: string; payload: string } | null>(null);
 
   const numericAmount = Number(amount.replace(",", "."));
-  const maxAmount = selectedSessionId === "all"
-    ? debtAmount
-    : sessionOptions.find((session) => session.sessionId === selectedSessionId)?.amount ?? debtAmount;
+  const maxAmount = sessionOptions.find((session) => session.sessionId === selectedSessionId)?.amount ?? 0;
 
   async function handleSubmit(): Promise<void> {
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+    if (!selectedSessionId || !Number.isFinite(numericAmount) || numericAmount <= 0 || numericAmount > maxAmount) {
       toast.error("Ingresá un monto válido");
       return;
     }
@@ -49,7 +44,7 @@ export function PagarModal({ partner, debtAmount, onClose, onSuccess }: PagarMod
       payeeUserId: partner.partner.userId,
       payeeTempId: partner.partner.tempUserId,
       amount: numericAmount,
-      sessionId: selectedSessionId === "all" ? undefined : selectedSessionId,
+      sessionId: selectedSessionId,
     };
     const payload = JSON.stringify(payment);
     if (pendingOperation.current && pendingOperation.current.payload !== payload) {
@@ -117,12 +112,17 @@ export function PagarModal({ partner, debtAmount, onClose, onSuccess }: PagarMod
           {sessionOptions.length > 1 && (
             <div>
               <label style={{ display: "block", fontSize: 12, color: "var(--htext2)", marginBottom: 6 }}>Sesión</label>
-              <Select value={selectedSessionId} onValueChange={(value) => setSelectedSessionId(value ?? "all")}>
+              <Select value={selectedSessionId} onValueChange={(value) => {
+                if (!value) return;
+                const nextAmount = sessionOptions.find((session) => session.sessionId === value)?.amount;
+                if (nextAmount === undefined) return;
+                setSelectedSessionId(value);
+                setAmount(String(nextAmount));
+              }}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Todas las sesiones" />
+                  <SelectValue placeholder="Elegí una sesión" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todas las sesiones</SelectItem>
                   {sessionOptions.map((session) => (
                     <SelectItem key={session.sessionId} value={session.sessionId}>
                       {session.label} · ${formatAmount(session.amount)}
@@ -131,6 +131,9 @@ export function PagarModal({ partner, debtAmount, onClose, onSuccess }: PagarMod
                 </SelectContent>
               </Select>
             </div>
+          )}
+          {sessionOptions.length === 1 && (
+            <div style={{ fontSize: 13, color: "var(--htext2)" }}>Sesión: {sessionOptions[0].label}</div>
           )}
 
           <div>
@@ -147,6 +150,7 @@ export function PagarModal({ partner, debtAmount, onClose, onSuccess }: PagarMod
               onChange={(event) => setAmount(event.currentTarget.value)}
             />
             <div style={{ fontSize: 11, color: "var(--htext3)", marginTop: 6 }}>Máximo disponible: ${formatAmount(maxAmount)}</div>
+            {sessionOptions.length > 1 && <div style={{ fontSize: 11, color: "var(--htext3)", marginTop: 4 }}>Para saldar otras sesiones, registrá un pago por cada una.</div>}
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -157,7 +161,7 @@ export function PagarModal({ partner, debtAmount, onClose, onSuccess }: PagarMod
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={submitting}>Cancelar</Button>
-          <Button onClick={() => void handleSubmit()} disabled={submitting}>
+          <Button onClick={() => void handleSubmit()} disabled={submitting || !selectedSessionId}>
             {submitting ? "Registrando..." : "Confirmar pago"}
           </Button>
         </DialogFooter>

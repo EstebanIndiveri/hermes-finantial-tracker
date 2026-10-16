@@ -181,3 +181,20 @@ splits queda con owner Codex/ACT-09. Cuerpos antiguos sin UUID reciben 400
 y requieren recargar. No alterar bot, cron, esquema, datos ni despliegue beta
 activo. Regresiones: clave ausente, replay, colisión de intención, fallo de
 Telegram tras commit y unicidad DB; después puertas de repositorio.
+
+### Contrato H14h — atribución explícita del pago (16/10)
+
+La vista ofrece pagar «Todas las sesiones», pero la fila `split_payments`
+siempre pertenece a una sesión y el servidor elige la primera en silencio;
+también usa valor absoluto del saldo de sesión, por lo que podría aceptar
+un pago allí donde el actor es acreedor. Cada alta web exigirá `sessionId`
+explícito. El servidor valida la deuda negativa con esa contraparte y en
+esa sesión; el monto no puede superar esa deuda. El selector solo muestra
+sesiones con deuda y preselecciona una, con importe inicial limitado a ella.
+Los importes de distintas sesiones se registran como pagos separados, nunca
+como un pago global implícito. La clave H14g incluye la sesión elegida.
+
+Archivos: POST web, modal y regresiones dirigidas. No cambia el cálculo
+global, pagos históricos, Telegram, DB, cron o despliegue. La protección
+contra dos operaciones *distintas* concurrentes que exceden la misma deuda
+requiere un writer transaccional posterior y sigue con owner Codex.
