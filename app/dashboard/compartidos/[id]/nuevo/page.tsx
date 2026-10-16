@@ -42,7 +42,8 @@ export default function NuevoGastoPage() {
           totalAmount: amount,
           splitType,
           payers: [{ userId: currentUserId, amountPaid: amount }],
-          participants: [{ userId: currentUserId, amount }],
+          participants: [{ userId: currentUserId, amount,
+            ...(splitType === "percentage" ? { percentage: 100 } : {}) }],
         }),
       });
       if (!res.ok) throw new Error("Error al registrar el gasto");

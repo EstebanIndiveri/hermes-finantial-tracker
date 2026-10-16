@@ -42,3 +42,23 @@ de cambiar escritores. No publicar H13 en beta como cierre completo de ACT-08.
 La publicación de este subcorte queda diferida hasta terminar las ventanas
 automáticas ACT-17 del 16 y 18/10 para conservar un deployment de cron
 estable; el trabajo local puede continuar entretanto.
+
+### Contrato H14a — alta web (15/10, estabilización)
+
+Actual: el endpoint web admite pagos/cuotas que no conservan el total, IDs
+ajenos a la sesión y tres escrituras independientes. Esperado: importe
+positivo con hasta dos decimales; pagos y cuotas suman exactamente el total
+en centavos; cada identidad es única, exclusiva (usuario o temporal) y
+miembro actual de la sesión; en porcentaje, los porcentajes suman 100 y
+coinciden con las cuotas. Revalidar sesión abierta y membresía del actor al
+escribir. Crear cabecera, pagadores y cuotas en una transacción: cualquier
+fallo revierte todo. Las entradas inválidas no deben generar filas.
+
+Archivos: ruta de alta, formulario web que hoy ofrece porcentaje sin enviarlo,
+pruebas de integración libSQL y este contrato. Riesgos: incompatibilidad de
+clientes que enviaban importes inconsistentes; responder 400 explícito es
+preferible a almacenar deuda falsa. No migrar montos históricos ni cambiar
+Telegram, edición/cancelación, cron o datos beta/legacy en H14a. H14b conserva
+owner Codex para política de cambios con pagos previos. Pruebas: caso válido,
+sumas erróneas, identidad ajena/duplicada, porcentaje y rollback al fallar
+el último insert; luego puertas del repositorio.

@@ -3800,3 +3800,24 @@ actualizada encontró **tres paquetes con avisos altos**: `next`, `sharp` y
 `npm audit fix`. **Owner Codex, corte ACT-03 separado antes del próximo
 deploy:** verificar versiones, aplicabilidad y actualización compatible con
 gates; no presentar el audit histórico de cero hallazgos como vigente.
+
+### ACT-08/H14a — alta web de split conservativa y atómica (15/10)
+
+**Corte local cerrado; owner Codex.** En `codex/act08-splits`, la regresión
+con libSQL aislado fue roja ante cuatro fallos: sumas de pagos/cuotas
+distintas al total, identidad ajena o repetida, porcentajes incompletos y
+cabecera/pagador huérfanos cuando falla el último insert. El alta ahora
+valida montos en centavos, suma de pagos y cuotas, porcentajes (si aplica),
+identidad exclusiva/única y pertenencia a la sesión. Revalida actor y sesión
+abierta dentro de una transacción que inserta las tres tablas. El formulario
+web envía `100` al elegir porcentaje para su único participante actual.
+No cambió Telegram ni datos beta/legacy.
+
+Verificación: 130 suites/1129 pruebas y harness 130/130, typecheck y build
+aprobados; lint 0 errores/61 advertencias preexistentes. Sin despliegue;
+ACT-17 sigue atado al deployment vigente. **Owner Codex H14b:** definir y
+probar edición/cancelación de splits con y sin pagos previos; el PATCH actual
+permite modificar `total_amount` sin actualizar cuotas, por lo que ACT-08 no
+está cerrado. **Owner Codex ACT-03:** resolver o justificar los tres avisos
+altos runtime antes de promover este branch a beta, sin alterar cron durante
+las ventanas observadas. **Owner Esteban:** ninguna acción necesaria ahora.
