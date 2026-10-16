@@ -107,3 +107,24 @@ incoherentes reciben 400. No reinterpretar historia ni cambiar Telegram,
 pagos, esquema, cron, beta o legacy. La edición con pagos sigue prohibida
 porque la tabla de pagos no indica qué split liquidó cada pago; **owner Codex**
 para un diseño de ajuste/auditoría posterior, no resolver por heurística.
+
+### Contrato H14d — editor web del reparto (16/10)
+
+La API H14c admite corregir una distribución completa, pero la vista de
+sesión no ofrece un acceso a esa capacidad y el alta web todavía no permite
+seleccionar miembros. Este corte expone un editor para un gasto ya creado,
+solo al dueño que sigue siendo miembro de una sesión abierta, con pagadores
+y participantes vigentes identificados por nombre. La interfaz permite
+corregir total, importes pagados y cuotas fijas o iguales; porcentaje usa
+porcentajes explícitos y calcula cuotas en centavos. Antes de enviar debe
+mostrar las diferencias contra el total y bloquear distribuciones que no
+cierren. El servidor vuelve a validar todo bajo transacción.
+
+El enlace de edición no aparece para gastos cancelados ni cuando la sesión
+tiene cualquier pago. La ruta del editor verifica de nuevo dueño, membresía,
+sesión abierta, split activo y ausencia de pagos; otros visitantes reciben
+404 y no datos privados. Si un pago aparece entre carga y guardado, la API
+responde 409 y la UI explica que debe recargar. No se ofrecen cambios de
+descripción, borrado, reintentos automáticos, ni edición con pagos históricos.
+Archivos: detalle de sesión, página del editor, componentes y pruebas de
+cálculo/validación. Sin despliegue hasta cerrar la observación ACT-17.

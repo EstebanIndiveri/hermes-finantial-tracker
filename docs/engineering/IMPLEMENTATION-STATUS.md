@@ -3883,3 +3883,32 @@ reparto falso. Para editar/cancelar después de pagos hace falta una política
 de ajuste auditable, porque `split_payments` solo referencia la sesión y no
 el gasto. ACT-08 no está cerrado. ACT-17 mantiene owner y deployment estable
 hasta las ventanas 16/10 y 18/10; luego integración y H04d exacto.
+
+### ACT-08/H14d — editor de reparto, solo rama local (16/10)
+
+**Owner Codex, corte local cerrado.** La vista de sesión muestra «Editar
+reparto» solo al dueño, en sesiones abiertas, gastos activos y sin pagos de
+sesión. La nueva ruta server-side vuelve a comprobar esas condiciones y la
+membresía; carga nombres de usuarios registrados/temporales y rechaza
+identidades históricas que ya no son miembros, sin descartarlas a escondidas.
+El editor reemplaza total, pagadores y participantes para cuotas iguales,
+fijas o porcentuales. Usa importes argentinos en centavos, reparto igual
+determinista y redondeo de porcentajes por restos mayores. Muestra pagado,
+asignado y sus diferencias; desactiva guardar si no conservan el total. El
+PATCH H14c mantiene la validación y transacción decisivas, incluida la
+respuesta `409` si aparece un pago después de abrir el editor.
+
+Gates locales: harness 130/130, Jest 131 suites/1142 pruebas, lint 0
+errores/61 advertencias preexistentes y build Next/TypeScript aprobados.
+No se desplegó, ni se tocaron cron, datos QA, beta activa o legacy. La guía
+de diseño frontend se aplicó manteniendo tokens y patrón de tarjetas Hermes,
+con etiquetas explícitas, contraste semántico y resumen financiero visible.
+
+**Siguiente owner Codex:** el alta web aún no distribuye entre miembros:
+expone tres modos, pero siempre envía una única identidad. Preparar H14e
+con contrato y pruebas antes de alterar ese flujo. La política de
+rectificación con pagos históricos continúa pendiente de diseño auditable;
+no se habilita edición tras pagos. ACT-17 conserva deployment y owner hasta
+verificar ventanas 16/10 y 18/10. Solo después corresponde integrar y
+atestiguar H04d para la publicación beta. **Owner Esteban:** ninguna acción
+por ahora.

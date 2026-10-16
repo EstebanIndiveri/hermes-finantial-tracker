@@ -24,9 +24,10 @@ async function getSessionDetail(id: string) {
     });
     if (!isMember) return null;
 
-    const [sessionSplits, members] = await Promise.all([
+    const [sessionSplits, members, existingPayment] = await Promise.all([
       db.query.splits.findMany({ where: eq(splits.session_id, id) }),
       db.query.split_session_members.findMany({ where: eq(split_session_members.session_id, id) }),
+      db.query.split_payments.findFirst({ where: eq(split_payments.session_id, id) }),
     ]);
 
     // Calculate balances directly
@@ -46,7 +47,7 @@ async function getSessionDetail(id: string) {
       balanceSummary = calculateSessionBalances(rawPayers, rawItems, rawPayments);
     }
 
-    return { session, splits: sessionSplits, members, balanceSummary, userId };
+    return { session, splits: sessionSplits, members, balanceSummary, userId, hasPayments: Boolean(existingPayment) };
   } catch {
     return null;
   }
@@ -57,7 +58,7 @@ export default async function SessionDetailPage({ params }: { params: Promise<{ 
   const data = await getSessionDetail(id);
   if (!data) notFound();
 
-  const { session, splits, balanceSummary, userId } = data;
+  const { session, splits, balanceSummary, userId, hasPayments } = data;
   const isOwner = session.owner_user_id === userId;
   const isOpen = session.status === "open";
 
@@ -135,6 +136,11 @@ export default async function SessionDetailPage({ params }: { params: Promise<{ 
                   <div style={{ fontSize: 14, fontWeight: 600, color: "var(--htext1)" }}>
                     ${s.total_amount.toLocaleString("es-AR")}
                   </div>
+                  {isOwner && isOpen && !hasPayments && s.status === "active" && (
+                    <Link href={`/dashboard/compartidos/${id}/items/${s.id}/editar`} style={{ display: "inline-block", marginTop: 5, fontSize: 11, fontWeight: 600, color: "var(--haccent)", textDecoration: "none" }}>
+                      Editar reparto
+                    </Link>
+                  )}
                 </div>
               </div>
             ))
