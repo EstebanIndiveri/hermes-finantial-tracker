@@ -7,6 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { setConversationState } from "../conversation-state";
 import type { TelegramResponse } from "../telegram-api";
 import { buildInlineKeyboard, sendTelegramMessage as sendMsg } from "../telegram-api";
+import { escapeTelegramHtml } from "@/lib/telegram/html";
 
 type TelegramPhotoSize = { file_id: string; file_size?: number; width: number; height: number };
 type TelegramDocument = { file_id: string; mime_type?: string };
@@ -114,7 +115,7 @@ export async function handleGroupPhoto(
     await sendMsg(chatId, [
       "🧾 Ticket recibido pero no pude leer el monto total.",
       "",
-      `Texto detectado: <code>${rawText.slice(0, 150)}</code>`,
+      `Texto detectado: <code>${escapeTelegramHtml(rawText.slice(0, 150))}</code>`,
       "",
       "Usá /compartido [monto] [descripción] para registrarlo manualmente.",
     ].join("\n"));
@@ -138,7 +139,7 @@ export async function handleGroupPhoto(
   await sendMsg(chatId, [
     "🧾 <b>Ticket detectado</b>",
     "",
-    `🏪 Comercio: <b>${merchant}</b>`,
+    `🏪 Comercio: <b>${escapeTelegramHtml(merchant)}</b>`,
     `💰 Total: <b>$${formattedAmount}</b>`,
     "",
     "¿Registramos este gasto compartido?",

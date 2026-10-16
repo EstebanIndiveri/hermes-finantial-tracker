@@ -4355,3 +4355,24 @@ datos QA, cron, bot, deployment beta ni cambios en legacy.
 observar el reintegro QA del 18/10; luego reatestar H04d y pasar ACT-08/09
 con smoke y conciliación de outbox. Los avisos directos restantes siguen
 abiertos bajo ACT-09. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-09i — HTML seguro en la propuesta OCR de compartidos (16/10)
+
+**Owner Codex, implementado en rama local; no publicado.** La entrada de foto
+en un grupo autorizado enviaba directamente a Telegram el comercio OCR y, si
+faltaba el total, los primeros caracteres crudos del ticket dentro de
+`<code>`, ambos sin escape HTML. Ahora se escapan solo al componer el mensaje;
+la descripción original del comercio continúa intacta en el estado pendiente
+para la confirmación financiera. El callback OCR corregido en ACT-09g queda
+consistente con esta propuesta inicial.
+
+Dos regresiones fueron rojas primero con `&` y etiquetas tanto en comercio
+como en el texto sin total. Luego pasaron harness 130/130, Jest 139 suites/
+1231 pruebas, build y typecheck; lint 0 errores/61 avisos preexistentes. No
+hubo envíos reales, migración, datos QA, cron, bot, deployment beta ni cambio
+en legacy.
+
+**Pendientes con owner Codex:** continuar la auditoría acotada de avisos
+directos de ACT-09 y reservar la integración beta para después de ACT-17
+(18/10), H04d y smoke QA. ACT-17 conserva el deployment y el owner de su
+conciliación automática. **Owner Esteban:** ninguna acción ahora.
