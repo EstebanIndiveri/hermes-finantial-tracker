@@ -162,3 +162,22 @@ puede navegar al gasto ya existente; no se envían avisos en este corte.
 Archivos: ruta POST, formulario, regresiones de integración libSQL y bitácora.
 Se rechazan cuerpos web sin clave: una pestaña beta anterior debe recargar
 antes de registrar. No tocar Telegram, pagos, esquema, crons ni beta activa.
+
+### Contrato H14g — reintento seguro del pago web (16/10)
+
+El botón «Registrar pago» hoy inserta la fila y luego llama a Telegram; si
+el cliente pierde la respuesta o falla ese aviso, repetir la acción duplica
+el pago. El POST exigirá un UUID por intención, guardado en el índice único
+existente de `split_payments.operation_id`. Un replay con mismo actor,
+acreedor, sesión e importe devuelve éxito sin segunda fila ni segundo aviso;
+la misma clave con otra carga devuelve 409. El cliente conserva clave y
+carga tras respuesta incierta, sin reintentar automáticamente. La ruta
+revalida acceso a la sesión antes de revelar un replay.
+
+Un fallo del aviso después del commit no convierte el pago en un 500: la
+respuesta distingue pago registrado de aviso no confirmado. No se promete
+entrega diferida en este corte; el outbox durable de notificaciones de
+splits queda con owner Codex/ACT-09. Cuerpos antiguos sin UUID reciben 400
+y requieren recargar. No alterar bot, cron, esquema, datos ni despliegue beta
+activo. Regresiones: clave ausente, replay, colisión de intención, fallo de
+Telegram tras commit y unicidad DB; después puertas de repositorio.

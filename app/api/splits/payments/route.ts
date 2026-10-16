@@ -10,9 +10,10 @@ import { notifySplitPaymentReceived } from "@/lib/notifications/telegram";
 import { calculateGlobalBalances } from "@/lib/splits/global-balances";
 
 const createPaymentSchema = z.object({
+  operationId: z.uuid(),
   payeeUserId: z.string().optional(),
   payeeTempId: z.string().optional(),
-  amount: z.number().positive(),
+  amount: z.number().positive().refine((amount) => Number.isSafeInteger(Math.round(amount * 100)) && Math.abs(amount * 100 - Math.round(amount * 100)) < 1e-6),
   sessionId: z.string().optional(),
 }).refine((value) => Boolean(value.payeeUserId || value.payeeTempId), {
   message: "Debe indicarse una persona acreedora",
@@ -22,6 +23,17 @@ const createPaymentSchema = z.object({
 function getDisplayName(person: { username?: string | null; name?: string | null } | null): string {
   if (!person) return "Alguien";
   return person.username || person.name || "Alguien";
+}
+
+type PersistedPayment = typeof split_payments.$inferSelect;
+
+function matchesReplay(payment: PersistedPayment, actorId: string, payeeUserId: string | undefined, sessionId: string | undefined, amount: number): boolean {
+  return payment.payer_user_id === actorId
+    && payment.payer_temp_id === null
+    && payment.payee_user_id === payeeUserId
+    && payment.payee_temp_id === null
+    && payment.amount === amount
+    && (!sessionId || payment.session_id === sessionId);
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -38,7 +50,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Datos inválidos", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { payeeUserId, payeeTempId, amount, sessionId } = parsed.data;
+  const { operationId, payeeUserId, payeeTempId, amount, sessionId } = parsed.data;
+  const previous = await db.query.split_payments.findFirst({ where: eq(split_payments.operation_id, operationId) });
+  if (previous) {
+    const membership = await db.query.split_session_members.findFirst({
+      where: and(eq(split_session_members.session_id, previous.session_id), eq(split_session_members.user_id, userId)),
+    });
+    if (!membership) return NextResponse.json({ error: "No tenés acceso a esa sesión" }, { status: 403 });
+    if (!matchesReplay(previous, userId, payeeUserId, sessionId, amount)) {
+      return NextResponse.json({ error: "La clave de operación ya se usó para otro pago" }, { status: 409 });
+    }
+    return NextResponse.json({ success: true, replayed: true, notificationFailed: null, remainingDebt: null, recordedAmount: amount, sessionId: previous.session_id });
+  }
   const global = await calculateGlobalBalances(userId);
   const matchingDebt = global.youOwe.find((debt) =>
     (payeeUserId ? debt.to.userId === payeeUserId : debt.to.tempUserId === payeeTempId)
@@ -76,8 +99,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "No tenés acceso a esa sesión" }, { status: 403 });
   }
 
-  await db.insert(split_payments).values({
+  const inserted = await db.insert(split_payments).values({
     id: randomUUID(),
+    operation_id: operationId,
     session_id: targetSessionId,
     payer_user_id: userId,
     payer_temp_id: null,
@@ -89,11 +113,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ocr_raw_text: null,
     confirmed_at: Date.now(),
     telegram_update_id: null,
-  });
+  }).onConflictDoNothing().returning({ id: split_payments.id });
+  if (inserted.length === 0) {
+    const winner = await db.query.split_payments.findFirst({ where: eq(split_payments.operation_id, operationId) });
+    if (!winner) return NextResponse.json({ error: "No se pudo confirmar el pago" }, { status: 500 });
+    const winnerMembership = await db.query.split_session_members.findFirst({
+      where: and(eq(split_session_members.session_id, winner.session_id), eq(split_session_members.user_id, userId)),
+    });
+    if (!winnerMembership) return NextResponse.json({ error: "No tenés acceso a esa sesión" }, { status: 403 });
+    if (!matchesReplay(winner, userId, payeeUserId, sessionId, amount)) {
+      return NextResponse.json({ error: "La clave de operación ya se usó para otro pago" }, { status: 409 });
+    }
+    return NextResponse.json({ success: true, replayed: true, notificationFailed: null, remainingDebt: null, recordedAmount: amount, sessionId: winner.session_id });
+  }
 
   const remainingDebt = Math.round((maxAmount - amount) * 100) / 100;
-  const payer = await db.query.users.findFirst({ where: eq(users.id, userId) });
-  await notifySplitPaymentReceived(payeeUserId, getDisplayName(payer ?? null), amount, remainingDebt, session.name);
+  let notificationFailed = false;
+  try {
+    const payer = await db.query.users.findFirst({ where: eq(users.id, userId) });
+    await notifySplitPaymentReceived(payeeUserId, getDisplayName(payer ?? null), amount, remainingDebt, session.name);
+  } catch {
+    notificationFailed = true;
+    console.error("Split payment notification failed after commit", { operationId });
+  }
 
-  return NextResponse.json({ success: true, remainingDebt, recordedAmount: amount, sessionId: targetSessionId });
+  return NextResponse.json({ success: true, replayed: false, notificationFailed, remainingDebt, recordedAmount: amount, sessionId: targetSessionId });
 }

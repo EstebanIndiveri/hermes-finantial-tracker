@@ -67,6 +67,19 @@ describe("Telegram operation/outbox migration", () => {
     }));
   });
 
+  it("keeps one split payment per non-NULL web operation id", async () => {
+    await client.execute({
+      sql: "INSERT INTO split_payments (id, operation_id) VALUES (?, NULL), (?, NULL), (?, ?)",
+      args: ["payment-legacy-a", "payment-legacy-b", "payment-a", "web-payment-op-a"],
+    });
+    await expectRejected(client.execute({
+      sql: "INSERT INTO split_payments (id, operation_id) VALUES (?, ?)",
+      args: ["payment-duplicate", "web-payment-op-a"],
+    }));
+    const count = await client.execute("SELECT count(*) AS count FROM split_payments WHERE operation_id = 'web-payment-op-a'");
+    expect(Number(count.rows[0].count)).toBe(1);
+  });
+
   it("enforces operation registry identity and status checks", async () => {
     await client.execute({
       sql: `INSERT INTO telegram_operations

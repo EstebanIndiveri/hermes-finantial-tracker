@@ -3967,3 +3967,31 @@ advertencias preexistentes y build Next/TypeScript aprobados antes del último
 caso de actor ajeno (que se ejecuta dirigido). No hubo publicación ni cambio
 de datos/cron. **Pendiente con owner Codex:** integración beta tras ACT-17 y
 H04d y observación del HTTP perdedor. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-08/H14g — reintento seguro de pago web, rama local (16/10)
+
+**Owner Codex, implementado localmente; sin publicación.** El registro web
+de pago compartido ahora exige UUID de operación por intención y persiste
+la clave en el índice único existente de `split_payments`. Un replay del
+mismo actor, acreedor, sesión e importe devuelve éxito sin segundo pago ni
+segundo aviso. La clave reutilizada con datos distintos responde 409; un
+actor que perdió acceso a la sesión no ve el pago al reintentar. El cliente
+retiene clave y carga útil ante respuesta incierta, no reintenta solo y
+explica que se compruebe el saldo. Si Telegram falla después del commit,
+la API devuelve pago registrado con `notificationFailed: true`; no presenta
+ese fallo como pago rechazado. El log registra solo el UUID de correlación.
+
+Regresión primero en rojo (5 casos), luego dirigidas 18/18 incluyendo
+unicidad libSQL de `split_payments.operation_id`. Puertas: harness 130/130,
+Jest 132 suites/1157 pruebas, lint 0 errores/61 advertencias previas,
+TypeScript y build aprobados. No se cambiaron esquema, cron, bot, datos QA,
+beta activa ni legacy.
+
+**Pendientes con owner Codex:** ACT-09 debe dar entrega durable al aviso
+de pago fallido; el retry de pago no lo reenvía para evitar duplicados. El
+otro writer `POST /api/splits/sessions/[id]/payments` y la autorización
+financiera concurrente siguen fuera de H14g. Además, el formulario hoy
+ofrece «Todas las sesiones» mientras el servidor atribuye el pago a la
+primera; requiere un contrato propio H14h antes de liberar pagos del ACT-08.
+Publicar solo tras observación ACT-17, H04d y pase beta. **Owner Esteban:**
+ninguna acción ahora.
