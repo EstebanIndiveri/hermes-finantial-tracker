@@ -145,6 +145,82 @@ async function webReimbursementPaymentRejection(row: TelegramDeliveryRow): Promi
   return null;
 }
 
+async function webReimbursementRequestRejection(row: TelegramDeliveryRow): Promise<string | null> {
+  const [operation] = await db.select({
+    botId: telegram_operations.bot_id,
+    updateId: telegram_operations.update_id,
+    kind: telegram_operations.operation_kind,
+    status: telegram_operations.status,
+    resourceType: telegram_operations.resource_type,
+    reimbursementId: telegram_operations.resource_id,
+    context: telegram_operations.result_json,
+  }).from(telegram_operations).where(eq(telegram_operations.operation_id, row.operation_id)).limit(1);
+  if (!operation || operation.botId !== row.bot_id || operation.updateId !== row.update_id ||
+    operation.kind !== "web.reimbursement.create" || operation.status !== "committed" ||
+    operation.resourceType !== "reimbursement" || !operation.reimbursementId || row.action !== "send_message") {
+    return "invalid_request_context";
+  }
+  let context: {
+    request?: { requesterId?: string; payerId?: string | null; amount?: number };
+    groupId?: string;
+    recipients?: Array<{ userId?: string; chatId?: string }>;
+  } | null;
+  try {
+    context = JSON.parse(operation.context ?? "null") as typeof context;
+  } catch {
+    return "invalid_request_context";
+  }
+  if (!context?.request || typeof context.request.requesterId !== "string" ||
+    typeof context.request.amount !== "number") return "invalid_request_context";
+  const [request] = await db.select({
+    transactionId: reimbursementRequests.transactionId,
+    requesterId: reimbursementRequests.requesterId,
+    payerId: reimbursementRequests.payerId,
+    amount: reimbursementRequests.amount,
+    status: reimbursementRequests.status,
+  }).from(reimbursementRequests).where(eq(reimbursementRequests.id, operation.reimbursementId)).limit(1);
+  if (!request || request.status !== "pending" || request.requesterId !== context.request.requesterId ||
+    request.payerId !== context.request.payerId || request.amount !== context.request.amount) return "request_changed";
+  const [source] = await db.select({
+    userId: transactions.user_id,
+    groupId: transactions.group_id,
+    amountArs: transactions.amount_ars,
+    status: transactions.status,
+    deletedAt: transactions.deleted_at,
+  }).from(transactions).where(eq(transactions.id, request.transactionId)).limit(1);
+  if (!source?.groupId || (context.groupId && source.groupId !== context.groupId) ||
+    source.userId !== request.requesterId || source.status !== "active" ||
+    source.deletedAt !== null || source.amountArs !== request.amount) return "request_changed";
+  const [requesterMember] = await db.select({ userId: group_members.user_id }).from(group_members)
+    .where(and(eq(group_members.group_id, source.groupId),
+      eq(group_members.user_id, request.requesterId))).limit(1);
+  if (!requesterMember) return "membership_revoked";
+
+  // Older committed rows have no recipient map; they can still be delivered
+  // only to a currently linked member of the same group.
+  const queuedRecipient = Array.isArray(context.recipients)
+    ? context.recipients.find((recipient) => recipient?.chatId === row.chat_id)
+    : null;
+  if (Array.isArray(context.recipients) && typeof queuedRecipient?.userId !== "string") return "recipient_changed";
+  const [recipient] = await db.select({ id: users.id, telegramId: users.telegram_user_id })
+    .from(users)
+    .where(queuedRecipient?.userId
+      ? eq(users.id, queuedRecipient.userId)
+      : eq(users.telegram_user_id, row.chat_id)).limit(1);
+  if (!recipient?.id || recipient.id === request.requesterId || recipient.telegramId !== row.chat_id) {
+    return "recipient_changed";
+  }
+  const [recipientMember] = await db.select({ userId: group_members.user_id }).from(group_members)
+    .where(and(eq(group_members.group_id, source.groupId), eq(group_members.user_id, recipient.id))).limit(1);
+  if (!recipientMember) return "membership_revoked";
+  if (request.payerId) {
+    const [payerMember] = await db.select({ userId: group_members.user_id }).from(group_members)
+      .where(and(eq(group_members.group_id, source.groupId), eq(group_members.user_id, request.payerId))).limit(1);
+    if (!payerMember) return "membership_revoked";
+  }
+  return null;
+}
+
 async function dailySummaryRejection(row: TelegramDeliveryRow): Promise<string | null> {
   const [operation] = await db.select({
     botId: telegram_operations.bot_id,
@@ -403,7 +479,8 @@ export async function dispatchClaimedTelegramDelivery({
   const isReimbursementReminder = row.update_id.startsWith("cron:reimbursement:");
   const isWebSplitPayment = row.update_id.startsWith("web-split:");
   const isWebReimbursementPayment = row.update_id.startsWith("web-reimbursement-pay:");
-  const isAtMostOnceDelivery = isDailySummary || isRecurringReminder || isReimbursementReminder || isWebSplitPayment || isWebReimbursementPayment;
+  const isWebReimbursementRequest = row.update_id.startsWith("web-reimbursement:");
+  const isAtMostOnceDelivery = isDailySummary || isRecurringReminder || isReimbursementReminder || isWebSplitPayment || isWebReimbursementPayment || isWebReimbursementRequest;
   if (isAtMostOnceDelivery) {
     // A recovered lease may follow a provider-accepted request whose response
     // never reached us. Do not call sendMessage twice for this beta alert.
@@ -417,7 +494,9 @@ export async function dispatchClaimedTelegramDelivery({
           ? await reimbursementReminderRejection(row, claimedAt)
           : isWebSplitPayment
             ? await webSplitPaymentRejection(row)
-            : await webReimbursementPaymentRejection(row);
+            : isWebReimbursementPayment
+              ? await webReimbursementPaymentRejection(row)
+              : await webReimbursementRequestRejection(row);
     if (rejection) {
       const changed = await markTelegramDeliveryDead({
         id: row.id,

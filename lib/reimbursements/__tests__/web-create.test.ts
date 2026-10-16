@@ -137,6 +137,12 @@ it("derives the ARS amount and enqueues Telegram delivery in the immediate trans
     expect.objectContaining({ operation_id: expect.any(String), operation_kind: "web.reimbursement.create" }),
     expect.objectContaining({ chat_id: "payer-chat", status: "pending", text: expect.stringContaining("ARS $2.500") }),
   ]));
+  const operation = tx.insertedValues.find((row) =>
+    (row as { operation_kind?: string }).operation_kind === "web.reimbursement.create") as { result_json: string };
+  expect(JSON.parse(operation.result_json)).toMatchObject({
+    groupId: "group-1",
+    recipients: [{ userId: "payer-1", chatId: "payer-chat" }],
+  });
   expect(tx.insertedValues.some((row) => (row as { chat_id?: string }).chat_id === "requester-chat")).toBe(false);
   expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), { behavior: "immediate" });
   expect(resolveTelegramBotId()).toBe("beta-bot");

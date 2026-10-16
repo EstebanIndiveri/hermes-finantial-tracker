@@ -355,7 +355,12 @@ export async function createVerifiedWebReimbursement(
         status: "committed",
         resource_type: "reimbursement",
         resource_id: requestId,
-        result_json: JSON.stringify({ request }),
+        result_json: JSON.stringify({
+          request,
+          groupId: expense.groupId,
+          recipients: members.filter((member) => member.userId !== requesterId && member.telegramId)
+            .map((member) => ({ userId: member.userId, chatId: member.telegramId })),
+        }),
       });
       await enqueueWebReimbursementTelegram(
         tx,

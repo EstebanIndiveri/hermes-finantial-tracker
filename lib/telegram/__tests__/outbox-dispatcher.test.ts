@@ -282,3 +282,61 @@ it("never resends an uncertain web reimbursement payment", async () => {
   expect(fetchImpl).not.toHaveBeenCalled();
   expect(deadMock).toHaveBeenCalledWith(expect.objectContaining({ errorCode: "delivery_uncertain" }));
 });
+
+function webReimbursementRequestRows(options: { status?: string; requesterMember?: boolean; recipientMember?: boolean; recipientChat?: string; amountArs?: number; groupId?: string; legacy?: boolean } = {}) {
+  const values = [
+    [{ botId: "bot-1", updateId: "web-reimbursement:request-1", kind: "web.reimbursement.create", status: "committed", resourceType: "reimbursement", reimbursementId: "request-1", context: JSON.stringify({ request: { requesterId: "requester-1", payerId: "payer-1", amount: 2500 }, ...(options.legacy ? {} : { groupId: "group-1", recipients: [{ userId: "recipient-1", chatId: "recipient-chat" }] }) }) }],
+    [{ transactionId: "expense-1", requesterId: "requester-1", payerId: "payer-1", amount: 2500, status: options.status ?? "pending" }],
+    [{ userId: "requester-1", groupId: options.groupId ?? "group-1", amountArs: options.amountArs ?? 2500, status: "active", deletedAt: null }],
+    options.requesterMember === false ? [] : [{ userId: "requester-1" }],
+    [{ id: "recipient-1", telegramId: options.recipientChat ?? "recipient-chat" }],
+    options.recipientMember === false ? [] : [{ userId: "recipient-1" }],
+    [{ userId: "payer-1" }],
+  ];
+  let selection = 0;
+  (db.select as jest.Mock).mockImplementation(() => {
+    const result = () => Promise.resolve(values[selection++] ?? []);
+    const query = { where: jest.fn(() => query), limit: jest.fn(result), then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => result().then(resolve, reject) };
+    return { from: jest.fn(() => query) };
+  });
+}
+
+it("delivers a web reimbursement request only to a current group member", async () => {
+  claimMock.mockReset().mockResolvedValueOnce(row({ update_id: "web-reimbursement:request-1", chat_id: "recipient-chat" })).mockResolvedValueOnce(null);
+  webReimbursementRequestRows();
+  const fetchImpl = jest.fn().mockResolvedValue(response(200, { ok: true, result: { message_id: 88 } }));
+  await expect(dispatchTelegramDeliveriesForUpdate({ botId: "bot-1", updateId: "web-reimbursement:request-1", token: "test-token", fetchImpl })).resolves.toMatchObject({ sent: 1 });
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+});
+
+it("revalidates older committed web requests without recipient metadata against current group membership", async () => {
+  claimMock.mockReset().mockResolvedValueOnce(row({ update_id: "web-reimbursement:request-1", chat_id: "recipient-chat" })).mockResolvedValueOnce(null);
+  webReimbursementRequestRows({ legacy: true });
+  const fetchImpl = jest.fn().mockResolvedValue(response(200, { ok: true, result: { message_id: 88 } }));
+  await expect(dispatchTelegramDeliveriesForUpdate({ botId: "bot-1", updateId: "web-reimbursement:request-1", token: "test-token", fetchImpl })).resolves.toMatchObject({ sent: 1 });
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ["paid before dispatch", { status: "paid" }, "request_changed"],
+  ["requester removed", { requesterMember: false }, "membership_revoked"],
+  ["recipient removed", { recipientMember: false }, "membership_revoked"],
+  ["recipient relinked", { recipientChat: "other-chat" }, "recipient_changed"],
+  ["expense amount changed", { amountArs: 3000 }, "request_changed"],
+  ["expense moved to another group", { groupId: "group-2" }, "request_changed"],
+] as const)("rejects a stale web reimbursement request: %s", async (_label, options, code) => {
+  claimMock.mockReset().mockResolvedValueOnce(row({ update_id: "web-reimbursement:request-1", chat_id: "recipient-chat" })).mockResolvedValueOnce(null);
+  webReimbursementRequestRows(options);
+  const fetchImpl = jest.fn();
+  await expect(dispatchTelegramDeliveriesForUpdate({ botId: "bot-1", updateId: "web-reimbursement:request-1", token: "test-token", fetchImpl })).resolves.toMatchObject({ dead: 1 });
+  expect(fetchImpl).not.toHaveBeenCalled();
+  expect(deadMock).toHaveBeenCalledWith(expect.objectContaining({ errorCode: code }));
+});
+
+it("does not resend an uncertain web reimbursement request", async () => {
+  claimMock.mockReset().mockResolvedValueOnce(row({ update_id: "web-reimbursement:request-1", chat_id: "recipient-chat", attempt_count: 2 })).mockResolvedValueOnce(null);
+  const fetchImpl = jest.fn();
+  await expect(dispatchTelegramDeliveriesForUpdate({ botId: "bot-1", updateId: "web-reimbursement:request-1", token: "test-token", fetchImpl })).resolves.toMatchObject({ dead: 1 });
+  expect(fetchImpl).not.toHaveBeenCalled();
+  expect(deadMock).toHaveBeenCalledWith(expect.objectContaining({ errorCode: "delivery_uncertain" }));
+});

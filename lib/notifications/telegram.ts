@@ -21,11 +21,11 @@ export function buildReimbursementRequestNotification(input: {
   const paymentText = input.paymentMethod
     ? input.paymentMethod === "efectivo"
       ? "Efectivo"
-      : `${input.paymentMethod.toUpperCase()}: ${input.paymentValue}`
+      : `${escapeTelegramHtml(input.paymentMethod.toUpperCase())}: ${escapeTelegramHtml(String(input.paymentValue))}`
     : "No configurado";
 
   return {
-    text: `💸 <b>Solicitud de Reintegro</b>\n\n👤 ${input.requesterName ?? "Usuario"} gastó <b>ARS $${input.amount.toLocaleString("es-AR")}</b>\n📁 Categoría: ${input.categoryName}\n📝 ${input.description || "Sin descripción"}\n\n💳 Datos de pago: ${paymentText}`,
+    text: `💸 <b>Solicitud de Reintegro</b>\n\n👤 ${escapeTelegramHtml(input.requesterName ?? "Usuario")} gastó <b>ARS $${input.amount.toLocaleString("es-AR")}</b>\n📁 Categoría: ${escapeTelegramHtml(input.categoryName)}\n📝 ${escapeTelegramHtml(input.description || "Sin descripción")}\n\n💳 Datos de pago: ${paymentText}`,
     replyMarkup: {
       inline_keyboard: [[
         { text: `✅ Pagar ARS $${input.amount.toLocaleString("es-AR")}`, callback_data: `pay_reimbursement:${input.reimbursementId}` },

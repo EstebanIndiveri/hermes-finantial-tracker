@@ -4227,3 +4227,29 @@ conserva los fallbacks directos sin contexto y avisos no cubiertos; no se
 declara recuperación integral. ACT-17 sigue con seguimiento del canary de
 reintegro del 18/10 sobre el deployment estable. **Owner Esteban:** ninguna
 acción ahora.
+
+### ACT-09d — revalidación del aviso web de solicitud de reintegro (16/10)
+
+**Owner Codex, implementado en rama local; no publicado.** La solicitud web
+ya se encolaba transaccionalmente, pero el worker podía enviar el mensaje
+después de que el reintegro se pagara, el gasto cambiara, un miembro saliera
+del grupo o el chat se revinculara. Ahora cada operación nueva conserva el
+grupo y la identidad del destinatario al encolar; antes del envío el worker
+revalida operación, solicitud pendiente, gasto activo con igual importe y
+grupo, membresía del solicitante, destinatario y pagador asignado, y vínculo
+del chat. Los avisos encolados con el formato anterior se revalidan contra
+el miembro actualmente vinculado a ese chat y al grupo. Una entrega de
+resultado incierto no se reenvía automáticamente para evitar duplicados.
+
+El constructor del mensaje escapa nombre, categoría, descripción y datos
+de pago variables antes de usar HTML de Telegram. Las regresiones fueron
+rojas antes de corregir el despacho y el formato. Puertas: harness 130/130,
+Jest 138 suites/1214 pruebas, typecheck y build aprobados; lint 0 errores
+y 61 avisos preexistentes. Sin migración, datos QA, cron, bot, deployment
+beta ni cambios en legacy.
+
+**Pendientes con owner Codex:** revisar/pasar ACT-08/09 a beta tras ACT-17
+y H04d, con smoke QA y conciliación de operaciones/outbox. La ruta de
+fallback directo de Telegram y otros avisos no cubiertos siguen bajo ACT-09;
+el cierre integral no está declarado. ACT-17 mantiene el deployment y el
+seguimiento de la ventana del 18/10. **Owner Esteban:** ninguna acción ahora.
