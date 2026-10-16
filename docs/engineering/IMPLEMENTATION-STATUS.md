@@ -4276,3 +4276,30 @@ H04d, conciliar el outbox y ensayar con destinatario QA. Los fallbacks con
 outbox deliberadamente apagado permanecen como compatibilidad; otros avisos
 directos se auditarán en cortes separados. ACT-17 mantiene observación del
 18/10 sobre el deployment estable. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-09f — callbacks personales financieros sin contexto (16/10)
+
+**Owner Codex, implementado en rama local; no publicado.** Con el outbox
+Telegram activo, el handler personal ahora rechaza antes de cualquier trabajo
+las confirmaciones de gasto o ticket, pago/cancelación/solicitud de reintegro y
+confirmación de recurrentes cuando falta el contexto de operación del webhook.
+El rechazo ocurre fuera del `catch` conversacional para que el inbox no
+reconozca como procesado un update financiero sin identidad durable. Con
+contexto válido se conserva el camino transaccional; con outbox apagado se
+mantiene la compatibilidad anterior. La selección de grupos y demás acciones
+no financieras no fueron modificadas.
+
+La regresión fue roja primero en nueve callbacks: el handler devolvía un error
+conversacional en vez de fallar reintentablemente. Luego pasaron esas nueve
+pruebas y una confirmación de pago con contexto válido. Puertas: harness
+130/130, Jest 138 suites/1226 pruebas, typecheck y build aprobados; lint
+0 errores/61 avisos preexistentes. Typecheck se repitió en serie después del
+build porque la primera ejecución en paralelo observó archivos `.next/types`
+transitorios mientras el build los regeneraba. Sin migración, datos QA, cron,
+bot, deployment beta ni cambios en legacy.
+
+**Pendientes con owner Codex:** mantener ACT-17 en el deployment estable hasta
+la ventana del 18/10; después reatestar H04d, revisar/pasar ACT-08/09 a beta y
+hacer smoke QA acotado con conciliación de operaciones/outbox. Los avisos
+directos fuera de estas confirmaciones siguen abiertos en ACT-09; no se declara
+recuperación integral. **Owner Esteban:** ninguna acción ahora.

@@ -153,6 +153,61 @@ describe("telegram reimbursements", () => {
     });
   });
 
+  it.each([
+    "receipt:confirm",
+    "receipt:confirm_reimbursement",
+    "expense:confirm",
+    "expense:confirm_reimbursement",
+    "pay_reimbursement:r-1",
+    "cancel_reimbursement:r-1",
+    "expense:reimbursement_yes:tx-1",
+    "recurring:confirm:exec-1",
+    "recurring:confirm_all",
+  ])("rejects financial callback %s before work when outbox context is missing", async (data) => {
+    const previousOutbox = process.env.TELEGRAM_OUTBOX_ENABLED;
+    process.env.TELEGRAM_OUTBOX_ENABLED = "true";
+    try {
+      await expect(handlePersonalCallback(
+        "chat-1", "telegram-1", "user-1", "group-1", data,
+      )).rejects.toThrow("Missing Telegram operation context for financial callback");
+      expect(mockMarkPaid).not.toHaveBeenCalled();
+      expect(mockCreateReimbursement).not.toHaveBeenCalled();
+      expect(mockDb.insert).not.toHaveBeenCalled();
+      expect(mockDb.update).not.toHaveBeenCalled();
+    } finally {
+      if (previousOutbox === undefined) delete process.env.TELEGRAM_OUTBOX_ENABLED;
+      else process.env.TELEGRAM_OUTBOX_ENABLED = previousOutbox;
+    }
+  });
+
+  it("keeps a contextual reimbursement payment available with outbox enabled", async () => {
+    const previousOutbox = process.env.TELEGRAM_OUTBOX_ENABLED;
+    process.env.TELEGRAM_OUTBOX_ENABLED = "true";
+    const context = createTelegramOperationContext({
+      botId: "bot-beta",
+      updateId: "update-1",
+      chatId: "chat-1",
+      callbackMessageId: 55,
+      action: "personal.callback",
+    });
+    mockMarkPaid.mockResolvedValue({ ok: true, deliveryOperationId: "op-1", deliveryKey: "delivery-1" });
+    try {
+      const response = await handlePersonalCallback(
+        "chat-1", "telegram-1", "user-1", "group-1", "pay_reimbursement:r-1", 55, context,
+      );
+      expect(mockMarkPaid).toHaveBeenCalledWith("r-1", "user-1", context);
+      expect(response).toEqual({
+        text: "✅ Reintegro marcado como pagado.",
+        edit: true,
+        deliveryOperationId: "op-1",
+        deliveryKey: "delivery-1",
+      });
+    } finally {
+      if (previousOutbox === undefined) delete process.env.TELEGRAM_OUTBOX_ENABLED;
+      else process.env.TELEGRAM_OUTBOX_ENABLED = previousOutbox;
+    }
+  });
+
   it("does not infer or request reimbursement after a plain-expense confirmation", async () => {
     mockGetConversationState.mockResolvedValue({
       step: "expense_confirm",

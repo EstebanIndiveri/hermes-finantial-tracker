@@ -743,6 +743,22 @@ export async function handlePersonalCallback(
   messageId?: number,
   operationContext?: TelegramOperationContext,
 ): Promise<PersonalCallbackResponse> {
+  // Keep this invariant outside the handler's conversational-error catch so
+  // the webhook can fail/retry the inbox update instead of acknowledging a
+  // financial write that has no durable operation identity.
+  if (process.env.TELEGRAM_OUTBOX_ENABLED === "true" && !operationContext && (
+    data === "receipt:confirm" ||
+    data === "receipt:confirm_reimbursement" ||
+    data === "expense:confirm" ||
+    data === "expense:confirm_reimbursement" ||
+    data.startsWith("pay_reimbursement:") ||
+    data.startsWith("cancel_reimbursement:") ||
+    data.startsWith("expense:reimbursement_yes:") ||
+    data.startsWith("recurring:confirm:") ||
+    data === "recurring:confirm_all"
+  )) {
+    throw new Error("Missing Telegram operation context for financial callback");
+  }
   try {
     if (data.startsWith("group:select:")) {
       const selectedGroupId = data.slice("group:select:".length);
