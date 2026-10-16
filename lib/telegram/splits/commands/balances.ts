@@ -4,6 +4,7 @@ import { users, temp_users, split_sessions, split_session_members, splits, split
 import { eq, and, inArray } from "drizzle-orm";
 import { calculateSessionBalances } from "@/lib/splits/balances";
 import { confirmedPaymentsForSession } from "@/lib/splits/confirmed-payments";
+import { escapeTelegramHtml } from "@/lib/telegram/html";
 
 /**
  * Handles /balances command.
@@ -19,6 +20,7 @@ export async function handleBalances(chatId: string): Promise<string> {
   if (!session) {
     return "❌ No hay sesión activa. Usá /activar para crear una.";
   }
+  const safeSessionName = escapeTelegramHtml(session.name);
 
   // Collect all splits for this session
   const splitsRows = await db.query.splits.findMany({
@@ -29,7 +31,7 @@ export async function handleBalances(chatId: string): Promise<string> {
   });
 
   if (splitsRows.length === 0) {
-    return `📊 <b>${session.name}</b>\n\nNo hay gastos registrados aún.\nUsá <code>/compartido [monto] [descripción]</code> para agregar uno.`;
+    return `📊 <b>${safeSessionName}</b>\n\nNo hay gastos registrados aún.\nUsá <code>/compartido [monto] [descripción]</code> para agregar uno.`;
   }
 
   const splitIds = splitsRows.map(s => s.id);
@@ -54,7 +56,7 @@ export async function handleBalances(chatId: string): Promise<string> {
 
   if (summary.isSettled) {
     const total = splitsRows.reduce((acc, s) => acc + s.total_amount, 0);
-    return `📊 <b>${session.name}</b>\n\n✅ <b>Todo saldado</b>\n\nTotal registrado: $${total.toLocaleString("es-AR", { minimumFractionDigits: 0 })} en ${splitsRows.length} gasto${splitsRows.length !== 1 ? "s" : ""}`;
+    return `📊 <b>${safeSessionName}</b>\n\n✅ <b>Todo saldado</b>\n\nTotal registrado: $${total.toLocaleString("es-AR", { minimumFractionDigits: 0 })} en ${splitsRows.length} gasto${splitsRows.length !== 1 ? "s" : ""}`;
   }
 
   // Resolve names for participants
@@ -84,12 +86,12 @@ export async function handleBalances(chatId: string): Promise<string> {
   const total = splitsRows.reduce((acc, s) => acc + s.total_amount, 0);
 
   const lines = [
-    `📊 <b>${session.name}</b>`,
+    `📊 <b>${safeSessionName}</b>`,
     `Total: $${total.toLocaleString("es-AR", { minimumFractionDigits: 0 })} en ${splitsRows.length} gasto${splitsRows.length !== 1 ? "s" : ""}`,
     ``,
     `💸 <b>Deudas pendientes:</b>`,
     ...summary.debts.map(d =>
-      `• <b>${getName(d.from)}</b> → <b>${getName(d.to)}</b>: $${d.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 })}`
+      `• <b>${escapeTelegramHtml(getName(d.from))}</b> → <b>${escapeTelegramHtml(getName(d.to))}</b>: $${d.amount.toLocaleString("es-AR", { minimumFractionDigits: 0 })}`
     ),
   ];
 

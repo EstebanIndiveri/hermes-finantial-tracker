@@ -2,6 +2,7 @@
 import { db } from "@/lib/db/client";
 import { users, split_sessions, splits } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+import { escapeTelegramHtml } from "@/lib/telegram/html";
 
 /**
  * Handles /cerrar command in a Telegram group.
@@ -53,7 +54,7 @@ export async function handleCerrar(
   const formattedTotal = total.toLocaleString("es-AR", { minimumFractionDigits: 0 });
 
   return [
-    `🔒 <b>Sesión cerrada: ${session.name}</b>`,
+    `🔒 <b>Sesión cerrada: ${escapeTelegramHtml(session.name)}</b>`,
     ``,
     `Total: $${formattedTotal} en ${splitsRows.length} gasto${splitsRows.length !== 1 ? "s" : ""}`,
     ``,

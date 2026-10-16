@@ -4376,3 +4376,23 @@ en legacy.
 directos de ACT-09 y reservar la integración beta para después de ACT-17
 (18/10), H04d y smoke QA. ACT-17 conserva el deployment y el owner de su
 conciliación automática. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-09j — HTML seguro en balances y cierre de compartidos (16/10)
+
+**Owner Codex, implementado en rama local; no publicado.** Los comandos
+`/balances` y `/cerrar` interpolaban el nombre de sesión y, en deudas,
+los nombres de participantes dentro de respuestas HTML de Telegram sin
+escape. Ahora se escapan al presentar el texto, sin cambiar los nombres
+persistidos, el cálculo de balances, los permisos ni la escritura de cierre.
+Quedaron cubiertos balance sin gastos, saldado, con deudas y cierre autorizado.
+
+Tres regresiones fueron rojas antes del cambio; se añadió también el caso
+positivo de balance saldado. Pasaron harness 130/130, Jest 140 suites/1235
+pruebas, build y typecheck; lint 0 errores/61 avisos preexistentes. Sin
+migración, datos QA, cron, bot, deployment beta ni cambio en legacy.
+
+**Pendientes con owner Codex:** auditar en otro corte las demás respuestas
+de comandos de grupo que interpolan texto variable; no declarar ACT-09
+integralmente cerrado. Mantener el deployment ACT-17 hasta el control del
+18/10, luego reatestar H04d y pasar ACT-08/09 con smoke QA y conciliación
+de outbox. **Owner Esteban:** ninguna acción ahora.
