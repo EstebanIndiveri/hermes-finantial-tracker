@@ -42,7 +42,7 @@ export function buildReimbursementPaidNotification(payerName: string, amount: nu
 
 export function buildReimbursementCancelledNotification(requesterName: string, amount: number): TelegramNotificationMessage {
   return {
-    text: `❌ <b>Reintegro Cancelado</b>\n\n${requesterName} canceló su solicitud de reintegro de <b>ARS $${amount.toLocaleString("es-AR")}</b>\n\nNo es necesario realizar el pago.`,
+    text: `❌ <b>Reintegro Cancelado</b>\n\n${escapeTelegramHtml(requesterName)} canceló su solicitud de reintegro de <b>ARS $${amount.toLocaleString("es-AR")}</b>\n\nNo es necesario realizar el pago.`,
   };
 }
 
@@ -173,7 +173,7 @@ export async function notifyReimbursementReminder(
 
   const message = `⏰ <b>Recordatorio de Reintegro</b>
 
-${requesterName} te solicitó un reintegro de <b>ARS $${amount.toLocaleString("es-AR")}</b> hace ${daysPending} días.
+${escapeTelegramHtml(requesterName)} te solicitó un reintegro de <b>ARS $${amount.toLocaleString("es-AR")}</b> hace ${daysPending} días.
 
 Usa /reintegros para ver y pagar pendientes.`;
 

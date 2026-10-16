@@ -4335,3 +4335,23 @@ preexistentes. Sin migración, datos QA, cron, bot, deployment beta ni legacy.
 de ACT-09, sin declarar cierre integral; publicar junto al pase ACT-08/09
 solo tras la observación ACT-17 del 18/10, reatestación H04d y smoke QA
 acotado. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-09h — nombre seguro en cancelación de reintegro (16/10)
+
+**Owner Codex, implementado en rama local; no publicado.** El aviso de
+cancelación de reintegro es HTML de Telegram y aún interpolaba sin escape el
+nombre del solicitante, a diferencia de los avisos de solicitud y pago. Ahora
+escapa ese nombre antes de construir el mensaje. Se protegió también el
+helper directo antiguo de recordatorio; el cron beta activo usa el constructor
+durable separado, que ya escapaba el nombre. No se alteraron elegibilidad,
+destinatarios, idempotencia ni contenido financiero.
+
+La regresión de cancelación fue roja primero con un nombre que incluía `&` y
+etiquetas. Luego pasaron harness 130/130, Jest 138 suites/1229 pruebas,
+build y typecheck; lint 0 errores/61 avisos preexistentes. Sin migración,
+datos QA, cron, bot, deployment beta ni cambios en legacy.
+
+**Pendientes con owner Codex:** mantener el deployment ACT-17 estable hasta
+observar el reintegro QA del 18/10; luego reatestar H04d y pasar ACT-08/09
+con smoke y conciliación de outbox. Los avisos directos restantes siguen
+abiertos bajo ACT-09. **Owner Esteban:** ninguna acción ahora.

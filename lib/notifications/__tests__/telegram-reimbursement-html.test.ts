@@ -1,4 +1,4 @@
-import { buildReimbursementPaidNotification, buildReimbursementRequestNotification } from "../telegram";
+import { buildReimbursementCancelledNotification, buildReimbursementPaidNotification, buildReimbursementRequestNotification } from "../telegram";
 
 it("escapes the payer name before storing a Telegram HTML reimbursement notice", () => {
   const message = buildReimbursementPaidNotification("<Sabri & Co>", 2500);
@@ -20,4 +20,10 @@ it("escapes user-supplied fields in the Telegram HTML reimbursement request", ()
   expect(message.text).toContain("Super &amp; mercado");
   expect(message.text).toContain("&lt;Cordiez&gt;");
   expect(message.text).toContain("cbu&lt;&amp;&gt;");
+});
+
+it("escapes the requester name in a reimbursement cancellation notice", () => {
+  const message = buildReimbursementCancelledNotification("<Esteban & Co>", 1);
+  expect(message.text).toContain("&lt;Esteban &amp; Co&gt; canceló");
+  expect(message.text).not.toContain("<Esteban & Co>");
 });
