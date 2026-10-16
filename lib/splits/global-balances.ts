@@ -88,16 +88,16 @@ export async function calculateGlobalBalances(userId: string): Promise<GlobalBal
 
     const summary = calculateSessionBalances(rawPayers, rawItems, rawPayments);
 
-    for (const balance of summary.balances) {
-      if (balance.userId === userId) {
-        continue;
-      }
+    // A member's net balance is not a bilateral debt with the viewer. Only
+    // settlement edges involving the viewer may appear in their global view.
+    for (const debt of summary.debts) {
+      const viewerOwes = debt.from.userId === userId;
+      const viewerIsOwed = debt.to.userId === userId;
+      if (!viewerOwes && !viewerIsOwed) continue;
 
-      const partner: ParticipantId = balance.userId ? { userId: balance.userId } : { tempUserId: balance.tempUserId };
-      const sessionNet = roundAmount(-balance.net);
-      if (Math.abs(sessionNet) < 0.01) {
-        continue;
-      }
+      const partner = viewerOwes ? debt.to : debt.from;
+      const sessionNet = roundAmount(viewerIsOwed ? debt.amount : -debt.amount);
+      if (Math.abs(sessionNet) < 0.01) continue;
 
       const key = participantKey(partner);
       const current = partnerMap.get(key) ?? { partner, net: 0, sessionBreakdown: [] };

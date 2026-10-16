@@ -130,6 +130,87 @@ describe("calculateGlobalBalances", () => {
     expect(result.totalYouOwe).toBe(0);
   });
 
+  it("does not turn a debt between two other members into debts involving the viewer", async () => {
+    (db.query.split_sessions.findMany as jest.Mock).mockResolvedValue([
+      { id: "session-1", name: "Shared trip", owner_user_id: "user-1" },
+    ]);
+    (db.query.splits.findMany as jest.Mock).mockResolvedValue([
+      { id: "split-1", session_id: "session-1", status: "active" },
+    ]);
+
+    (db.select as jest.Mock)
+      .mockReturnValueOnce(mockMemberSessions([]))
+      .mockReturnValueOnce(mockSelectResolvedValue([{ user_id: "user-2", amount_paid: 100 }]))
+      .mockReturnValueOnce(mockSelectResolvedValue([{ user_id: "user-3", amount_owed: 100 }]))
+      .mockReturnValueOnce(mockSelectResolvedValue([]));
+
+    const result = await calculateGlobalBalances("user-1");
+
+    expect(result.partnerBalances).toEqual([]);
+    expect(result.youOwe).toEqual([]);
+    expect(result.theyOwe).toEqual([]);
+    expect(result.totalYouOwe).toBe(0);
+    expect(result.totalTheyOwe).toBe(0);
+  });
+
+  it("shows only the viewer's settlement edge in a four-person session", async () => {
+    (db.query.split_sessions.findMany as jest.Mock).mockResolvedValue([
+      { id: "session-1", name: "Group dinner", owner_user_id: "user-1" },
+    ]);
+    (db.query.splits.findMany as jest.Mock).mockResolvedValue([
+      { id: "split-1", session_id: "session-1", status: "active" },
+    ]);
+
+    (db.select as jest.Mock)
+      .mockReturnValueOnce(mockMemberSessions([]))
+      .mockReturnValueOnce(mockSelectResolvedValue([
+        { user_id: "user-1", amount_paid: 30 },
+        { user_id: "user-2", amount_paid: 70 },
+      ]))
+      .mockReturnValueOnce(mockSelectResolvedValue([
+        { user_id: "user-3", amount_owed: 50 },
+        { user_id: "user-4", amount_owed: 50 },
+      ]))
+      .mockReturnValueOnce(mockSelectResolvedValue([]));
+
+    const result = await calculateGlobalBalances("user-1");
+
+    expect(result.totalTheyOwe).toBe(30);
+    expect(result.totalYouOwe).toBe(0);
+    expect(result.theyOwe).toEqual([
+      { from: { userId: "user-3" }, to: { userId: "user-1" }, amount: 30, sessionIds: ["session-1"] },
+    ]);
+    expect(result.partnerBalances.map(({ partner }) => partner.userId)).toEqual(["user-3"]);
+  });
+
+  it("reduces the viewer's displayed debt after a partial payment", async () => {
+    (db.query.split_sessions.findMany as jest.Mock).mockResolvedValue([
+      { id: "session-1", name: "Lunch", owner_user_id: "user-1" },
+    ]);
+    (db.query.splits.findMany as jest.Mock).mockResolvedValue([
+      { id: "split-1", session_id: "session-1", status: "active" },
+    ]);
+
+    (db.select as jest.Mock)
+      .mockReturnValueOnce(mockMemberSessions([]))
+      .mockReturnValueOnce(mockSelectResolvedValue([{ user_id: "user-2", amount_paid: 100 }]))
+      .mockReturnValueOnce(mockSelectResolvedValue([
+        { user_id: "user-1", amount_owed: 50 },
+        { user_id: "user-2", amount_owed: 50 },
+      ]))
+      .mockReturnValueOnce(mockSelectResolvedValue([
+        { payer_user_id: "user-1", payee_user_id: "user-2", amount: 20 },
+      ]));
+
+    const result = await calculateGlobalBalances("user-1");
+
+    expect(result.totalYouOwe).toBe(30);
+    expect(result.totalTheyOwe).toBe(0);
+    expect(result.youOwe).toEqual([
+      { from: { userId: "user-1" }, to: { userId: "user-2" }, amount: 30, sessionIds: ["session-1"] },
+    ]);
+  });
+
   it("separates mixed partners where user owes one and is owed by another", async () => {
     (db.query.split_sessions.findMany as jest.Mock).mockResolvedValue([
       { id: "session-1", name: "Movie", owner_user_id: "user-1" },

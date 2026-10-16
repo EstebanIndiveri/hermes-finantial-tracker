@@ -3769,3 +3769,34 @@ sin ajustes, sin borrar datos para fabricarlo. **Owner Esteban:** se mantiene
 solo la decisión de producto sobre proponer/copiar valores previos; no es
 requisito para este aviso seguro. El deployment ACT-17 vigente se conserva
 hasta sus ventanas de observación.
+
+### ACT-08/H13 — deuda global ajena reproducida y contenida localmente (15/10)
+
+En la rama aislada `codex/act08-splits`, una regresión reprodujo el hallazgo
+H13: el cálculo global mostraba a A dos deudas ficticias de 100 cuando B
+había pagado 100 por C y A solo pertenecía a la sesión. El cálculo ahora
+agrega exclusivamente aristas de liquidación de sesión que involucran a A.
+Pruebas dirigidas cubren además cuatro participantes, pago parcial y neteo
+entre sesiones; no cambia ninguna escritura, schema, cron, flag ni dato QA.
+El contrato y los límites están en
+[ACT-08-SPLIT-SETTLEMENT-BOUNDARY.md](ACT-08-SPLIT-SETTLEMENT-BOUNDARY.md).
+
+**Owner Codex:** completar gates, integrar este subcorte y después abordar
+H14 en un corte de escritores con regresiones de API/DB real. Publicación
+beta de H13 solo después de las ventanas ACT-17 del 16/10 y 18/10, con
+H04d del deployment exacto. **Owner Esteban:** ninguna validación nueva para
+el subcorte local; una política de edición/cancelación con pagos previos se
+presentará como decisión explícita si la evidencia no fija una regla segura.
+ACT-17 conserva su owner y automatización, sin cambio del deployment activo.
+
+Verificación del subcorte H13: regresión roja antes del parche; después,
+Jest 129 suites/1123 pruebas, harness 130/130, typecheck y build aprobados;
+lint 0 errores/61 advertencias existentes. El primer build falló al cargar
+Google Fonts (`next/font`) y el reintento sin cambios de código aprobó; no
+se atribuye ese fallo transitorio a H13. `npm ci --ignore-scripts` en el
+worktree aislado informó avisos del árbol completo; una auditoría de runtime
+actualizada encontró **tres paquetes con avisos altos**: `next`, `sharp` y
+`source-map-js` (sin críticos). No se cambió el lockfile ni se ejecutó
+`npm audit fix`. **Owner Codex, corte ACT-03 separado antes del próximo
+deploy:** verificar versiones, aplicabilidad y actualización compatible con
+gates; no presentar el audit histórico de cero hallazgos como vigente.
