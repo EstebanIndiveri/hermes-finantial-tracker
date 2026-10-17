@@ -4396,3 +4396,19 @@ de comandos de grupo que interpolan texto variable; no declarar ACT-09
 integralmente cerrado. Mantener el deployment ACT-17 hasta el control del
 18/10, luego reatestar H04d y pasar ACT-08/09 con smoke QA y conciliación
 de outbox. **Owner Esteban:** ninguna acción ahora.
+
+### ACT-17 — control de elegibilidad del 17/10 (09:28 ART)
+
+El snapshot read-only de `beta-hermes` (`capturedAt` 2026-10-17T12:28:52Z)
+devolvió `awaiting_eligibility`: la solicitud QA sigue pendiente, su gasto
+fuente activo, las dos membresías, consentimiento y chat del pagador vigentes.
+Todavía no cumplió más de tres días completos. Hay cero operaciones y cero
+filas de outbox `cron:reimbursement`, incluidos cero destinatarios ajenos.
+No se invocó el cron ni se envió mensaje; datos QA, deployment y legacy
+permanecen intactos. El control recurrente del 16/10 continúa documentado
+arriba como `nothing_relevant` y sin segundo aviso.
+
+**Owner Codex:** mantener observación read-only del cron diario del 18/10
+21:00–21:59 ART; conciliar origen automático en requests, runtime, operación,
+outbox y único chat QA antes de cerrar ACT-17. **Owner Esteban:** ninguna
+acción ahora.
